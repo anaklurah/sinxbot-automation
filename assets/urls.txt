@@ -1,0 +1,7 @@
+# Example YouTube Shorts URLs — one per line
+# Lines starting with # are ignored
+# Supports full YouTube URLs and youtu.be short URLs
+
+# https://www.youtube.com/shorts/dQw4w9WgXcQ
+# https://youtu.be/dQw4w9WgXcQ
+# https://www.youtube.com/watch?v=dQw4w9WgXcQ

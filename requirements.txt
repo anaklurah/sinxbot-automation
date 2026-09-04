@@ -1,0 +1,35 @@
+# ============================================================
+# OmniShorts Auto-Publisher (OSAP) — Python Dependencies
+# ============================================================
+
+# --- Core Downloader ---
+yt-dlp[default]>=2024.11.4
+
+# --- Video Processing ---
+ffmpeg-python>=0.2.0
+
+# --- Browser Automation ---
+playwright>=1.44.0
+playwright-stealth>=1.0.6
+
+# --- AI Caption Generation (DeepSeek via OpenAI-compatible API) ---
+openai>=1.30.0
+
+# --- Config & Environment ---
+python-dotenv>=1.0.1
+PyYAML>=6.0.1
+
+# --- Database ---
+# sqlite3 is built-in — no extra package needed
+
+# --- CLI & Display ---
+rich>=13.7.0
+
+# --- Async ---
+aiofiles>=23.2.1
+
+# --- Web Dashboard ---
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+

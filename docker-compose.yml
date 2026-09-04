@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  osap:
+    build: .
+    container_name: osap_bot
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - OSAP_DB_PATH=/app/osap.db
+      - DOWNLOAD_DIR=/app/downloads
+      - ASSETS_DIR=/app/assets
+      - PROFILES_DIR=/app/assets/profiles
+    volumes:
+      # Persist database, downloads, profiles, and config
+      - ./osap.db:/app/osap.db
+      - ./downloads:/app/downloads
+      - ./assets:/app/assets
+      - ./config.yaml:/app/config.yaml
+      - ./.env:/app/.env

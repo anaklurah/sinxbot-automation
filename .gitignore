@@ -1,0 +1,29 @@
+# Environment & Secrets
+.env
+*.env
+
+# Profiles & Cookies (Sensitive User Data)
+assets/profiles/
+assets/profiles/*
+
+# Local Database & Downloads
+*.db
+*.db-journal
+*.db-wal
+downloads/
+downloads/*
+
+# Python Cache & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

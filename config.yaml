@@ -1,0 +1,84 @@
+ai_caption:
+  model: deepseek-v4-flash
+browser:
+  headless: false
+caption:
+  fallback: metadata
+  system_prompt: ''
+cleanup:
+  auto_cleanup: true
+  cleanup_on_partial_failure: false
+ffmpeg:
+  brightness: 0.02
+  color_contrast: 1.05
+  color_saturation: 1.08
+  contrast: 1.05
+  noise_amount: 3
+  noise_strength: 3
+  quality: 20
+  saturation: 1.08
+  speed_factor: 1.05
+  zoom_factor: 1.1
+platform_captions:
+  facebook:
+    max_caption_chars: 63206
+    template: '{title}
+
+
+      {description}
+
+
+      {hashtags}'
+  febspot:
+    max_caption_chars: 2000
+    template: '{title}
+
+
+      {description}'
+  instagram:
+    max_caption_chars: 2200
+    template: '{description}
+
+
+      {hashtags}'
+  tiktok:
+    max_caption_chars: 2200
+    template: '{title} {hashtags}'
+  twitter:
+    max_caption_chars: 280
+    template: '{title} {hashtags}'
+  twitter_nsfw:
+    max_caption_chars: 280
+    template: '{title} {hashtags}'
+  upscrolled:
+    max_caption_chars: 500
+    template: '{title}
+
+      {hashtags}'
+  youtube:
+    max_description_chars: 5000
+    max_tags: 500
+    max_title_chars: 100
+    use_description: true
+platforms:
+  facebook: false
+  febspot: false
+  instagram: false
+  tiktok: false
+  twitter: false
+  twitter_nsfw: false
+  upscrolled: false
+  youtube: false
+proxy:
+  facebook: ''
+  instagram: ''
+  tiktok: ''
+rate_limits:
+  delay_between_platforms_sec: 30
+  idle_poll_interval_sec: 60
+  posts_per_hour_per_platform: 2
+  workers_downloader: 2
+workers:
+  downloader: 2
+  publisher: 1
+  renderer: 1
