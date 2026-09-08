@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, UploadFile, File
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, UploadFile, File, Request
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -87,9 +87,9 @@ class PipelineManager:
         from manage import _run_downloader_proc, _run_renderer_proc, _run_publisher_proc
         cfg = get_config()
 
-        p_dl = multiprocessing.Process(target=_run_downloader_proc, args=(db_path, cfg.WORKERS_DOWNLOADER), name="osap_downloader")
-        p_rd = multiprocessing.Process(target=_run_renderer_proc, args=(db_path,), name="osap_renderer")
-        p_pb = multiprocessing.Process(target=_run_publisher_proc, args=(db_path,), name="osap_publisher")
+        p_dl = multiprocessing.Process(target=_run_downloader_proc, args=(db_path, cfg.WORKERS_DOWNLOADER), name="osap_downloader", daemon=True)
+        p_rd = multiprocessing.Process(target=_run_renderer_proc, args=(db_path,), name="osap_renderer", daemon=True)
+        p_pb = multiprocessing.Process(target=_run_publisher_proc, args=(db_path,), name="osap_publisher", daemon=True)
 
         p_dl.start()
         p_rd.start()
@@ -128,6 +128,13 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("OSAP Web Dashboard API shutting down...")
     pipeline_mgr.stop_pipeline()
+    # Unblock any active SSE log subscribers so uvicorn shuts down cleanly
+    for q in list(log_subscribers):
+        try:
+            q.put_nowait(json.dumps({"message": "Server shutdown"}))
+        except Exception:
+            pass
+    log_subscribers.clear()
 
 app = FastAPI(
     title="OmniShorts Auto-Publisher Dashboard API",
@@ -550,8 +557,11 @@ def _run_manual_publish_target(db_path: str, platform_name: str):
     """Top-level process target for manual single-platform publishing."""
     import asyncio
     from osap.modules.publisher import PublisherOrchestrator
-    orchestrator = PublisherOrchestrator(db_path=db_path, platform_filter=platform_name)
-    asyncio.run(orchestrator.run())
+    try:
+        orchestrator = PublisherOrchestrator(db_path=db_path, platform_filter=platform_name)
+        asyncio.run(orchestrator.run())
+    except (KeyboardInterrupt, SystemExit):
+        pass
 
 
 @app.post("/api/publish/{platform}")
@@ -575,28 +585,28 @@ async def trigger_manual_publish(platform: str):
         row = conn.execute("SELECT COUNT(*) FROM videos WHERE status = 'rendered'").fetchone()
         rendered_count = row[0]
 
+    if rendered_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tidak ada video yang siap di-post untuk {platform} (antrian 'rendered' masih kosong). Silakan masukkan URL di tab Ingest dan jalankan Pipeline terlebih dahulu."
+        )
+
     p = multiprocessing.Process(
         target=_run_manual_publish_target,
         args=(cfg.DB_PATH, platform),
-        name=f"manual_publish_{platform}"
+        name=f"manual_publish_{platform}",
+        daemon=True
     )
     p.start()
 
-    if rendered_count > 0:
-        msg = f"Manual post launched for {platform} — {rendered_count} rendered video(s) ready in queue."
-    else:
-        msg = f"Manual post worker started for {platform}. No rendered videos yet — will publish once rendering completes."
-
+    msg = f"Manual post launched for {platform} — {rendered_count} rendered video(s) ready in queue."
     logger.info(msg)
     return {"success": True, "message": msg, "rendered_queue": rendered_count}
 
 
-
-
-
 @app.get("/api/logs/stream")
-async def stream_logs():
-    """SSE endpoint for streaming real-time system logs."""
+async def stream_logs(request: Request):
+    """SSE endpoint for streaming real-time system logs with graceful disconnect."""
     queue = asyncio.Queue()
     log_subscribers.append(queue)
 
@@ -604,9 +614,14 @@ async def stream_logs():
         try:
             yield "data: {\"message\": \"Connected to OSAP Live Log Stream\"}\n\n"
             while True:
-                log_msg = await queue.get()
-                yield f"data: {log_msg}\n\n"
-        except asyncio.CancelledError:
+                if await request.is_disconnected():
+                    break
+                try:
+                    log_msg = await asyncio.wait_for(queue.get(), timeout=1.5)
+                    yield f"data: {log_msg}\n\n"
+                except asyncio.TimeoutError:
+                    continue
+        except (asyncio.CancelledError, GeneratorExit):
             pass
         finally:
             if queue in log_subscribers:
