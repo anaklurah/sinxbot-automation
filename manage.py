@@ -224,6 +224,12 @@ def cmd_setup_auth(args):
     cfg = get_config()
     platform = args.platform.lower()
 
+    account_id = getattr(args, "account_id", 1) or 1
+    profiles_dir = cfg.PROFILES_DIR if account_id == 1 else (cfg.PROFILES_DIR / f"account_{account_id}")
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+
+    proxy_url = getattr(cfg, 'PROXY_URL', None) or os.environ.get('PROXY_URL')
+
     PERSISTENT_PLATFORMS = {"youtube": "https://studio.youtube.com", "febspot": "https://febspot.com"}
     COOKIE_PLATFORMS = {
         "tiktok": "https://www.tiktok.com/login",
@@ -238,40 +244,54 @@ def cmd_setup_auth(args):
         from playwright.async_api import async_playwright
         from osap.modules.publisher.stealth import apply_stealth, get_launch_options
 
+        launch_args = ['--disable-blink-features=AutomationControlled']
+        launch_kwargs = {
+            'headless': False,
+            'args': launch_args,
+        }
+        if proxy_url:
+            launch_kwargs['proxy'] = {'server': proxy_url}
+
         async with async_playwright() as p:
             if platform in PERSISTENT_PLATFORMS:
-                profile_dir = cfg.PROFILES_DIR / platform
+                profile_dir = profiles_dir / platform
                 profile_dir.mkdir(parents=True, exist_ok=True)
                 url = PERSISTENT_PLATFORMS[platform]
                 console.print(
-                    f"[cyan]Opening persistent profile browser for [bold]{platform}[/bold][/cyan]\n"
+                    f"[cyan]Opening persistent browser for [bold]{platform}[/bold] (Account #{account_id})[/cyan]\n"
                     f"Profile directory: [dim]{profile_dir}[/dim]\n"
                     f"Navigate to [link]{url}[/link] and log in.\n"
                     f"[yellow]Close the browser window when done.[/yellow]"
                 )
                 context = await p.chromium.launch_persistent_context(
                     str(profile_dir),
-                    headless=False,
-                    args=['--disable-blink-features=AutomationControlled'],
+                    **launch_kwargs,
                 )
-                page = await context.new_page()
+                page = context.pages[0] if context.pages else await context.new_page()
                 await page.goto(url)
                 # Keep open until user closes
-                await page.wait_for_event("close", timeout=0)
+                try:
+                    await page.wait_for_event("close", timeout=0)
+                except Exception:
+                    pass
+                try:
+                    storage_path = profiles_dir / f"{platform}_storage.json"
+                    await context.storage_state(path=str(storage_path))
+                    console.print(f"[green]✓ Session also saved to {storage_path}[/green]")
+                except Exception:
+                    pass
                 await context.close()
 
             elif platform in COOKIE_PLATFORMS:
                 url = COOKIE_PLATFORMS[platform]
+                storage_path = profiles_dir / f"{platform}_storage.json"
                 console.print(
-                    f"[cyan]Opening browser for [bold]{platform}[/bold] cookie capture[/cyan]\n"
+                    f"[cyan]Opening browser for [bold]{platform}[/bold] cookie capture (Account #{account_id})[/cyan]\n"
                     f"Log in at: [link]{url}[/link]\n"
-                    f"[yellow]After login, close the browser and session will be saved.[/yellow]\n"
-                    f"Storage state will be saved to: [dim]{cfg.PROFILES_DIR / f'{platform}_storage.json'}[/dim]"
+                    f"[yellow]After login, close the browser and session will be saved automatically.[/yellow]\n"
+                    f"Storage state will be saved to: [dim]{storage_path}[/dim]"
                 )
-                browser = await p.chromium.launch(
-                    headless=False,
-                    args=['--disable-blink-features=AutomationControlled']
-                )
+                browser = await p.chromium.launch(**launch_kwargs)
                 context = await browser.new_context()
                 await apply_stealth(context)
                 page = await context.new_page()
@@ -283,7 +303,6 @@ def cmd_setup_auth(args):
                 except Exception:
                     pass
                 # Save session
-                storage_path = cfg.PROFILES_DIR / f"{platform}_storage.json"
                 await context.storage_state(path=str(storage_path))
                 await browser.close()
                 console.print(f"[green]✓ Session saved to {storage_path}[/green]")

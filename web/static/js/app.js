@@ -6,10 +6,12 @@
 let currentPage = 1;
 let isPipelineActive = false;
 let eventSource = null;
+let selectedAccountId = 1;
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     initLucide();
+    loadAccounts();
     loadDashboardData();
     loadPlatformsData();
     loadConfigData();
@@ -54,6 +56,82 @@ function switchTab(tabId, el) {
     if (tabId === 'config') loadConfigData();
 
     setTimeout(initLucide, 50);
+}
+
+/**
+ * ─────────────────────────────────────────────
+ * Multi-Account Management
+ * ─────────────────────────────────────────────
+ */
+async function loadAccounts() {
+    try {
+        const res = await fetch('/api/accounts');
+        if (!res.ok) return;
+        const data = await res.json();
+        const select = document.getElementById('select-active-account');
+        if (!select) return;
+
+        select.innerHTML = '';
+        (data.accounts || []).forEach(acc => {
+            const opt = document.createElement('option');
+            opt.value = acc.id;
+            opt.textContent = acc.name + (acc.is_active ? ' (Aktif)' : '');
+            if (acc.is_active) {
+                opt.selected = true;
+                selectedAccountId = acc.id;
+            }
+            select.appendChild(opt);
+        });
+        if (data.active_id) {
+            selectedAccountId = data.active_id;
+            select.value = data.active_id;
+        }
+    } catch (err) {
+        console.error("Error loading accounts:", err);
+    }
+}
+
+async function changeActiveAccount(accId) {
+    try {
+        selectedAccountId = parseInt(accId);
+        const res = await fetch(`/api/accounts/active/${accId}`, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`Beralih ke ${data.account?.name || 'Akun ' + accId}`, 'info', 2500);
+            await loadAccounts();
+            await loadPlatformsData();
+            await loadDashboardData(true);
+        } else {
+            showToast(data.detail || 'Gagal mengganti akun aktif', 'error');
+        }
+    } catch (err) {
+        showToast('Network error switching account', 'error');
+    }
+}
+
+async function promptAddAccount() {
+    const name = prompt('Masukkan nama profil akun baru (misal: Akun 2 Gaming):');
+    if (!name || !name.trim()) return;
+
+    try {
+        const res = await fetch('/api/accounts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name.trim() })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`Akun '${data.account?.name}' berhasil ditambahkan!`, 'success');
+            await loadAccounts();
+            if (data.account?.id) {
+                await changeActiveAccount(data.account.id);
+            }
+        } else {
+            showToast(data.detail || 'Gagal menambahkan akun', 'error');
+        }
+    } catch (err) {
+        showToast('Network error adding account', 'error');
+    }
 }
 
 /**
@@ -188,7 +266,8 @@ async function loadVideos(page = 1) {
     if (!tbody) return;
 
     try {
-        const res = await fetch(`/api/videos?page=${page}&limit=10&status=${statusFilter}`);
+        const accParam = selectedAccountId ? `&account_id=${selectedAccountId}` : '';
+        const res = await fetch(`/api/videos?page=${page}&limit=10&status=${statusFilter}${accParam}`);
         const data = await res.json();
 
         tbody.innerHTML = '';
@@ -274,16 +353,16 @@ async function submitIngest() {
         const res = await fetch('/api/ingest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ urls: urlsText })
+            body: JSON.stringify({ urls: urlsText, account_id: selectedAccountId })
         });
         const data = await res.json();
 
         if (res.ok) {
-            showToast(`Added ${data.added} new videos to queue (${data.skipped} duplicates skipped)!`, 'success');
+            showToast(`Berhasil menyimpan ${data.added} link ke Gudang Konten (${data.skipped} duplikat diabaikan)!`, 'success');
             textarea.value = '';
             loadDashboardData();
         } else {
-            showToast(data.detail || 'Ingestion failed', 'error');
+            showToast(data.detail || 'Gagal menyimpan URL ke Gudang Konten', 'error');
         }
     } catch (err) {
         showToast('Network error submitting URLs', 'error');
@@ -378,7 +457,7 @@ async function loadPlatformsData() {
     if (!container) return;
 
     try {
-        const res = await fetch('/api/platforms');
+        const res = await fetch(`/api/platforms?account_id=${selectedAccountId}`);
         const data = await res.json();
 
         container.innerHTML = '';
@@ -413,17 +492,16 @@ async function loadPlatformsData() {
                 </div>
 
                 <div class="platform-card-footer">
-                    <div style="display: flex; gap: 8px;">
-                        ${p.auth_type === 'persistent' ? `
-                            <button class="btn-clay btn-clay-secondary btn-clay-sm" onclick="triggerSetupAuth('${p.id}')">
-                                <i data-lucide="log-in"></i> Login Browser
-                            </button>
-                        ` : `
-                            <label class="btn-clay btn-clay-secondary btn-clay-sm" style="cursor: pointer; margin: 0;">
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn-clay btn-clay-secondary btn-clay-sm" onclick="triggerSetupAuth('${p.id}')" title="Buka browser untuk login manual (cookies kadaluarsa / fresh login)">
+                            <i data-lucide="log-in"></i> Login Browser
+                        </button>
+                        ${p.auth_type === 'cookies' ? `
+                            <label class="btn-clay btn-clay-secondary btn-clay-sm" style="cursor: pointer; margin: 0;" title="Upload file cookie .json / .txt">
                                 <i data-lucide="upload"></i> Cookie
                                 <input type="file" accept=".txt,.json" style="display: none;" onchange="uploadCookies('${p.id}', this)">
                             </label>
-                        `}
+                        ` : ''}
                     </div>
                     <button class="btn-clay btn-clay-primary btn-clay-sm" ${!p.enabled ? 'disabled title="Nyalakan switch platform ini terlebih dahulu"' : ''} onclick="triggerManualPost('${p.id}', this)">
                         <i data-lucide="send"></i> Post Now
@@ -476,7 +554,7 @@ async function togglePlatform(platformId, enabled) {
 
 async function triggerSetupAuth(platformId) {
     try {
-        const res = await fetch(`/api/setup-auth/${platformId}`, { method: 'POST' });
+        const res = await fetch(`/api/setup-auth/${platformId}?account_id=${selectedAccountId}`, { method: 'POST' });
         const data = await res.json();
         showToast(data.message || `Auth window opened for ${platformId}`, 'info', 5000);
     } catch (err) {
@@ -491,7 +569,7 @@ async function uploadCookies(platformId, inputElement) {
     formData.append('file', file);
 
     try {
-        const res = await fetch(`/api/upload-cookies/${platformId}`, {
+        const res = await fetch(`/api/upload-cookies/${platformId}?account_id=${selectedAccountId}`, {
             method: 'POST',
             body: formData
         });
@@ -508,7 +586,6 @@ async function uploadCookies(platformId, inputElement) {
 }
 
 async function triggerManualPost(platformId, btnElement) {
-    // Find the button that was clicked and show loading state
     const btn = btnElement || (typeof event !== 'undefined' ? event?.currentTarget : null) || document.querySelector(`[onclick*="triggerManualPost('${platformId}'"]`);
     const originalHTML = btn ? btn.innerHTML : null;
 
@@ -518,7 +595,7 @@ async function triggerManualPost(platformId, btnElement) {
     }
 
     try {
-        const res = await fetch(`/api/publish/${platformId}`, { method: 'POST' });
+        const res = await fetch(`/api/publish/${platformId}?account_id=${selectedAccountId}`, { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
             showToast(`🚀 ${data.message}`, 'success', 8000);
@@ -534,6 +611,36 @@ async function triggerManualPost(platformId, btnElement) {
         } else {
             showToast(`Error: ${err.message}`, 'error', 6000);
         }
+    } finally {
+        if (btn && originalHTML) {
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+        }
+    }
+}
+
+async function triggerPublishAllPlatforms(btnElement) {
+    const btn = btnElement || (typeof event !== 'undefined' ? event?.currentTarget : null);
+    const originalHTML = btn ? btn.innerHTML : null;
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<svg class="spin-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Memproses...`;
+    }
+
+    try {
+        const res = await fetch(`/api/pipeline/publish-all?account_id=${selectedAccountId}`, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`🚀 ${data.message}`, 'success', 8000);
+            loadDashboardData(true);
+            setTimeout(() => loadDashboardData(true), 3000);
+            setTimeout(() => loadDashboardData(true), 8000);
+        } else {
+            showToast(`❌ ${data.detail || 'Gagal memulai publikasi video ke semua platform'}`, 'error', 7000);
+        }
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error', 6000);
     } finally {
         if (btn && originalHTML) {
             btn.disabled = false;

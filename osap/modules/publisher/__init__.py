@@ -195,7 +195,8 @@ class PublisherOrchestrator:
         logger.info(f"[{platform}] ▶ Uploading video {video_id}: {title[:50]!r}")
 
         try:
-            publisher = publisher_cls()
+            acc_id = video.get("account_id") or 1
+            publisher = publisher_cls(account_id=acc_id)
             success = await publisher.run_upload(
                 video_path=rendered_path,
                 title=title,

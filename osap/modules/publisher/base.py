@@ -53,13 +53,22 @@ class BasePublisher(ABC):
     PLATFORM_NAME: str = ''
     AUTH_METHOD: str = 'storage_state'  # 'persistent' | 'storage_state'
 
-    def __init__(self) -> None:
+    def __init__(self, account_id: int = 1) -> None:
         if not self.PLATFORM_NAME:
             raise ValueError(
                 f'{self.__class__.__name__} must define a non-empty PLATFORM_NAME'
             )
         self._cfg = get_config()
         self._log = get_logger(f'osap.publisher.{self.PLATFORM_NAME}')
+        self.account_id = account_id
+
+    def _get_profiles_dir(self) -> Path:
+        base_dir = Path(self._cfg.PROFILES_DIR)
+        if self.account_id and self.account_id > 1:
+            p_dir = base_dir / f"account_{self.account_id}"
+            p_dir.mkdir(parents=True, exist_ok=True)
+            return p_dir
+        return base_dir
 
     # ------------------------------------------------------------------ #
     # Abstract interface
@@ -162,8 +171,9 @@ class BasePublisher(ABC):
             timezone=getattr(cfg, 'BROWSER_TIMEZONE', 'America/New_York'),
         )
 
+        profiles_dir = self._get_profiles_dir()
         if self.AUTH_METHOD == 'persistent':
-            profile_dir = Path(cfg.PROFILES_DIR) / self.PLATFORM_NAME
+            profile_dir = profiles_dir / self.PLATFORM_NAME
             profile_dir.mkdir(parents=True, exist_ok=True)
             self._log.debug(
                 '[%s] Launching persistent context from %s', self.PLATFORM_NAME, profile_dir
@@ -178,7 +188,6 @@ class BasePublisher(ABC):
         # --- storage_state path ---
         browser: Browser = await playwright.chromium.launch(**launch_opts)
 
-        profiles_dir = Path(cfg.PROFILES_DIR)
         storage_state_path = profiles_dir / f'{self.PLATFORM_NAME}_storage.json'
         json_cookies_path = profiles_dir / f'{self.PLATFORM_NAME}_cookies.json'
         netscape_cookies_path = profiles_dir / f'{self.PLATFORM_NAME}_cookies.txt'

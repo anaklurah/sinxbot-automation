@@ -1,4 +1,4 @@
-﻿"""
+"""
 osap/modules/scheduler.py
 ─────────────────────────
 Prime-Time Automated Scheduler for OSAP.
@@ -14,7 +14,7 @@ import time
 from typing import List, Optional, Tuple
 
 from osap.config import get_config
-from osap.modules.on_demand import run_single_video_pipeline
+from osap.modules.on_demand import run_jit_video_pipeline, run_single_video_pipeline
 from osap.utils.logger import get_logger
 
 logger = get_logger("osap.scheduler")
@@ -95,16 +95,22 @@ async def run_scheduler(db_path: Optional[str] = None, slots: Optional[List[str]
             if not enabled_platforms:
                 logger.warning("[Scheduler] No platforms enabled. Skipping this prime-time slot.")
             else:
-                for platform in enabled_platforms:
-                    logger.info(f"[Scheduler] 🚀 Running scheduled post for {platform}...")
-                    success = await run_single_video_pipeline(platform=platform, db_path=db_path)
-                    if success:
-                        logger.info(f"[Scheduler] ✓ Successfully posted to {platform} at {slot_str}!")
-                    else:
-                        logger.warning(f"[Scheduler] ⚠️ Scheduled post to {platform} failed or had no video.")
-                    
-                    # Inter-platform delay if multiple platforms
-                    await asyncio.sleep(10)
+                from osap.db.queue import get_active_account
+                active_acc = get_active_account(db_path)
+                logger.info(
+                    f"[Scheduler] 🚀 Running scheduled JIT 1-video post across {len(enabled_platforms)} platforms "
+                    f"({', '.join(enabled_platforms)}) for Account #{active_acc['id']} ({active_acc['name']})..."
+                )
+                res = await run_jit_video_pipeline(
+                    target_platforms=enabled_platforms,
+                    account_id=active_acc["id"],
+                    db_path=db_path,
+                    auto_cleanup=True,
+                )
+                if res.get("success"):
+                    logger.info(f"[Scheduler] ✓ Successfully executed scheduled post for slot {slot_str}: {res.get('message')}")
+                else:
+                    logger.warning(f"[Scheduler] ⚠️ Scheduled post for slot {slot_str} finished with issues: {res.get('message')}")
 
             # Sleep 70 seconds past the target minute to avoid double trigger
             await asyncio.sleep(70)

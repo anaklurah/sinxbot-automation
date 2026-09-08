@@ -38,6 +38,13 @@ PLATFORMS: list[str] = [
 # ---------------------------------------------------------------------------
 
 SCHEMA: str = """
+CREATE TABLE IF NOT EXISTS accounts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT    NOT NULL UNIQUE,
+    is_active       INTEGER DEFAULT 1,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- -----------------------------------------------------------------------
 -- videos
 -- -----------------------------------------------------------------------
@@ -49,6 +56,7 @@ SCHEMA: str = """
 CREATE TABLE IF NOT EXISTS videos (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     url             TEXT    NOT NULL UNIQUE,
+    account_id      INTEGER DEFAULT 1 REFERENCES accounts(id) ON DELETE SET NULL,
     video_id        TEXT,                       -- platform-side video ID (e.g. YouTube watch ID)
     title           TEXT,                       -- original title from source platform
     description     TEXT,                       -- original description from source platform
@@ -271,5 +279,25 @@ def init_db(db_path: str | Path) -> None:
     conn = get_conn(db_path)
     try:
         conn.executescript(SCHEMA)
+
+        # Ensure default account exists
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM accounts")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("INSERT INTO accounts (id, name, is_active) VALUES (1, 'Akun 1 (Default)', 1)")
+
+        # Migration: Ensure account_id exists in videos
+        cursor.execute("PRAGMA table_info(videos)")
+        video_cols = [r[1] for r in cursor.fetchall()]
+        if "account_id" not in video_cols:
+            cursor.execute("ALTER TABLE videos ADD COLUMN account_id INTEGER DEFAULT 1")
+
+        # Migration: Ensure account_id exists in platform_uploads
+        cursor.execute("PRAGMA table_info(platform_uploads)")
+        pu_cols = [r[1] for r in cursor.fetchall()]
+        if "account_id" not in pu_cols:
+            cursor.execute("ALTER TABLE platform_uploads ADD COLUMN account_id INTEGER DEFAULT 1")
+
+        conn.commit()
     finally:
         conn.close()

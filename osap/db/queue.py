@@ -120,6 +120,7 @@ def add_url(url: str, db_path: str | Path | None = None) -> bool:
 def add_urls_batch(
     urls: list[str],
     db_path: str | Path | None = None,
+    account_id: int | None = None,
 ) -> tuple[int, int]:
     """
     Add multiple URLs to the video queue in a single transaction.
@@ -130,6 +131,8 @@ def add_urls_batch(
         Sequence of source video URLs to enqueue.
     db_path:
         Path to the SQLite database.  Defaults to ``Config.DB_PATH``.
+    account_id:
+        Optional target account ID.
 
     Returns
     -------
@@ -139,11 +142,19 @@ def add_urls_batch(
     """
     added = 0
     skipped = 0
+    acc_id = account_id
+    if acc_id is None:
+        try:
+            active_acc = get_active_account(db_path)
+            acc_id = active_acc["id"]
+        except Exception:
+            acc_id = 1
+
     with _immediate(db_path) as conn:
         for url in urls:
             cursor = conn.execute(
-                "INSERT OR IGNORE INTO videos (url, status) VALUES (?, 'pending')",
-                (url,),
+                "INSERT OR IGNORE INTO videos (url, status, account_id) VALUES (?, 'pending', ?)",
+                (url, acc_id),
             )
             if cursor.rowcount > 0:
                 added += 1
@@ -156,6 +167,7 @@ def claim_next(
     from_status: str,
     to_status: str,
     db_path: str | Path | None = None,
+    account_id: int | None = None,
 ) -> dict | None:
     """
     Atomically claim the next video in *from_status* and advance it to *to_status*.
@@ -171,6 +183,8 @@ def claim_next(
         The status to transition the claimed row to (e.g. ``"downloading"``).
     db_path:
         Path to the SQLite database.  Defaults to ``Config.DB_PATH``.
+    account_id:
+        Optional account filter.
 
     Returns
     -------
@@ -179,10 +193,16 @@ def claim_next(
         reflected) or ``None`` if no row is available.
     """
     with _immediate(db_path) as conn:
-        row = conn.execute(
-            "SELECT * FROM videos WHERE status = ? ORDER BY created_at ASC LIMIT 1",
-            (from_status,),
-        ).fetchone()
+        if account_id is not None:
+            row = conn.execute(
+                "SELECT * FROM videos WHERE status = ? AND (account_id = ? OR account_id IS NULL) ORDER BY created_at ASC LIMIT 1",
+                (from_status, account_id),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT * FROM videos WHERE status = ? ORDER BY created_at ASC LIMIT 1",
+                (from_status,),
+            ).fetchone()
 
         if row is None:
             return None
@@ -633,3 +653,55 @@ def reset_stuck(db_path: str | Path | None = None) -> int:
             )
 
     return total_reset
+
+
+# ---------------------------------------------------------------------------
+# Account helpers
+# ---------------------------------------------------------------------------
+
+def list_accounts(db_path: str | Path | None = None) -> list[dict]:
+    """Return all accounts."""
+    with _session(db_path) as conn:
+        rows = conn.execute("SELECT id, name, is_active, created_at FROM accounts ORDER BY id ASC").fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_active_account(db_path: str | Path | None = None) -> dict:
+    """Return the currently active account, or fallback to first account."""
+    with _session(db_path) as conn:
+        row = conn.execute("SELECT id, name, is_active, created_at FROM accounts WHERE is_active = 1 LIMIT 1").fetchone()
+        if not row:
+            row = conn.execute("SELECT id, name, is_active, created_at FROM accounts ORDER BY id ASC LIMIT 1").fetchone()
+        if not row:
+            conn.execute("INSERT INTO accounts (id, name, is_active) VALUES (1, 'Akun 1 (Default)', 1)")
+            return {"id": 1, "name": "Akun 1 (Default)", "is_active": 1}
+        return dict(row)
+
+
+def set_active_account(account_id: int, db_path: str | Path | None = None) -> None:
+    """Set an account as the active one (and deactivate others)."""
+    with _session(db_path) as conn:
+        conn.execute("UPDATE accounts SET is_active = 0")
+        conn.execute("UPDATE accounts SET is_active = 1 WHERE id = ?", (account_id,))
+
+
+def create_account(name: str, db_path: str | Path | None = None) -> dict:
+    """Create a new account profile."""
+    with _session(db_path) as conn:
+        cursor = conn.execute("INSERT INTO accounts (name, is_active) VALUES (?, 0)", (name.strip(),))
+        acc_id = cursor.lastrowid
+        return {"id": acc_id, "name": name.strip(), "is_active": 0}
+
+
+def delete_account(account_id: int, db_path: str | Path | None = None) -> bool:
+    """Delete an account if not default."""
+    if account_id == 1:
+        return False
+    with _session(db_path) as conn:
+        conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+        # If no active account left, activate id 1
+        active = conn.execute("SELECT COUNT(*) FROM accounts WHERE is_active = 1").fetchone()[0]
+        if active == 0:
+            conn.execute("UPDATE accounts SET is_active = 1 WHERE id = 1")
+    return True
+

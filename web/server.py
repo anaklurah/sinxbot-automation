@@ -195,6 +195,10 @@ async def read_root():
 # ─────────────────────────────────────────────
 class IngestRequest(BaseModel):
     urls: str = Field(..., description="Newline or comma-separated list of URLs")
+    account_id: Optional[int] = None
+
+class CreateAccountRequest(BaseModel):
+    name: str
 
 class ConfigUpdateRequest(BaseModel):
     posts_per_hour: Optional[int] = None
@@ -252,6 +256,7 @@ async def get_dashboard_status():
 @app.get("/api/videos")
 async def list_videos(
     status: Optional[str] = Query(None, description="Filter by status: pending, downloading, downloaded, rendering, rendered, uploading, done, failed"),
+    account_id: Optional[int] = Query(None, description="Filter by account ID"),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100)
 ):
@@ -261,12 +266,18 @@ async def list_videos(
 
     with db_session(cfg.DB_PATH) as conn:
         cursor = conn.cursor()
-        where_clause = ""
+        where_conditions = []
         params: List[Any] = []
 
         if status:
-            where_clause = "WHERE v.status = ?"
+            where_conditions.append("v.status = ?")
             params.append(status)
+
+        if account_id:
+            where_conditions.append("v.account_id = ?")
+            params.append(account_id)
+
+        where_clause = f"WHERE {' AND '.join(where_conditions)}" if where_conditions else ""
 
         # Count total
         count_sql = f"SELECT COUNT(*) FROM videos v {where_clause}"
@@ -275,7 +286,7 @@ async def list_videos(
 
         # Fetch videos
         query_sql = f"""
-            SELECT id, url, video_id, title, status, raw_path, rendered_path, ai_title, created_at, updated_at, error_count
+            SELECT id, url, video_id, title, status, raw_path, rendered_path, ai_title, created_at, updated_at, error_count, account_id
             FROM videos v
             {where_clause}
             ORDER BY id DESC
@@ -316,14 +327,15 @@ async def ingest_urls(req: IngestRequest):
     if not cleaned_urls:
         raise HTTPException(status_code=400, detail="No valid URLs provided")
 
-    added, skipped = add_urls_batch(cleaned_urls, db_path=cfg.DB_PATH)
-    logger.info(f"Ingested via Web Dashboard: {added} added, {skipped} skipped/duplicate")
+    added, skipped = add_urls_batch(cleaned_urls, db_path=cfg.DB_PATH, account_id=req.account_id)
+    logger.info(f"Ingested via Web Dashboard: {added} added, {skipped} skipped/duplicate into Gudang Konten")
 
     return {
         "success": True,
         "added": added,
         "skipped": skipped,
-        "total_submitted": len(cleaned_urls)
+        "total_submitted": len(cleaned_urls),
+        "message": f"Berhasil menambahkan {added} video ke Gudang Konten."
     }
 
 
@@ -487,14 +499,72 @@ async def update_configuration(req: ConfigUpdateRequest):
     return {"success": True, "message": "Configuration saved successfully"}
 
 
+@app.get("/api/accounts")
+async def get_accounts_api():
+    """List all account profiles and current active account."""
+    cfg = get_config()
+    from osap.db.queue import list_accounts, get_active_account
+    accounts = list_accounts(cfg.DB_PATH)
+    active = get_active_account(cfg.DB_PATH)
+    return {"accounts": accounts, "active_account": active}
+
+
+@app.post("/api/accounts")
+async def create_account_api(req: CreateAccountRequest):
+    """Create a new account profile."""
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nama akun tidak boleh kosong")
+    cfg = get_config()
+    from osap.db.queue import create_account
+    try:
+        acc = create_account(name, cfg.DB_PATH)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Gagal membuat akun: {e}")
+    p_dir = cfg.PROFILES_DIR / f"account_{acc['id']}"
+    p_dir.mkdir(parents=True, exist_ok=True)
+    return {"success": True, "account": acc, "message": f"Akun '{name}' berhasil dibuat!"}
+
+
+@app.post("/api/accounts/active/{account_id}")
+async def set_active_account_api(account_id: int):
+    """Switch active account."""
+    cfg = get_config()
+    from osap.db.queue import set_active_account, get_active_account
+    set_active_account(account_id, cfg.DB_PATH)
+    active = get_active_account(cfg.DB_PATH)
+    return {"success": True, "active_account": active, "message": f"Akun aktif diubah ke '{active['name']}'"}
+
+
+@app.delete("/api/accounts/{account_id}")
+async def delete_account_api(account_id: int):
+    """Delete an account profile."""
+    if account_id == 1:
+        raise HTTPException(status_code=400, detail="Akun utama (Default) tidak dapat dihapus")
+    cfg = get_config()
+    from osap.db.queue import delete_account
+    delete_account(account_id, cfg.DB_PATH)
+    return {"success": True, "message": "Akun berhasil dihapus"}
+
+
 @app.get("/api/platforms")
-async def list_platform_states():
-    """List 8 supported platforms, enabled status, and auth profile existence."""
+async def list_platform_states(account_id: Optional[int] = Query(None)):
+    """List 8 supported platforms, enabled status, and auth profile existence for selected account."""
     cfg = get_config(reload=True)
+    from osap.db.queue import get_active_account
+    acc_id = account_id
+    if acc_id is None:
+        try:
+            active_acc = get_active_account(cfg.DB_PATH)
+            acc_id = active_acc["id"]
+        except Exception:
+            acc_id = 1
+
+    profiles_dir = cfg.PROFILES_DIR if acc_id == 1 else (cfg.PROFILES_DIR / f"account_{acc_id}")
+
     enabled_set = set(cfg.enabled_platforms)
     result = []
-
-    persistent_platforms = ["youtube", "febspot"]
+    persistent_platforms = ["febspot"]
 
     for p in PLATFORMS:
         enabled = (p in enabled_set)
@@ -502,13 +572,19 @@ async def list_platform_states():
         # Check profile auth file/folder
         auth_status = False
         if p in persistent_platforms:
-            prof_dir = cfg.PROFILES_DIR / p
+            prof_dir = profiles_dir / p
             auth_status = prof_dir.exists() and any(prof_dir.iterdir()) if prof_dir.exists() else False
         else:
-            storage_json = cfg.PROFILES_DIR / f"{p}_storage.json"
-            cookies_txt = cfg.PROFILES_DIR / f"{p}_cookies.txt"
-            cookies_json = cfg.PROFILES_DIR / f"{p}_cookies.json"
-            auth_status = storage_json.exists() or cookies_txt.exists() or cookies_json.exists()
+            storage_json = profiles_dir / f"{p}_storage.json"
+            cookies_txt = profiles_dir / f"{p}_cookies.txt"
+            cookies_json = profiles_dir / f"{p}_cookies.json"
+            prof_dir = profiles_dir / p
+            auth_status = (
+                storage_json.exists()
+                or cookies_txt.exists()
+                or cookies_json.exists()
+                or (prof_dir.exists() and any(prof_dir.iterdir()))
+            )
 
         result.append({
             "id": p,
@@ -518,8 +594,7 @@ async def list_platform_states():
             "auth_type": "persistent" if p in persistent_platforms else "cookies/storage_state"
         })
 
-    return {"platforms": result}
-
+    return {"platforms": result, "account_id": acc_id}
 
 
 @app.post("/api/pipeline/start")
@@ -551,40 +626,57 @@ async def reset_stuck_jobs_api():
     return {"success": True, "message": "Stuck jobs reset"}
 
 
-def _run_setup_auth_target(platform_name: str):
+def _run_setup_auth_target(platform_name: str, account_id: int):
     """Top-level process target for running setup-auth flow."""
     from manage import cmd_setup_auth
     class SetupArgs:
-        def __init__(self, p_name):
+        def __init__(self, p_name, acc_id):
             self.platform = p_name
+            self.account_id = acc_id
 
-    cmd_setup_auth(SetupArgs(platform_name))
+    cmd_setup_auth(SetupArgs(platform_name, account_id))
 
 
 @app.post("/api/setup-auth/{platform}")
-async def setup_platform_auth(platform: str):
-    """Run non-headless setup-auth flow in a separate process for persistent platforms."""
-    if platform not in PLATFORMS:
-        raise HTTPException(status_code=400, detail=f"Invalid platform: {platform}")
-
-    p = multiprocessing.Process(
-        target=_run_setup_auth_target,
-        args=(platform,),
-        name=f"setup_auth_{platform}"
-    )
-    p.start()
-
-    return {"success": True, "message": f"Auth login window launched for {platform}. Complete login in browser."}
-
-
-@app.post("/api/upload-cookies/{platform}")
-async def upload_platform_cookies(platform: str, file: UploadFile = File(...)):
-    """Upload cookie file (.txt or .json) or storage_state for a cookie platform."""
+async def setup_platform_auth(platform: str, account_id: Optional[int] = Query(None)):
+    """Run non-headless interactive login browser in a separate process."""
     if platform not in PLATFORMS:
         raise HTTPException(status_code=400, detail=f"Invalid platform: {platform}")
 
     cfg = get_config()
-    cfg.ensure_dirs()
+    from osap.db.queue import get_active_account
+    acc_id = account_id
+    if acc_id is None:
+        acc = get_active_account(cfg.DB_PATH)
+        acc_id = acc["id"]
+
+    p = multiprocessing.Process(
+        target=_run_setup_auth_target,
+        args=(platform, acc_id),
+        name=f"setup_auth_{platform}_{acc_id}"
+    )
+    p.start()
+
+    return {
+        "success": True,
+        "message": f"Jendela login browser untuk {platform} (Akun #{acc_id}) telah dibuka. Silakan login (bisa isi captcha/2FA), sesi otomatis tersimpan saat jendela ditutup!"
+    }
+
+
+@app.post("/api/upload-cookies/{platform}")
+async def upload_platform_cookies(platform: str, file: UploadFile = File(...), account_id: Optional[int] = Query(None)):
+    """Upload cookie file (.txt or .json) or storage_state for a platform."""
+    if platform not in PLATFORMS:
+        raise HTTPException(status_code=400, detail=f"Invalid platform: {platform}")
+
+    cfg = get_config()
+    from osap.db.queue import get_active_account
+    acc_id = account_id
+    if acc_id is None:
+        acc_id = get_active_account(cfg.DB_PATH)["id"]
+
+    profiles_dir = cfg.PROFILES_DIR if acc_id == 1 else (cfg.PROFILES_DIR / f"account_{acc_id}")
+    profiles_dir.mkdir(parents=True, exist_ok=True)
 
     contents = await file.read()
     if not contents:
@@ -595,9 +687,9 @@ async def upload_platform_cookies(platform: str, file: UploadFile = File(...)):
 
     # Determine filename format: storage_state.json vs cookies.txt
     if filename.endswith(".json") or stripped.startswith(b"[") or stripped.startswith(b"{"):
-        save_path = cfg.PROFILES_DIR / f"{platform}_storage.json"
+        save_path = profiles_dir / f"{platform}_storage.json"
     else:
-        save_path = cfg.PROFILES_DIR / f"{platform}_cookies.txt"
+        save_path = profiles_dir / f"{platform}_cookies.txt"
 
     with open(save_path, "wb") as f:
         f.write(contents)
@@ -610,11 +702,10 @@ async def upload_platform_cookies(platform: str, file: UploadFile = File(...)):
         parsed = []
 
     count = len(parsed)
-    logger.info(f"Uploaded cookie file for platform {platform}: {save_path.name} ({count} cookies parsed)")
+    logger.info(f"Uploaded cookie file for platform {platform} (Account #{acc_id}): {save_path.name} ({count} cookies parsed)")
 
     if count > 0:
-        # Save normalized cookies in valid Playwright storage_state format
-        storage_path = cfg.PROFILES_DIR / f"{platform}_storage.json"
+        storage_path = profiles_dir / f"{platform}_storage.json"
         try:
             with open(storage_path, "w", encoding="utf-8") as sf:
                 json.dump({"cookies": parsed, "origins": []}, sf, indent=2)
@@ -636,27 +727,75 @@ async def upload_platform_cookies(platform: str, file: UploadFile = File(...)):
         "filename": file.filename,
         "saved_to": save_path.name,
         "cookies_count": count,
-        "message": f"Successfully uploaded and normalized {count} cookies for {platform}!"
+        "message": f"Successfully uploaded and normalized {count} cookies for {platform} (Account #{acc_id})!"
     }
 
 
-def _run_manual_publish_target(db_path: str, platform_name: str):
+def _run_manual_publish_target(db_path: str, platform_name: str, account_id: int):
     """Top-level process target for on-demand single-video publishing."""
     import asyncio
-    from osap.modules.on_demand import run_single_video_pipeline
+    from osap.modules.on_demand import run_jit_video_pipeline
     try:
-        asyncio.run(run_single_video_pipeline(platform=platform_name, db_path=db_path))
+        asyncio.run(run_jit_video_pipeline(target_platforms=[platform_name], account_id=account_id, db_path=db_path, auto_cleanup=True))
     except (KeyboardInterrupt, SystemExit):
         pass
 
 
+def _run_publish_all_target(db_path: str, account_id: int):
+    """Top-level process target for distributing 1 video to ALL enabled platforms."""
+    import asyncio
+    from osap.modules.on_demand import run_jit_video_pipeline
+    try:
+        asyncio.run(run_jit_video_pipeline(target_platforms=None, account_id=account_id, db_path=db_path, auto_cleanup=True))
+    except (KeyboardInterrupt, SystemExit):
+        pass
+
+
+@app.post("/api/pipeline/publish-all")
+async def trigger_publish_all(account_id: Optional[int] = Query(None)):
+    """Trigger JIT 1-video download, render with watermark & anti-hash, and publish to all platforms."""
+    cfg = get_config()
+    from osap.db.queue import get_active_account
+
+    acc_id = account_id
+    if acc_id is None:
+        acc_id = get_active_account(cfg.DB_PATH)["id"]
+
+    # Check video availability
+    with db_session(cfg.DB_PATH) as conn:
+        total_available = conn.execute("SELECT COUNT(*) FROM videos WHERE status IN ('pending', 'downloaded', 'rendered')").fetchone()[0]
+
+    if total_available == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Gudang Konten kosong. Silakan masukkan link video di tab Ingest terlebih dahulu."
+        )
+
+    p = multiprocessing.Process(
+        target=_run_publish_all_target,
+        args=(cfg.DB_PATH, acc_id),
+        name=f"publish_all_{acc_id}"
+    )
+    p.start()
+
+    return {
+        "success": True,
+        "message": f"Memulai distribusi 1 video ke seluruh platform aktif untuk Akun #{acc_id} (Just-In-Time download & render)... Pantau log di bawah!"
+    }
+
+
 @app.post("/api/publish/{platform}")
-async def trigger_manual_publish(platform: str):
-    """Trigger on-demand single-video pipeline (Download -> Render -> Caption -> Post) for a specific platform."""
+async def trigger_manual_publish(platform: str, account_id: Optional[int] = Query(None)):
+    """Trigger on-demand single-platform publish (JIT Download -> Render -> Caption -> Post)."""
     if platform not in PLATFORMS:
         raise HTTPException(status_code=400, detail=f"Invalid platform: {platform}")
 
     cfg = get_config()
+    from osap.db.queue import get_active_account
+
+    acc_id = account_id
+    if acc_id is None:
+        acc_id = get_active_account(cfg.DB_PATH)["id"]
 
     # Check if platform is enabled in config
     enabled = set(cfg.enabled_platforms)
@@ -666,42 +805,28 @@ async def trigger_manual_publish(platform: str):
             detail=f"Platform '{platform}' is not enabled. Enable it in the Config tab first."
         )
 
-    # Check video counts in various stages
     with db_session(cfg.DB_PATH) as conn:
-        rendered_count = conn.execute("SELECT COUNT(*) FROM videos WHERE status = 'rendered'").fetchone()[0]
-        downloaded_count = conn.execute("SELECT COUNT(*) FROM videos WHERE status = 'downloaded'").fetchone()[0]
-        pending_count = conn.execute("SELECT COUNT(*) FROM videos WHERE status = 'pending'").fetchone()[0]
+        total_available = conn.execute("SELECT COUNT(*) FROM videos WHERE status IN ('pending', 'downloaded', 'rendered')").fetchone()[0]
 
-    total_available = rendered_count + downloaded_count + pending_count
     if total_available == 0:
         raise HTTPException(
             status_code=400,
-            detail="Antrian video kosong. Masukkan URL video di tab Ingest terlebih dahulu."
+            detail="Gudang Konten kosong. Silakan masukkan link video di tab Ingest terlebih dahulu."
         )
 
     p = multiprocessing.Process(
         target=_run_manual_publish_target,
-        args=(cfg.DB_PATH, platform),
-        name=f"manual_publish_{platform}",
+        args=(cfg.DB_PATH, platform, acc_id),
+        name=f"manual_publish_{platform}_{acc_id}",
         daemon=True
     )
     p.start()
 
-    if rendered_count > 0:
-        stage_desc = f"mengupload video siap ({rendered_count} rendered)"
-    elif downloaded_count > 0:
-        stage_desc = "merender video yang sudah didownload lalu upload"
-    else:
-        stage_desc = f"mengambil 1 dari {pending_count} video pending (Download ➔ Render ➔ Post)"
-
-    msg = f"On-Demand Post dimulai untuk {platform}: {stage_desc}. Pantau prosesnya di Live Logs!"
+    msg = f"On-Demand Post dimulai untuk {platform} (Akun #{acc_id}). Memproses JIT dan upload... Pantau prosesnya di Live Logs!"
     logger.info(msg)
     return {
         "success": True,
         "message": msg,
-        "rendered_queue": rendered_count,
-        "pending_queue": pending_count,
-        "downloaded_queue": downloaded_count,
     }
 
 
