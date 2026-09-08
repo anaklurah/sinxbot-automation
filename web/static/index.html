@@ -34,18 +34,8 @@
         </div>
 
         <div class="header-actions">
-            <!-- Account Profile Selector -->
-            <div class="account-selector-wrapper" style="display: flex; align-items: center; gap: 8px; margin-right: 8px;">
-                <i data-lucide="users" style="width: 16px; height: 16px; color: var(--text-muted);"></i>
-                <select id="select-active-account" class="clay-select" style="padding: 6px 12px; font-size: 0.85rem; font-weight: 600; min-width: 150px;" onchange="changeActiveAccount(this.value)">
-                    <option value="1">Akun 1 (Default)</option>
-                </select>
-                <button class="btn-clay btn-clay-secondary btn-clay-sm" onclick="promptAddAccount()" title="Tambah Akun Baru" style="padding: 6px 10px;">
-                    <i data-lucide="user-plus"></i> + Akun
-                </button>
-            </div>
-
             <!-- Prime-Time Scheduler Status Pill -->
+
             <div class="status-clay-pill" id="pipeline-status-pill">
                 <span class="status-beacon" id="status-beacon"></span>
                 <span id="pipeline-status-text">Scheduler Idle</span>
@@ -462,12 +452,17 @@
                             Kelola channel, upload cookies, atau klik "Login Browser" jika cookies kadaluarsa/perlu login manual.
                         </p>
                     </div>
-                    <div>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <button class="btn-clay btn-clay-secondary" onclick="openAddPlatformTargetModal()" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700;">
+                            <i data-lucide="plus-circle"></i>
+                            <span>+ Tambah Akun Platform</span>
+                        </button>
                         <button class="btn-clay btn-clay-primary" onclick="triggerPublishAllPlatforms(this)" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700;">
                             <i data-lucide="send"></i>
                             <span>Post 1 Video ke Semua Platform</span>
                         </button>
                     </div>
+
                 </div>
 
                 <div class="clay-platform-grid" id="platforms-grid">
@@ -506,7 +501,51 @@
             </div>
         </section>
 
+        <!-- Modal: Tambah Akun Platform (New Target Card) -->
+        <div id="modal-add-platform-target" class="clay-modal-backdrop" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 9999; backdrop-filter: blur(6px); align-items: center; justify-content: center;">
+            <div class="clay-card" style="width: 100%; max-width: 480px; margin: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+                <div class="clay-card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem;">
+                    <h3 class="clay-card-title" style="display: flex; align-items: center; gap: 8px; font-size: 1.15rem;">
+                        <i data-lucide="plus-circle" style="color: #6366f1;"></i>
+                        <span>Tambah Akun Platform Baru</span>
+                    </h3>
+                    <button class="btn-clay btn-clay-secondary btn-clay-sm" onclick="closeAddPlatformTargetModal()" style="padding: 4px 10px; font-size: 1.1rem; line-height: 1;">✕</button>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 16px;">
+                    <div class="clay-form-group">
+                        <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; display: block;">Platform Dasar</label>
+                        <select id="modal-target-platform" class="clay-select" style="width: 100%;" onchange="onModalPlatformChange(this.value)">
+                            <option value="youtube">YouTube</option>
+                            <option value="instagram">Instagram</option>
+                            <option value="tiktok">TikTok</option>
+                            <option value="twitter">Twitter / X</option>
+                            <option value="facebook">Facebook</option>
+                            <option value="upscrolled">Upscrolled</option>
+                            <option value="febspot">Febspot</option>
+                        </select>
+                    </div>
+                    <div class="clay-form-group">
+                        <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; display: block;">Nama Akun / Label Kartu</label>
+                        <input type="text" id="modal-target-name" class="clay-input" placeholder="Contoh: Youtube 2, Instagram Bisnis..." style="width: 100%;">
+                        <span class="help-text">Nama kartu target yang akan muncul di dashboard.</span>
+                    </div>
+                    <div class="clay-form-group">
+                        <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; display: block;">Watermark Teks (Khusus Akun Ini)</label>
+                        <input type="text" id="modal-target-watermark" class="clay-input" placeholder="Contoh: @YoutubeDua (opsional)" style="width: 100%;">
+                        <span class="help-text">Video untuk akun ini akan otomatis dirender dengan watermark teks ini.</span>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 1.5rem;">
+                    <button class="btn-clay btn-clay-secondary" onclick="closeAddPlatformTargetModal()">Batal</button>
+                    <button class="btn-clay btn-clay-primary" onclick="submitAddPlatformTarget()">
+                        <i data-lucide="check"></i> Simpan Kartu
+                    </button>
+                </div>
+            </div>
+        </div>
+
     </main>
+
 
     <!-- Application JavaScript Logic -->
     <script src="/static/js/toast.js"></script>

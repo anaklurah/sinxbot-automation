@@ -705,3 +705,90 @@ def delete_account(account_id: int, db_path: str | Path | None = None) -> bool:
             conn.execute("UPDATE accounts SET is_active = 1 WHERE id = 1")
     return True
 
+
+# ---------------------------------------------------------------------------
+# Platform Targets (Multi-Account / Dynamic Cards) helpers
+# ---------------------------------------------------------------------------
+
+def list_platform_targets(db_path: str | Path | None = None) -> list[dict]:
+    """Return all platform targets (cards) ordered by id ASC."""
+    with _session(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id, target_key, platform, name, enabled, watermark_text, watermark_enabled, is_custom, created_at "
+            "FROM platform_targets ORDER BY id ASC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_platform_target(target_key: str, db_path: str | Path | None = None) -> dict | None:
+    """Return a single platform target by target_key."""
+    with _session(db_path) as conn:
+        row = conn.execute(
+            "SELECT id, target_key, platform, name, enabled, watermark_text, watermark_enabled, is_custom, created_at "
+            "FROM platform_targets WHERE target_key = ?",
+            (target_key,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def create_platform_target(
+    target_key: str,
+    platform: str,
+    name: str,
+    watermark_text: str = "",
+    watermark_enabled: int = 1,
+    is_custom: int = 1,
+    db_path: str | Path | None = None,
+) -> dict:
+    """Create a new dynamic platform target card."""
+    with _session(db_path) as conn:
+        cursor = conn.execute(
+            "INSERT INTO platform_targets (target_key, platform, name, enabled, watermark_text, watermark_enabled, is_custom) "
+            "VALUES (?, ?, ?, 1, ?, ?, ?)",
+            (target_key.strip(), platform.strip(), name.strip(), watermark_text.strip(), int(watermark_enabled), int(is_custom)),
+        )
+        return {
+            "id": cursor.lastrowid,
+            "target_key": target_key.strip(),
+            "platform": platform.strip(),
+            "name": name.strip(),
+            "enabled": 1,
+            "watermark_text": watermark_text.strip(),
+            "watermark_enabled": int(watermark_enabled),
+            "is_custom": int(is_custom),
+        }
+
+
+def update_platform_target(
+    target_key: str,
+    db_path: str | Path | None = None,
+    **fields,
+) -> bool:
+    """Update fields on a platform target (e.g. watermark_text, enabled, watermark_enabled, name)."""
+    allowed = {"enabled", "watermark_text", "watermark_enabled", "name"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return False
+    set_clauses = ", ".join(f"{k} = ?" for k in updates.keys())
+    values = list(updates.values()) + [target_key]
+    with _session(db_path) as conn:
+        cursor = conn.execute(
+            f"UPDATE platform_targets SET {set_clauses} WHERE target_key = ?",
+            values,
+        )
+        return cursor.rowcount > 0
+
+
+def delete_platform_target(target_key: str, db_path: str | Path | None = None) -> bool:
+    """Delete a custom platform target (cannot delete default non-custom targets)."""
+    with _session(db_path) as conn:
+        row = conn.execute(
+            "SELECT is_custom FROM platform_targets WHERE target_key = ?",
+            (target_key,),
+        ).fetchone()
+        if not row or row["is_custom"] == 0:
+            return False
+        conn.execute("DELETE FROM platform_targets WHERE target_key = ?", (target_key,))
+        return True
+
+

@@ -53,13 +53,14 @@ class BasePublisher(ABC):
     PLATFORM_NAME: str = ''
     AUTH_METHOD: str = 'storage_state'  # 'persistent' | 'storage_state'
 
-    def __init__(self, account_id: int = 1) -> None:
+    def __init__(self, account_id: int = 1, target_key: str | None = None) -> None:
         if not self.PLATFORM_NAME:
             raise ValueError(
                 f'{self.__class__.__name__} must define a non-empty PLATFORM_NAME'
             )
         self._cfg = get_config()
-        self._log = get_logger(f'osap.publisher.{self.PLATFORM_NAME}')
+        self.target_key = target_key or self.PLATFORM_NAME
+        self._log = get_logger(f'osap.publisher.{self.target_key}')
         self.account_id = account_id
 
     def _get_profiles_dir(self) -> Path:
@@ -69,6 +70,7 @@ class BasePublisher(ABC):
             p_dir.mkdir(parents=True, exist_ok=True)
             return p_dir
         return base_dir
+
 
     # ------------------------------------------------------------------ #
     # Abstract interface
@@ -116,8 +118,9 @@ class BasePublisher(ABC):
         Returns:
             ``True`` on success, ``False`` if the upload timed out or raised.
         """
+        t_name = getattr(self, "target_key", None) or self.PLATFORM_NAME
         self._log.info(
-            '[%s] Starting upload: %r (title=%r)', self.PLATFORM_NAME, video_path, title
+            '[%s] Starting upload: %r (title=%r)', t_name, video_path, title
         )
         try:
             result = await asyncio.wait_for(
@@ -125,17 +128,18 @@ class BasePublisher(ABC):
                 timeout=_UPLOAD_TIMEOUT_S,
             )
             if result:
-                self._log.info('[%s] Upload completed successfully.', self.PLATFORM_NAME)
+                self._log.info('[%s] Upload completed successfully.', t_name)
             else:
-                self._log.warning('[%s] Upload returned False.', self.PLATFORM_NAME)
+                self._log.warning('[%s] Upload returned False.', t_name)
             return bool(result)
         except asyncio.TimeoutError:
             self._log.error(
-                '[%s] Upload timed out after %ds.', self.PLATFORM_NAME, _UPLOAD_TIMEOUT_S
+                '[%s] Upload timed out after %ds.', t_name, _UPLOAD_TIMEOUT_S
             )
             return False
         except Exception as exc:  # noqa: BLE001
-            self._log.exception('[%s] Upload raised an unexpected error: %s', self.PLATFORM_NAME, exc)
+            self._log.exception('[%s] Upload raised an unexpected error: %s', t_name, exc)
+
             return False
 
     # ------------------------------------------------------------------ #
@@ -172,11 +176,13 @@ class BasePublisher(ABC):
         )
 
         profiles_dir = self._get_profiles_dir()
+        profile_key = getattr(self, "target_key", None) or self.PLATFORM_NAME
+
         if self.AUTH_METHOD == 'persistent':
-            profile_dir = profiles_dir / self.PLATFORM_NAME
+            profile_dir = profiles_dir / profile_key
             profile_dir.mkdir(parents=True, exist_ok=True)
             self._log.debug(
-                '[%s] Launching persistent context from %s', self.PLATFORM_NAME, profile_dir
+                '[%s] Launching persistent context from %s', profile_key, profile_dir
             )
             context: BrowserContext = await playwright.chromium.launch_persistent_context(
                 user_data_dir=str(profile_dir),
@@ -188,9 +194,21 @@ class BasePublisher(ABC):
         # --- storage_state path ---
         browser: Browser = await playwright.chromium.launch(**launch_opts)
 
-        storage_state_path = profiles_dir / f'{self.PLATFORM_NAME}_storage.json'
-        json_cookies_path = profiles_dir / f'{self.PLATFORM_NAME}_cookies.json'
-        netscape_cookies_path = profiles_dir / f'{self.PLATFORM_NAME}_cookies.txt'
+        storage_state_path = profiles_dir / f'{profile_key}_storage.json'
+        json_cookies_path = profiles_dir / f'{profile_key}_cookies.json'
+        netscape_cookies_path = profiles_dir / f'{profile_key}_cookies.txt'
+
+        # Fallback to base platform auth file if target-specific file not yet created
+        if not (storage_state_path.exists() or json_cookies_path.exists() or netscape_cookies_path.exists()):
+            base_storage = profiles_dir / f'{self.PLATFORM_NAME}_storage.json'
+            base_json = profiles_dir / f'{self.PLATFORM_NAME}_cookies.json'
+            base_txt = profiles_dir / f'{self.PLATFORM_NAME}_cookies.txt'
+            if base_storage.exists():
+                storage_state_path = base_storage
+            elif base_json.exists():
+                json_cookies_path = base_json
+            elif base_txt.exists():
+                netscape_cookies_path = base_txt
 
         context_kwargs = dict(ctx_opts)
 
@@ -199,12 +217,12 @@ class BasePublisher(ABC):
         if storage_state_path.exists():
             try:
                 self._log.debug(
-                    '[%s] Attempting to load native storage state from %s', self.PLATFORM_NAME, storage_state_path
+                    '[%s] Attempting to load native storage state from %s', profile_key, storage_state_path
                 )
                 context_kwargs['storage_state'] = str(storage_state_path)
                 context = await browser.new_context(**context_kwargs)
             except Exception as err:
-                self._log.warning('[%s] Native storage_state failed (%s), falling back to cookie_loader', self.PLATFORM_NAME, err)
+                self._log.warning('[%s] Native storage_state failed (%s), falling back to cookie_loader', profile_key, err)
                 context = None
                 context_kwargs.pop('storage_state', None)
 
@@ -223,14 +241,15 @@ class BasePublisher(ABC):
                 cookies = load_cookies(target_cookie_file)
                 if cookies:
                     await context.add_cookies(cookies)
-                    self._log.info('[%s] Injected %d normalized cookies from %s', self.PLATFORM_NAME, len(cookies), target_cookie_file.name)
+                    self._log.info('[%s] Injected %d normalized cookies from %s', profile_key, len(cookies), target_cookie_file.name)
                 else:
-                    self._log.warning('[%s] No valid cookies parsed from %s', self.PLATFORM_NAME, target_cookie_file)
+                    self._log.warning('[%s] No valid cookies parsed from %s', profile_key, target_cookie_file)
             else:
                 self._log.warning(
                     '[%s] No auth file found in %s — launching unauthenticated context.',
-                    self.PLATFORM_NAME, profiles_dir,
+                    profile_key, profiles_dir,
                 )
+
 
         await apply_stealth(context)
         return context

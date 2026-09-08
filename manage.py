@@ -222,7 +222,24 @@ def cmd_setup_auth(args):
     from osap.config import get_config
 
     cfg = get_config()
-    platform = args.platform.lower()
+    target_key = getattr(args, "target_key", None) or platform
+    base_platform = getattr(args, "base_platform", None)
+    if not base_platform:
+        try:
+            from osap.db.queue import get_platform_target
+            tgt = get_platform_target(target_key, cfg.DB_PATH)
+            if tgt:
+                base_platform = tgt["platform"]
+        except Exception:
+            pass
+
+    if not base_platform:
+        for bp in ("youtube", "facebook", "instagram", "twitter_nsfw", "twitter", "tiktok", "upscrolled", "febspot"):
+            if target_key.startswith(bp):
+                base_platform = bp
+                break
+        if not base_platform:
+            base_platform = target_key
 
     account_id = getattr(args, "account_id", 1) or 1
     profiles_dir = cfg.PROFILES_DIR if account_id == 1 else (cfg.PROFILES_DIR / f"account_{account_id}")
@@ -253,12 +270,12 @@ def cmd_setup_auth(args):
             launch_kwargs['proxy'] = {'server': proxy_url}
 
         async with async_playwright() as p:
-            if platform in PERSISTENT_PLATFORMS:
-                profile_dir = profiles_dir / platform
+            if base_platform in PERSISTENT_PLATFORMS:
+                profile_dir = profiles_dir / target_key
                 profile_dir.mkdir(parents=True, exist_ok=True)
-                url = PERSISTENT_PLATFORMS[platform]
+                url = PERSISTENT_PLATFORMS[base_platform]
                 console.print(
-                    f"[cyan]Opening persistent browser for [bold]{platform}[/bold] (Account #{account_id})[/cyan]\n"
+                    f"[cyan]Opening persistent browser for [bold]{target_key}[/bold] ({base_platform})[/cyan]\n"
                     f"Profile directory: [dim]{profile_dir}[/dim]\n"
                     f"Navigate to [link]{url}[/link] and log in.\n"
                     f"[yellow]Close the browser window when done.[/yellow]"
@@ -275,18 +292,18 @@ def cmd_setup_auth(args):
                 except Exception:
                     pass
                 try:
-                    storage_path = profiles_dir / f"{platform}_storage.json"
+                    storage_path = profiles_dir / f"{target_key}_storage.json"
                     await context.storage_state(path=str(storage_path))
                     console.print(f"[green]✓ Session also saved to {storage_path}[/green]")
                 except Exception:
                     pass
                 await context.close()
 
-            elif platform in COOKIE_PLATFORMS:
-                url = COOKIE_PLATFORMS[platform]
-                storage_path = profiles_dir / f"{platform}_storage.json"
+            elif base_platform in COOKIE_PLATFORMS:
+                url = COOKIE_PLATFORMS[base_platform]
+                storage_path = profiles_dir / f"{target_key}_storage.json"
                 console.print(
-                    f"[cyan]Opening browser for [bold]{platform}[/bold] cookie capture (Account #{account_id})[/cyan]\n"
+                    f"[cyan]Opening browser for [bold]{target_key}[/bold] cookie capture ({base_platform})[/cyan]\n"
                     f"Log in at: [link]{url}[/link]\n"
                     f"[yellow]After login, close the browser and session will be saved automatically.[/yellow]\n"
                     f"Storage state will be saved to: [dim]{storage_path}[/dim]"
@@ -307,9 +324,10 @@ def cmd_setup_auth(args):
                 await browser.close()
                 console.print(f"[green]✓ Session saved to {storage_path}[/green]")
             else:
-                console.print(f"[red]Unknown platform:[/red] {platform}")
+                console.print(f"[red]Unknown platform:[/red] {base_platform}")
                 console.print(f"Available: {', '.join(list(PERSISTENT_PLATFORMS) + list(COOKIE_PLATFORMS))}")
                 sys.exit(1)
+
 
     asyncio.run(_open_browser())
 

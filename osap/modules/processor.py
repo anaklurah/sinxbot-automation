@@ -84,13 +84,19 @@ class VideoProcessor:
         return True
 
     # ------------------------------------------------------------------ #
-    def _render_video(self, video: dict) -> str | None:
+    def _render_video(
+        self,
+        video: dict,
+        watermark_text: str | None = None,
+        watermark_enabled: bool | None = None,
+        output_suffix: str = "",
+    ) -> str | None:
         """Apply the full FFmpeg filter graph and produce the output file.
 
         Filter graph
         ────────────
         Video chain:
-          scale → crop → setpts → eq → noise
+          scale → crop → setpts → eq → noise → drawtext (watermark)
 
         Audio chain:
           aresample → atempo
@@ -99,6 +105,12 @@ class VideoProcessor:
         ----------
         video:
             DB row dict; must contain ``raw_path`` and ``video_id``.
+        watermark_text:
+            Optional custom watermark text. If omitted, falls back to config.yaml.
+        watermark_enabled:
+            Optional boolean to force enable/disable watermark.
+        output_suffix:
+            Optional filename suffix for target-specific rendered files (e.g. "_wm_yt2").
 
         Returns
         -------
@@ -125,7 +137,8 @@ class VideoProcessor:
 
         # ── Output path ────────────────────────────────────────────────── #
         cfg.rendered_dir.mkdir(parents=True, exist_ok=True)
-        out_path = cfg.rendered_dir / f"{video_uid}_rendered.mp4"
+        suffix = f"_{output_suffix}" if output_suffix and not output_suffix.startswith("_") else output_suffix
+        out_path = cfg.rendered_dir / f"{video_uid}_rendered{suffix}.mp4"
 
         # ── Config values ──────────────────────────────────────────────── #
         zoom: float = float(cfg.FFMPEG_ZOOM)          # e.g. 1.10
@@ -133,6 +146,15 @@ class VideoProcessor:
         noise: int = int(cfg.FFMPEG_NOISE)            # e.g. 3
         contrast: float = float(cfg.FFMPEG_CONTRAST)  # e.g. 1.05
         saturation: float = float(cfg.FFMPEG_SATURATION)  # e.g. 1.08
+
+        # Determine effective watermark
+        is_wm_active = (
+            watermark_enabled if watermark_enabled is not None else getattr(cfg, "WATERMARK_ENABLED", True)
+        )
+        active_wm_text = (
+            watermark_text if (watermark_text is not None and watermark_text.strip() != "")
+            else str(getattr(cfg, "WATERMARK_TEXT", ""))
+        )
 
         # ── Build filter graph ─────────────────────────────────────────── #
         try:
@@ -184,14 +206,14 @@ class VideoProcessor:
             )
 
             # 6. Watermark text overlay (middle-left position).
-            if getattr(cfg, "WATERMARK_ENABLED", True) and getattr(cfg, "WATERMARK_TEXT", ""):
+            if is_wm_active and active_wm_text:
                 font_rel = getattr(cfg, "WATERMARK_FONT", "font/KOMIKAX_.ttf")
                 font_file = Path(font_rel)
                 if not font_file.is_absolute():
                     font_file = (Path(__file__).resolve().parents[2] / font_file).resolve()
 
                 drawtext_kwargs: dict = {
-                    "text": str(cfg.WATERMARK_TEXT),
+                    "text": str(active_wm_text),
                     "fontsize": int(getattr(cfg, "WATERMARK_FONT_SIZE", 32)),
                     "fontcolor": f"{getattr(cfg, 'WATERMARK_COLOR', 'white')}@{getattr(cfg, 'WATERMARK_OPACITY', 0.85)}",
                     "shadowcolor": "black@0.6",
@@ -212,11 +234,12 @@ class VideoProcessor:
                 )
                 logger.info(
                     "Applied watermark text=%r with font=%s at x=%s, y=%s",
-                    cfg.WATERMARK_TEXT,
+                    active_wm_text,
                     font_file.name if font_file.exists() else "default",
                     drawtext_kwargs["x"],
                     drawtext_kwargs["y"],
                 )
+
 
             # ── Audio chain ─────────────────────────────────────────── #
             audio_stream = input_node.audio

@@ -46,6 +46,25 @@ CREATE TABLE IF NOT EXISTS accounts (
 );
 
 -- -----------------------------------------------------------------------
+-- platform_targets
+-- -----------------------------------------------------------------------
+-- Dynamic publishing targets (cards) such as Youtube, Youtube 2, Instagram 2
+-- Each target has its own independent watermark, auth/session state, and toggle.
+-- -----------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS platform_targets (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_key          TEXT    NOT NULL UNIQUE,
+    platform            TEXT    NOT NULL,
+    name                TEXT    NOT NULL,
+    enabled             INTEGER DEFAULT 1,
+    watermark_text      TEXT    DEFAULT '',
+    watermark_enabled   INTEGER DEFAULT 1,
+    is_custom           INTEGER DEFAULT 0,
+    created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- -----------------------------------------------------------------------
 -- videos
 -- -----------------------------------------------------------------------
 -- Central table tracking every source video through its processing pipeline.
@@ -298,6 +317,25 @@ def init_db(db_path: str | Path) -> None:
         if "account_id" not in pu_cols:
             cursor.execute("ALTER TABLE platform_uploads ADD COLUMN account_id INTEGER DEFAULT 1")
 
+        # Seed default platform_targets if table is empty
+        cursor.execute("SELECT COUNT(*) FROM platform_targets")
+        if cursor.fetchone()[0] == 0:
+            default_targets = [
+                ("youtube", "youtube", "Youtube", 1, "", 1, 0),
+                ("facebook", "facebook", "Facebook", 1, "", 1, 0),
+                ("instagram", "instagram", "Instagram", 1, "", 1, 0),
+                ("twitter", "twitter", "Twitter", 1, "", 1, 0),
+                ("twitter_nsfw", "twitter_nsfw", "Twitter Nsfw", 0, "", 1, 0),
+                ("tiktok", "tiktok", "Tiktok", 1, "", 1, 0),
+                ("upscrolled", "upscrolled", "Upscrolled", 0, "", 1, 0),
+                ("febspot", "febspot", "Febspot", 0, "", 1, 0),
+            ]
+            cursor.executemany(
+                "INSERT INTO platform_targets (target_key, platform, name, enabled, watermark_text, watermark_enabled, is_custom) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                default_targets
+            )
+
         conn.commit()
     finally:
         conn.close()
+

@@ -7,6 +7,7 @@ import logging
 import json
 import multiprocessing
 import os
+import re
 import sys
 import yaml
 from pathlib import Path
@@ -197,8 +198,23 @@ class IngestRequest(BaseModel):
     urls: str = Field(..., description="Newline or comma-separated list of URLs")
     account_id: Optional[int] = None
 
+
+
 class CreateAccountRequest(BaseModel):
     name: str
+
+class CreatePlatformTargetRequest(BaseModel):
+    platform: str
+    name: str
+    watermark_text: Optional[str] = ""
+    watermark_enabled: Optional[bool] = True
+
+class UpdatePlatformTargetRequest(BaseModel):
+    name: Optional[str] = None
+    enabled: Optional[bool] = None
+    watermark_text: Optional[str] = None
+    watermark_enabled: Optional[bool] = None
+
 
 class ConfigUpdateRequest(BaseModel):
     schedule_slots: Optional[List[str]] = None
@@ -560,53 +576,123 @@ async def delete_account_api(account_id: int):
 
 
 @app.get("/api/platforms")
-async def list_platform_states(account_id: Optional[int] = Query(None)):
-    """List 8 supported platforms, enabled status, and auth profile existence for selected account."""
+async def list_platform_states():
+    """List all dynamic platform target cards, enabled status, watermark settings, and auth status."""
     cfg = get_config(reload=True)
-    from osap.db.queue import get_active_account
-    acc_id = account_id
-    if acc_id is None:
-        try:
-            active_acc = get_active_account(cfg.DB_PATH)
-            acc_id = active_acc["id"]
-        except Exception:
-            acc_id = 1
+    from osap.db.queue import list_platform_targets
+    targets = list_platform_targets(cfg.DB_PATH)
 
-    profiles_dir = cfg.PROFILES_DIR if acc_id == 1 else (cfg.PROFILES_DIR / f"account_{acc_id}")
-
-    enabled_set = set(cfg.enabled_platforms)
+    profiles_dir = Path(cfg.PROFILES_DIR)
+    persistent_platforms = {"youtube", "febspot"}
     result = []
-    persistent_platforms = ["febspot"]
 
-    for p in PLATFORMS:
-        enabled = (p in enabled_set)
-        
+    for t in targets:
+        t_key = t["target_key"]
+        p_base = t["platform"]
+        enabled = bool(t["enabled"])
+
         # Check profile auth file/folder
         auth_status = False
-        if p in persistent_platforms:
-            prof_dir = profiles_dir / p
-            auth_status = prof_dir.exists() and any(prof_dir.iterdir()) if prof_dir.exists() else False
+        storage_json = profiles_dir / f"{t_key}_storage.json"
+        cookies_txt = profiles_dir / f"{t_key}_cookies.txt"
+        cookies_json = profiles_dir / f"{t_key}_cookies.json"
+        prof_dir = profiles_dir / t_key
+
+        if storage_json.exists() or cookies_txt.exists() or cookies_json.exists() or (prof_dir.exists() and any(prof_dir.iterdir())):
+            auth_status = True
+        elif p_base in persistent_platforms:
+            base_dir = profiles_dir / p_base
+            base_storage = profiles_dir / f"{p_base}_storage.json"
+            auth_status = (base_dir.exists() and any(base_dir.iterdir())) or base_storage.exists()
         else:
-            storage_json = profiles_dir / f"{p}_storage.json"
-            cookies_txt = profiles_dir / f"{p}_cookies.txt"
-            cookies_json = profiles_dir / f"{p}_cookies.json"
-            prof_dir = profiles_dir / p
-            auth_status = (
-                storage_json.exists()
-                or cookies_txt.exists()
-                or cookies_json.exists()
-                or (prof_dir.exists() and any(prof_dir.iterdir()))
-            )
+            base_storage = profiles_dir / f"{p_base}_storage.json"
+            base_cookies = profiles_dir / f"{p_base}_cookies.txt"
+            auth_status = base_storage.exists() or base_cookies.exists()
 
         result.append({
-            "id": p,
-            "name": p.replace("_", " ").title(),
+            "id": t_key,
+            "target_key": t_key,
+            "platform": p_base,
+            "name": t["name"],
             "enabled": enabled,
+            "watermark_text": t.get("watermark_text", ""),
+            "watermark_enabled": bool(t.get("watermark_enabled", 1)),
+            "is_custom": bool(t.get("is_custom", 0)),
             "auth_status": "configured" if auth_status else "missing",
-            "auth_type": "Persistent Profile" if p in persistent_platforms else "Cookies / Session State"
+            "auth_type": "Persistent Profile" if p_base in persistent_platforms else "Cookies / Session State"
         })
 
-    return {"platforms": result, "account_id": acc_id}
+    return {"platforms": result}
+
+
+@app.post("/api/platform-targets")
+async def create_platform_target_endpoint(req: CreatePlatformTargetRequest):
+    """Add a new target card (e.g. 'Youtube 2', 'Instagram 2')."""
+    cfg = get_config()
+    from osap.db.queue import create_platform_target, list_platform_targets
+    platform = req.platform.lower().strip()
+    if platform not in PLATFORMS:
+        raise HTTPException(status_code=400, detail=f"Invalid base platform: {platform}")
+
+    existing = list_platform_targets(cfg.DB_PATH)
+    existing_keys = {t["target_key"] for t in existing}
+
+    # Generate unique slug target_key
+    slug = re.sub(r'[^a-zA-Z0-9_]', '_', req.name.strip().lower())
+    slug = re.sub(r'_+', '_', slug).strip('_')
+    if not slug:
+        slug = f"{platform}_target"
+
+    candidate = slug
+    idx = 2
+    while candidate in existing_keys:
+        candidate = f"{slug}_{idx}"
+        idx += 1
+
+    target = create_platform_target(
+        target_key=candidate,
+        platform=platform,
+        name=req.name.strip(),
+        watermark_text=req.watermark_text or "",
+        watermark_enabled=1 if req.watermark_enabled else 0,
+        is_custom=1,
+        db_path=cfg.DB_PATH
+    )
+    return {"success": True, "target": target, "message": f"Kartu target '{req.name}' berhasil ditambahkan!"}
+
+
+@app.patch("/api/platform-targets/{target_key}")
+async def update_platform_target_endpoint(target_key: str, req: UpdatePlatformTargetRequest):
+    """Update watermark, toggle status, or name for a target card."""
+    cfg = get_config()
+    from osap.db.queue import update_platform_target, get_platform_target
+    fields = {}
+    if req.name is not None:
+        fields["name"] = req.name
+    if req.enabled is not None:
+        fields["enabled"] = 1 if req.enabled else 0
+    if req.watermark_text is not None:
+        fields["watermark_text"] = req.watermark_text
+    if req.watermark_enabled is not None:
+        fields["watermark_enabled"] = 1 if req.watermark_enabled else 0
+
+    success = update_platform_target(target_key, db_path=cfg.DB_PATH, **fields)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Target '{target_key}' not found or no changes made")
+
+    target = get_platform_target(target_key, db_path=cfg.DB_PATH)
+    return {"success": True, "target": target}
+
+
+@app.delete("/api/platform-targets/{target_key}")
+async def delete_platform_target_endpoint(target_key: str):
+    """Delete a custom platform target card."""
+    cfg = get_config()
+    from osap.db.queue import delete_platform_target
+    success = delete_platform_target(target_key, db_path=cfg.DB_PATH)
+    if not success:
+        raise HTTPException(status_code=400, detail=f"Kartu bawaan '{target_key}' tidak dapat dihapus, hanya kartu custom yang dapat dihapus.")
+    return {"success": True, "message": f"Kartu target '{target_key}' berhasil dihapus."}
 
 
 @app.post("/api/pipeline/start")
@@ -638,56 +724,44 @@ async def reset_stuck_jobs_api():
     return {"success": True, "message": "Stuck jobs reset"}
 
 
-def _run_setup_auth_target(platform_name: str, account_id: int):
+def _run_setup_auth_target(target_key: str):
     """Top-level process target for running setup-auth flow."""
     from manage import cmd_setup_auth
     class SetupArgs:
-        def __init__(self, p_name, acc_id):
-            self.platform = p_name
-            self.account_id = acc_id
+        def __init__(self, t_key):
+            self.platform = t_key
+            self.target_key = t_key
+            self.account_id = 1
 
-    cmd_setup_auth(SetupArgs(platform_name, account_id))
+    cmd_setup_auth(SetupArgs(target_key))
 
 
-@app.post("/api/setup-auth/{platform}")
-async def setup_platform_auth(platform: str, account_id: Optional[int] = Query(None)):
-    """Run non-headless interactive login browser in a separate process."""
-    if platform not in PLATFORMS:
-        raise HTTPException(status_code=400, detail=f"Invalid platform: {platform}")
-
+@app.post("/api/setup-auth/{target_key}")
+async def setup_platform_auth(target_key: str):
+    """Run non-headless interactive login browser for a specific target card."""
     cfg = get_config()
-    from osap.db.queue import get_active_account
-    acc_id = account_id
-    if acc_id is None:
-        acc = get_active_account(cfg.DB_PATH)
-        acc_id = acc["id"]
+    from osap.db.queue import get_platform_target
+    target = get_platform_target(target_key, cfg.DB_PATH)
+    target_name = target["name"] if target else target_key
 
     p = multiprocessing.Process(
         target=_run_setup_auth_target,
-        args=(platform, acc_id),
-        name=f"setup_auth_{platform}_{acc_id}"
+        args=(target_key,),
+        name=f"setup_auth_{target_key}"
     )
     p.start()
 
     return {
         "success": True,
-        "message": f"Jendela login browser untuk {platform} (Akun #{acc_id}) telah dibuka. Silakan login (bisa isi captcha/2FA), sesi otomatis tersimpan saat jendela ditutup!"
+        "message": f"Jendela login browser untuk '{target_name}' telah dibuka. Silakan login (bisa isi captcha/2FA), sesi otomatis tersimpan saat jendela ditutup!"
     }
 
 
-@app.post("/api/upload-cookies/{platform}")
-async def upload_platform_cookies(platform: str, file: UploadFile = File(...), account_id: Optional[int] = Query(None)):
-    """Upload cookie file (.txt or .json) or storage_state for a platform."""
-    if platform not in PLATFORMS:
-        raise HTTPException(status_code=400, detail=f"Invalid platform: {platform}")
-
+@app.post("/api/upload-cookies/{target_key}")
+async def upload_platform_cookies(target_key: str, file: UploadFile = File(...)):
+    """Upload cookie file (.txt or .json) or storage_state for a specific target card."""
     cfg = get_config()
-    from osap.db.queue import get_active_account
-    acc_id = account_id
-    if acc_id is None:
-        acc_id = get_active_account(cfg.DB_PATH)["id"]
-
-    profiles_dir = cfg.PROFILES_DIR if acc_id == 1 else (cfg.PROFILES_DIR / f"account_{acc_id}")
+    profiles_dir = Path(cfg.PROFILES_DIR)
     profiles_dir.mkdir(parents=True, exist_ok=True)
 
     contents = await file.read()
@@ -699,9 +773,9 @@ async def upload_platform_cookies(platform: str, file: UploadFile = File(...), a
 
     # Determine filename format: storage_state.json vs cookies.txt
     if filename.endswith(".json") or stripped.startswith(b"[") or stripped.startswith(b"{"):
-        save_path = profiles_dir / f"{platform}_storage.json"
+        save_path = profiles_dir / f"{target_key}_storage.json"
     else:
-        save_path = profiles_dir / f"{platform}_cookies.txt"
+        save_path = profiles_dir / f"{target_key}_cookies.txt"
 
     with open(save_path, "wb") as f:
         f.write(contents)
@@ -710,20 +784,20 @@ async def upload_platform_cookies(platform: str, file: UploadFile = File(...), a
     from osap.modules.publisher.cookie_loader import load_cookies
     try:
         parsed = load_cookies(save_path)
-    except Exception as e:
+    except Exception:
         parsed = []
 
     count = len(parsed)
-    logger.info(f"Uploaded cookie file for platform {platform} (Account #{acc_id}): {save_path.name} ({count} cookies parsed)")
+    logger.info(f"Uploaded cookie file for target {target_key}: {save_path.name} ({count} cookies parsed)")
 
     if count > 0:
-        storage_path = profiles_dir / f"{platform}_storage.json"
+        storage_path = profiles_dir / f"{target_key}_storage.json"
         try:
             with open(storage_path, "w", encoding="utf-8") as sf:
                 json.dump({"cookies": parsed, "origins": []}, sf, indent=2)
             save_path = storage_path
         except Exception as e:
-            logger.warning(f"Could not write normalized storage state for {platform}: {e}")
+            logger.warning(f"Could not write normalized storage state for {target_key}: {e}")
 
     if count == 0:
         return {
@@ -731,7 +805,7 @@ async def upload_platform_cookies(platform: str, file: UploadFile = File(...), a
             "filename": file.filename,
             "saved_to": save_path.name,
             "cookies_count": 0,
-            "message": f"Cookie file saved to {save_path.name}, but 0 valid cookies were parsed. Verify file format."
+            "message": f"Cookie file disimpan ke {save_path.name}, namun 0 cookies terbaca. Pastikan format file benar."
         }
 
     return {
@@ -739,39 +813,34 @@ async def upload_platform_cookies(platform: str, file: UploadFile = File(...), a
         "filename": file.filename,
         "saved_to": save_path.name,
         "cookies_count": count,
-        "message": f"Successfully uploaded and normalized {count} cookies for {platform} (Account #{acc_id})!"
+        "message": f"Berhasil mengunggah {count} cookies untuk kartu target '{target_key}'!"
     }
 
 
-def _run_manual_publish_target(db_path: str, platform_name: str, account_id: int):
-    """Top-level process target for on-demand single-video publishing."""
+def _run_manual_publish_target(db_path: str, target_key: str):
+    """Top-level process target for on-demand single-target publishing."""
     import asyncio
     from osap.modules.on_demand import run_jit_video_pipeline
     try:
-        asyncio.run(run_jit_video_pipeline(target_platforms=[platform_name], account_id=account_id, db_path=db_path, auto_cleanup=True))
+        asyncio.run(run_jit_video_pipeline(target_platforms=[target_key], db_path=db_path, auto_cleanup=True))
     except (KeyboardInterrupt, SystemExit):
         pass
 
 
-def _run_publish_all_target(db_path: str, account_id: int):
-    """Top-level process target for distributing 1 video to ALL enabled platforms."""
+def _run_publish_all_target(db_path: str):
+    """Top-level process target for distributing 1 video to ALL enabled targets."""
     import asyncio
     from osap.modules.on_demand import run_jit_video_pipeline
     try:
-        asyncio.run(run_jit_video_pipeline(target_platforms=None, account_id=account_id, db_path=db_path, auto_cleanup=True))
+        asyncio.run(run_jit_video_pipeline(target_platforms=None, db_path=db_path, auto_cleanup=True))
     except (KeyboardInterrupt, SystemExit):
         pass
 
 
 @app.post("/api/pipeline/publish-all")
-async def trigger_publish_all(account_id: Optional[int] = Query(None)):
-    """Trigger JIT 1-video download, render with watermark & anti-hash, and publish to all platforms."""
+async def trigger_publish_all():
+    """Trigger JIT 1-video download, render with per-target watermark & anti-hash, and publish to all active targets."""
     cfg = get_config()
-    from osap.db.queue import get_active_account
-
-    acc_id = account_id
-    if acc_id is None:
-        acc_id = get_active_account(cfg.DB_PATH)["id"]
 
     # Check video availability
     with db_session(cfg.DB_PATH) as conn:
@@ -785,37 +854,25 @@ async def trigger_publish_all(account_id: Optional[int] = Query(None)):
 
     p = multiprocessing.Process(
         target=_run_publish_all_target,
-        args=(cfg.DB_PATH, acc_id),
-        name=f"publish_all_{acc_id}"
+        args=(cfg.DB_PATH,),
+        name="publish_all_targets"
     )
     p.start()
 
     return {
         "success": True,
-        "message": f"Memulai distribusi 1 video ke seluruh platform aktif untuk Akun #{acc_id} (Just-In-Time download & render)... Pantau log di bawah!"
+        "message": "Memulai distribusi 1 video ke seluruh kartu platform aktif (JIT download & render per-target watermark)... Pantau log di bawah!"
     }
 
 
-@app.post("/api/publish/{platform}")
-async def trigger_manual_publish(platform: str, account_id: Optional[int] = Query(None)):
-    """Trigger on-demand single-platform publish (JIT Download -> Render -> Caption -> Post)."""
-    if platform not in PLATFORMS:
-        raise HTTPException(status_code=400, detail=f"Invalid platform: {platform}")
-
+@app.post("/api/publish/{target_key}")
+async def trigger_manual_publish(target_key: str):
+    """Trigger on-demand single-target publish (JIT Download -> Render with Watermark -> Caption -> Post)."""
     cfg = get_config()
-    from osap.db.queue import get_active_account
+    from osap.db.queue import get_platform_target
 
-    acc_id = account_id
-    if acc_id is None:
-        acc_id = get_active_account(cfg.DB_PATH)["id"]
-
-    # Check if platform is enabled in config
-    enabled = set(cfg.enabled_platforms)
-    if platform not in enabled:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Platform '{platform}' is not enabled. Enable it in the Config tab first."
-        )
+    target = get_platform_target(target_key, cfg.DB_PATH)
+    target_name = target["name"] if target else target_key
 
     with db_session(cfg.DB_PATH) as conn:
         total_available = conn.execute("SELECT COUNT(*) FROM videos WHERE status IN ('pending', 'downloaded', 'rendered')").fetchone()[0]
@@ -828,18 +885,19 @@ async def trigger_manual_publish(platform: str, account_id: Optional[int] = Quer
 
     p = multiprocessing.Process(
         target=_run_manual_publish_target,
-        args=(cfg.DB_PATH, platform, acc_id),
-        name=f"manual_publish_{platform}_{acc_id}",
+        args=(cfg.DB_PATH, target_key),
+        name=f"manual_publish_{target_key}",
         daemon=True
     )
     p.start()
 
-    msg = f"On-Demand Post dimulai untuk {platform} (Akun #{acc_id}). Memproses JIT dan upload... Pantau prosesnya di Live Logs!"
+    msg = f"On-Demand Post dimulai untuk '{target_name}'. Memproses JIT dan upload... Pantau prosesnya di Live Logs!"
     logger.info(msg)
     return {
         "success": True,
         "message": msg,
     }
+
 
 
 def _parse_log_line(line: str) -> Optional[Dict[str, str]]:

@@ -70,47 +70,67 @@ async def run_jit_video_pipeline(
 
     registry = _load_publishers()
 
-    # Resolve target platforms
-    if target_platforms is None:
-        enabled = cfg.enabled_platforms
-        platforms_to_run = [p for p in enabled if p in registry]
-    else:
-        platforms_to_run = [p for p in target_platforms if p in registry]
+    from osap.db.queue import list_platform_targets
+    all_targets = list_platform_targets(db_path)
+    target_map = {t["target_key"]: t for t in all_targets}
 
-    if not platforms_to_run:
-        msg = "Tidak ada platform yang aktif / diaktifkan untuk publikasi video."
+    # Resolve target platforms / cards
+    if target_platforms is None:
+        targets_to_run = [
+            t for t in all_targets 
+            if t.get("enabled", 1) == 1 and t.get("platform") in registry
+        ]
+    else:
+        targets_to_run = []
+        for p in target_platforms:
+            if p in target_map:
+                tgt = target_map[p]
+                if tgt.get("platform") in registry:
+                    targets_to_run.append(tgt)
+            else:
+                matching = [t for t in all_targets if t.get("platform") == p and t.get("platform") in registry]
+                if matching:
+                    targets_to_run.extend(matching)
+                elif p in registry:
+                    targets_to_run.append({
+                        "target_key": p,
+                        "platform": p,
+                        "name": p.replace("_", " ").title(),
+                        "enabled": 1,
+                        "watermark_text": "",
+                        "watermark_enabled": 1,
+                    })
+
+    # Deduplicate targets while preserving order
+    seen_keys = set()
+    unique_targets = []
+    for t in targets_to_run:
+        if t["target_key"] not in seen_keys:
+            seen_keys.add(t["target_key"])
+            unique_targets.append(t)
+    targets_to_run = unique_targets
+
+    if not targets_to_run:
+        msg = "Tidak ada platform target yang aktif / diaktifkan untuk publikasi video."
         logger.warning(f"[JIT Pipeline] {msg}")
         return {"success": False, "message": msg, "results": {}}
 
+    target_display_names = [t.get("name") or t["target_key"] for t in targets_to_run]
     logger.info(
-        f"[JIT Pipeline] Starting distribution for Account #{account_id} "
-        f"across {len(platforms_to_run)} platform(s): {', '.join(platforms_to_run)}"
+        f"[JIT Pipeline] Starting distribution across {len(targets_to_run)} target(s): {', '.join(target_display_names)}"
     )
 
     # ─────────────────────────────────────────────────────────────
-    # Step 1: Claim or JIT-Process 1 Video
+    # Step 1: Claim or JIT-Download 1 Video from Gudang Konten
     # ─────────────────────────────────────────────────────────────
     video = None
 
-    # Priority 1: Already rendered video
+    # Priority 1: Already rendered or downloaded video
     video = claim_next("rendered", "uploading", db_path, account_id=account_id)
-
-    # Priority 2: Downloaded video waiting to be rendered
     if video is None:
-        video = claim_next("downloaded", "rendering", db_path, account_id=account_id)
-        if video is not None:
-            vid_id = video["id"]
-            logger.info(f"[JIT Pipeline] Video #{vid_id} is downloaded. Rendering with FFmpeg anti-hash filters & watermark...")
-            processor = VideoProcessor(db_path=db_path)
-            rendered_path = processor._render_video(video)
-            if not rendered_path:
-                logger.error(f"[JIT Pipeline] Rendering failed for video #{vid_id}")
-                update_video(vid_id, {"status": "failed"}, db_path=db_path)
-                return {"success": False, "message": f"Gagal render video #{vid_id}", "video_id": vid_id}
-            update_video(vid_id, {"status": "uploading", "rendered_path": rendered_path}, db_path=db_path)
-            video = get_video_by_id(vid_id, db_path=db_path)
+        video = claim_next("downloaded", "uploading", db_path, account_id=account_id)
 
-    # Priority 3: Pending video from Gudang Konten (JIT Download & Render)
+    # Priority 2: Pending video from Gudang Konten (JIT Download)
     if video is None:
         video = claim_next("pending", "downloading", db_path, account_id=account_id)
         if video is not None:
@@ -128,7 +148,7 @@ async def run_jit_video_pipeline(
             update_video(
                 vid_id,
                 {
-                    "status": "rendering",
+                    "status": "uploading",
                     "video_id": dl_res["video_id"],
                     "title": dl_res["title"],
                     "description": dl_res["description"],
@@ -140,29 +160,22 @@ async def run_jit_video_pipeline(
             )
             video = get_video_by_id(vid_id, db_path=db_path)
 
-            logger.info(f"[JIT Pipeline] JIT Rendering video #{vid_id} with FFmpeg anti-hash & watermark...")
-            processor = VideoProcessor(db_path=db_path)
-            rendered_path = processor._render_video(video)
-            if not rendered_path:
-                logger.error(f"[JIT Pipeline] Rendering failed for video #{vid_id}")
-                update_video(vid_id, {"status": "failed"}, db_path=db_path)
-                return {"success": False, "message": f"Gagal render video #{vid_id}", "video_id": vid_id}
-            update_video(vid_id, {"status": "uploading", "rendered_path": rendered_path}, db_path=db_path)
-            video = get_video_by_id(vid_id, db_path=db_path)
-
     if video is None:
         msg = "Gudang Konten kosong. Tidak ada video pending/siap unggah."
         logger.warning(f"[JIT Pipeline] {msg}")
         return {"success": False, "message": msg, "results": {}}
 
     vid_id = video["id"]
-    rendered_path = video.get("rendered_path")
     raw_path = video.get("raw_path")
     meta_path = video.get("meta_path")
 
-    if not rendered_path or not Path(rendered_path).exists():
-        msg = f"File hasil render tidak ditemukan untuk video #{vid_id}"
-        logger.error(f"[JIT Pipeline] {msg}: {rendered_path}")
+    # If raw_path missing but rendered_path exists, use rendered_path as base
+    if (not raw_path or not Path(raw_path).exists()) and video.get("rendered_path"):
+        raw_path = video.get("rendered_path")
+
+    if not raw_path or not Path(raw_path).exists():
+        msg = f"File video mentah tidak ditemukan untuk video #{vid_id}"
+        logger.error(f"[JIT Pipeline] {msg}: {raw_path}")
         update_video(vid_id, {"status": "failed"}, db_path=db_path)
         return {"success": False, "message": msg, "video_id": vid_id}
 
@@ -211,53 +224,81 @@ async def run_jit_video_pipeline(
             logger.warning(f"[JIT Pipeline] DeepSeek AI fallback: {e}")
 
     # ─────────────────────────────────────────────────────────────
-    # Step 3: Distribute this 1 video across target platforms
+    # Step 3: Render and Distribute with Per-Target Watermark
     # ─────────────────────────────────────────────────────────────
-    init_platform_rows(vid_id, platforms_to_run, db_path=db_path)
+    target_keys_to_run = [t["target_key"] for t in targets_to_run]
+    init_platform_rows(vid_id, target_keys_to_run, db_path=db_path)
 
+    processor = VideoProcessor(db_path=db_path)
+    rendered_cache: Dict[tuple, str] = {}  # (watermark_text, watermark_enabled) -> file_path
     platform_results: Dict[str, bool] = {}
     any_success = False
 
-    for i, platform in enumerate(platforms_to_run):
+    for i, target in enumerate(targets_to_run):
+        target_key = target["target_key"]
+        base_platform = target["platform"]
+        target_name = target.get("name") or target_key.replace("_", " ").title()
+        wm_text = target.get("watermark_text") or ""
+        wm_enabled = bool(target.get("watermark_enabled", 1))
+
         if i > 0:
             import random
             base_delay = cfg.DELAY_BETWEEN_PLATFORMS if cfg.DELAY_BETWEEN_PLATFORMS > 0 else 25
             jitter = random.randint(-5, 12)
             smart_delay = max(15, base_delay + jitter)
-            logger.info(f"[JIT Pipeline] 🛡️ Smart Anti-Ban: Menunggu jeda natural {smart_delay}s sebelum posting ke {platform.title()}...")
+            logger.info(f"[JIT Pipeline] 🛡️ Smart Anti-Ban: Menunggu jeda natural {smart_delay}s sebelum posting ke {target_name}...")
             await asyncio.sleep(smart_delay)
 
-        mark_platform_uploading(vid_id, platform, db_path=db_path)
-        publisher_cls = registry[platform]
+        mark_platform_uploading(vid_id, target_key, db_path=db_path)
+        publisher_cls = registry[base_platform]
 
-        logger.info(f"[JIT Pipeline] 🚀 Publishing video #{vid_id} to {platform.title()} (Account #{account_id})...")
+        # Render custom video for this target if watermark is unique
+        cache_key = (wm_text, wm_enabled)
+        if cache_key not in rendered_cache:
+            logger.info(f"[JIT Pipeline] Rendering video #{vid_id} with watermark: '{wm_text}' (active={wm_enabled}) for {target_name}...")
+            rendered_file = processor._render_video(
+                video,
+                watermark_text=wm_text,
+                watermark_enabled=wm_enabled,
+                output_suffix=f"_{target_key}"
+            )
+            if not rendered_file:
+                logger.error(f"[JIT Pipeline] Failed to render video for target {target_name}")
+                mark_platform_failed(vid_id, target_key, "Render failed", db_path=db_path)
+                platform_results[target_key] = False
+                continue
+            rendered_cache[cache_key] = rendered_file
+
+        target_rendered_path = rendered_cache[cache_key]
+
+        logger.info(f"[JIT Pipeline] 🚀 Publishing video #{vid_id} to {target_name} ({base_platform})...")
         try:
-            publisher = publisher_cls(account_id=account_id)
+            publisher = publisher_cls(account_id=account_id, target_key=target_key)
             upload_title = captions.get("title") or title
             upload_desc = captions.get("description") or description
             upload_tags = captions.get("hashtags") or []
 
             pub_success = await publisher.run_upload(
-                video_path=rendered_path,
+                video_path=target_rendered_path,
                 title=upload_title,
                 description=upload_desc,
                 tags=upload_tags,
             )
 
             if pub_success:
-                mark_platform_done(vid_id, platform, db_path=db_path)
-                platform_results[platform] = True
+                mark_platform_done(vid_id, target_key, db_path=db_path)
+                platform_results[target_key] = True
                 any_success = True
-                logger.info(f"[JIT Pipeline] ✓ Berhasil publikasi ke {platform.title()}!")
+                logger.info(f"[JIT Pipeline] ✓ Berhasil publikasi ke {target_name}!")
             else:
-                mark_platform_failed(vid_id, platform, "Upload returned False", db_path=db_path)
-                platform_results[platform] = False
-                logger.warning(f"[JIT Pipeline] ✗ Gagal publikasi ke {platform.title()}")
+                mark_platform_failed(vid_id, target_key, "Upload returned False", db_path=db_path)
+                platform_results[target_key] = False
+                logger.warning(f"[JIT Pipeline] ✗ Gagal publikasi ke {target_name}")
 
         except Exception as exc:
-            logger.exception(f"[JIT Pipeline] Error uploading to {platform}: {exc}")
-            mark_platform_failed(vid_id, platform, str(exc), db_path=db_path)
-            platform_results[platform] = False
+            logger.exception(f"[JIT Pipeline] Error uploading to {target_name}: {exc}")
+            mark_platform_failed(vid_id, target_key, str(exc), db_path=db_path)
+            platform_results[target_key] = False
 
     # ─────────────────────────────────────────────────────────────
     # Step 4: Final Status & Auto-Cleanup of Local Storage
@@ -272,7 +313,11 @@ async def run_jit_video_pipeline(
     # Auto-cleanup files to keep internal disk space minimal
     if auto_cleanup:
         cleaned_files = []
-        for file_path_str in (raw_path, rendered_path, meta_path):
+        all_cleanup_paths = [raw_path, meta_path] + list(rendered_cache.values())
+        if video.get("rendered_path"):
+            all_cleanup_paths.append(video.get("rendered_path"))
+
+        for file_path_str in all_cleanup_paths:
             if file_path_str:
                 fp = Path(file_path_str)
                 if fp.exists():
@@ -287,6 +332,7 @@ async def run_jit_video_pipeline(
         logger.info(
             f"[JIT Cleanup] 🧹 Internal storage preserved: cleaned {len(cleaned_files)} files for video #{vid_id} ({', '.join(cleaned_files)})"
         )
+
 
     summary_msg = f"Video #{vid_id} selesai diproses ({'sukses' if any_success else 'gagal'})."
     return {
