@@ -19,15 +19,6 @@ ffmpeg:
   saturation: 1.08
   speed_factor: 1.05
   zoom_factor: 1.1
-watermark:
-  enabled: true
-  text: "SINXBOT"
-  font_path: "font/KOMIKAX_.ttf"
-  font_size: 32
-  color: "white"
-  opacity: 0.85
-  x: "40"
-  y: "(h-text_h)/2"
 platform_captions:
   facebook:
     max_caption_chars: 63206
@@ -87,6 +78,20 @@ rate_limits:
   idle_poll_interval_sec: 60
   posts_per_hour_per_platform: 2
   workers_downloader: 2
+scheduler:
+  slots:
+  - '12:00'
+  - '18:00'
+  - '21:00'
+watermark:
+  color: white
+  enabled: true
+  font_path: font/KOMIKAX_.ttf
+  font_size: 32
+  opacity: 0.85
+  text: SINXBOT
+  x: '40'
+  y: (h-text_h)/2
 workers:
   downloader: 2
   publisher: 1

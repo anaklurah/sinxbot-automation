@@ -201,12 +201,12 @@ class CreateAccountRequest(BaseModel):
     name: str
 
 class ConfigUpdateRequest(BaseModel):
+    schedule_slots: Optional[List[str]] = None
     posts_per_hour: Optional[int] = None
     delay_between_platforms_sec: Optional[int] = None
     workers_downloader: Optional[int] = None
     headless: Optional[bool] = None
     ffmpeg_zoom: Optional[float] = None
-
     ffmpeg_speed: Optional[float] = None
     ffmpeg_noise: Optional[int] = None
     ffmpeg_contrast: Optional[float] = None
@@ -233,14 +233,15 @@ async def get_dashboard_status():
     is_scheduler_active = scheduler_mgr.is_running()
     is_pipeline_active = pipeline_mgr.is_running() or is_scheduler_active
 
-    from osap.modules.scheduler import get_next_prime_time, DEFAULT_PRIME_TIME_SLOTS
-    _, remaining_secs, next_slot = get_next_prime_time()
+    from osap.modules.scheduler import get_next_prime_time
+    active_slots = getattr(cfg, "PRIME_TIME_SLOTS", None) or ["12:00", "18:00", "21:00"]
+    _, remaining_secs, next_slot = get_next_prime_time(active_slots)
 
     scheduler_info = {
         "active": is_scheduler_active,
         "next_slot": next_slot,
         "remaining_seconds": int(remaining_secs),
-        "slots": DEFAULT_PRIME_TIME_SLOTS,
+        "slots": active_slots,
     }
 
     return {
@@ -356,8 +357,11 @@ async def read_configuration():
         key = cfg.DEEPSEEK_API_KEY
         api_key_masked = f"{key[:4]}...{key[-4:]}" if len(key) > 8 else "****"
 
+    active_slots = getattr(cfg, "PRIME_TIME_SLOTS", None) or ["12:00", "18:00", "21:00"]
+
     return {
         "yaml": yaml_data,
+        "schedule_slots": active_slots,
         "env": {
             "DEEPSEEK_API_KEY_MASKED": api_key_masked,
             "DEEPSEEK_MODEL": cfg.DEEPSEEK_MODEL,
@@ -384,6 +388,14 @@ async def update_configuration(req: ConfigUpdateRequest):
             yaml_data = yaml.safe_load(f) or {}
 
     # Update YAML fields
+    if req.schedule_slots is not None:
+        cleaned_slots = [s.strip() for s in req.schedule_slots if ":" in s.strip()]
+        if cleaned_slots:
+            if "scheduler" not in yaml_data:
+                yaml_data["scheduler"] = {}
+            yaml_data["scheduler"]["slots"] = cleaned_slots
+            cfg.PRIME_TIME_SLOTS = cleaned_slots
+
     if "rate_limits" not in yaml_data:
         yaml_data["rate_limits"] = {}
     if "ffmpeg" not in yaml_data:

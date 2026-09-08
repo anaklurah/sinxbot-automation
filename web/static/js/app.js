@@ -374,6 +374,14 @@ async function submitIngest() {
  * Configuration (Load & Save)
  * ─────────────────────────────────────────────
  */
+function setSchedulePreset(slotsText) {
+    const input = document.getElementById('cfg-schedule-slots');
+    if (input) {
+        input.value = slotsText;
+        showToast(`Preset dipilih: ${slotsText}`, 'info', 2000);
+    }
+}
+
 async function loadConfigData() {
     try {
         const res = await fetch('/api/config');
@@ -382,9 +390,21 @@ async function loadConfigData() {
         const yaml = data.yaml || {};
         const env = data.env || {};
 
-        document.getElementById('cfg-posts-per-hour').value = yaml.rate_limits?.posts_per_hour_per_platform || 2;
-        document.getElementById('cfg-delay-platforms').value = yaml.rate_limits?.delay_between_platforms_sec || 30;
-        document.getElementById('cfg-workers-download').value = yaml.rate_limits?.workers_downloader || 2;
+        // Smart Scheduler slots
+        const scheduleSlots = data.schedule_slots || yaml.scheduler?.slots || ['12:00', '18:00', '21:00'];
+        const scheduleInput = document.getElementById('cfg-schedule-slots');
+        if (scheduleInput) {
+            scheduleInput.value = Array.isArray(scheduleSlots) ? scheduleSlots.join(', ') : scheduleSlots;
+        }
+
+        const elPosts = document.getElementById('cfg-posts-per-hour');
+        if (elPosts) elPosts.value = yaml.rate_limits?.posts_per_hour_per_platform || 2;
+
+        const elDelay = document.getElementById('cfg-delay-platforms');
+        if (elDelay) elDelay.value = yaml.rate_limits?.delay_between_platforms_sec || 25;
+
+        const elWorkers = document.getElementById('cfg-workers-download');
+        if (elWorkers) elWorkers.value = yaml.rate_limits?.workers_downloader || 2;
 
         const isHeadless = env.HEADLESS !== undefined 
             ? (env.HEADLESS === true || env.HEADLESS === 'true') 
@@ -413,10 +433,16 @@ async function loadConfigData() {
 }
 
 async function saveConfiguration() {
+    const rawSlots = (document.getElementById('cfg-schedule-slots')?.value || '12:00, 18:00, 21:00')
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s.length > 0 && s.includes(':'));
+
     const payload = {
-        posts_per_hour: parseInt(document.getElementById('cfg-posts-per-hour').value),
-        delay_between_platforms_sec: parseInt(document.getElementById('cfg-delay-platforms').value),
-        workers_downloader: parseInt(document.getElementById('cfg-workers-download').value),
+        schedule_slots: rawSlots.length > 0 ? rawSlots : ['12:00', '18:00', '21:00'],
+        posts_per_hour: parseInt(document.getElementById('cfg-posts-per-hour')?.value || '2'),
+        delay_between_platforms_sec: parseInt(document.getElementById('cfg-delay-platforms')?.value || '25'),
+        workers_downloader: parseInt(document.getElementById('cfg-workers-download')?.value || '2'),
         headless: document.getElementById('cfg-browser-headless').value === 'true',
         ffmpeg_zoom: parseFloat(document.getElementById('cfg-ffmpeg-zoom').value),
         ffmpeg_speed: parseFloat(document.getElementById('cfg-ffmpeg-speed').value),
@@ -438,7 +464,8 @@ async function saveConfiguration() {
         });
         const data = await res.json();
         if (res.ok) {
-            showToast(data.message || 'Configuration saved successfully!', 'success');
+            showToast(data.message || 'Konfigurasi & jam posting berhasil disimpan!', 'success');
+            loadDashboardData(true);
         } else {
             showToast(data.detail || 'Failed to save configuration', 'error');
         }

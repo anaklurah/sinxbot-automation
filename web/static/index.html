@@ -286,32 +286,49 @@
         ───────────────────────────────────────────── -->
         <section id="tab-config" class="tab-content">
             <div class="clay-form-grid">
-                <!-- 1. Concurrency & Rate Limits -->
+                <!-- 1. Smart Scheduler & Posting Hours -->
                 <div class="clay-card">
-                    <div class="clay-card-header">
+                    <div class="clay-card-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
                         <h3 class="clay-card-title">
-                            <i data-lucide="gauge"></i>
-                            <span>Rate Limits & Concurrency</span>
+                            <i data-lucide="calendar-clock"></i>
+                            <span>Smart Schedule & Jam Posting</span>
                         </h3>
+                        <span class="badge-clay badge-done" style="font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px;">
+                            <i data-lucide="zap" style="width: 12px; height: 12px;"></i> Smart Anti-Ban
+                        </span>
                     </div>
 
                     <div class="clay-form-group">
-                        <label>Posts Per Hour (per platform)</label>
-                        <input type="number" id="cfg-posts-per-hour" class="clay-input" min="1" max="24" value="2">
-                        <span class="help-text">Controls anti-ban throttling per platform channel.</span>
+                        <label for="cfg-schedule-slots">
+                            <i data-lucide="clock"></i> Jam Berjalan Pipeline (Format 24 Jam)
+                        </label>
+                        <input type="text" id="cfg-schedule-slots" class="clay-input" placeholder="12:00, 18:00, 21:00" value="12:00, 18:00, 21:00" style="font-weight: 600; font-family: var(--font-mono); font-size: 1rem;">
+                        <span class="help-text">Tentukan jam berapa saja video diposting. Pisahkan dengan tanda koma (misal: <code>10:00, 14:00, 19:00, 22:00</code>).</span>
                     </div>
 
-                    <div class="clay-form-group">
-                        <label>Delay Between Platforms (seconds)</label>
-                        <input type="number" id="cfg-delay-platforms" class="clay-input" min="5" max="300" value="30">
-                        <span class="help-text">Delay before posting to the next social network.</span>
+                    <div style="margin-bottom: 1.25rem;">
+                        <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 6px;">Preset Jadwal Cepat:</label>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button type="button" class="btn-clay btn-clay-secondary btn-clay-sm" onclick="setSchedulePreset('12:00, 18:00, 21:00')">
+                                3x (12:00, 18:00, 21:00)
+                            </button>
+                            <button type="button" class="btn-clay btn-clay-secondary btn-clay-sm" onclick="setSchedulePreset('09:00, 13:00, 17:00, 21:00')">
+                                4x (09:00, 13:00, 17:00, 21:00)
+                            </button>
+                            <button type="button" class="btn-clay btn-clay-secondary btn-clay-sm" onclick="setSchedulePreset('08:00, 11:00, 14:00, 17:00, 20:00')">
+                                5x (08:00, 11:00, 14:00, 17:00, 20:00)
+                            </button>
+                        </div>
                     </div>
 
-                    <div class="clay-form-group">
-                        <label>Parallel Downloader Workers</label>
-                        <input type="number" id="cfg-workers-download" class="clay-input" min="1" max="8" value="2">
-                        <span class="help-text">Number of parallel yt-dlp worker threads.</span>
+                    <div style="background: rgba(16, 185, 129, 0.08); border-left: 3px solid var(--accent-emerald); padding: 10px 14px; border-radius: 8px; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5;">
+                        <strong><i data-lucide="shield-check" style="width: 14px; height: 14px; vertical-align: middle; margin-right: 4px;"></i> Smart Engine Otomatis:</strong>
+                        Rate limits, jeda acak manusiawi antar platform (human-like delay), dan optimasi memori JIT sudah dikelola secara pintar otomatis oleh sistem. Anda cukup menentukan jam tayang di atas!
                     </div>
+
+                    <input type="hidden" id="cfg-posts-per-hour" value="2">
+                    <input type="hidden" id="cfg-delay-platforms" value="25">
+                    <input type="hidden" id="cfg-workers-download" value="2">
                 </div>
 
                 <!-- 2. FFmpeg Anti-Hash Filters -->

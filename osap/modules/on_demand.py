@@ -219,9 +219,13 @@ async def run_jit_video_pipeline(
     any_success = False
 
     for i, platform in enumerate(platforms_to_run):
-        if i > 0 and cfg.DELAY_BETWEEN_PLATFORMS > 0:
-            logger.info(f"[JIT Pipeline] Jeda {cfg.DELAY_BETWEEN_PLATFORMS}s sebelum platform berikutnya ({platform})...")
-            await asyncio.sleep(cfg.DELAY_BETWEEN_PLATFORMS)
+        if i > 0:
+            import random
+            base_delay = cfg.DELAY_BETWEEN_PLATFORMS if cfg.DELAY_BETWEEN_PLATFORMS > 0 else 25
+            jitter = random.randint(-5, 12)
+            smart_delay = max(15, base_delay + jitter)
+            logger.info(f"[JIT Pipeline] 🛡️ Smart Anti-Ban: Menunggu jeda natural {smart_delay}s sebelum posting ke {platform.title()}...")
+            await asyncio.sleep(smart_delay)
 
         mark_platform_uploading(vid_id, platform, db_path=db_path)
         publisher_cls = registry[platform]

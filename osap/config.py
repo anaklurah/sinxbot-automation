@@ -111,8 +111,11 @@ class Config:
     PLATFORM_FEBSPOT: bool = False
 
     # ------------------------------------------------------------------
-    # Rate limits
+    # Smart Scheduler & Rate limits
     # ------------------------------------------------------------------
+
+    #: List of scheduled posting times in 24-hour format (e.g. ["12:00", "18:00", "21:00"]).
+    PRIME_TIME_SLOTS: list[str] = field(default_factory=lambda: ["12:00", "18:00", "21:00"])
 
     #: Maximum number of posts per hour per platform.
     POSTS_PER_HOUR: int = 2
@@ -343,7 +346,20 @@ def get_config(*, reload: bool = False) -> Config:
     # ------------------------------------------------------------------
     # 3. Build the Config object
     # ------------------------------------------------------------------
+    raw_slots = (
+        _nested_get(yaml_data, "scheduler", "slots")
+        or _nested_get(yaml_data, "rate_limits", "schedule_slots")
+        or os.environ.get("PRIME_TIME_SLOTS")
+    )
+    if isinstance(raw_slots, str):
+        parsed_slots = [s.strip() for s in raw_slots.replace(";", ",").split(",") if s.strip()]
+    elif isinstance(raw_slots, list):
+        parsed_slots = [str(s).strip() for s in raw_slots if str(s).strip()]
+    else:
+        parsed_slots = ["12:00", "18:00", "21:00"]
+
     cfg = Config(
+        PRIME_TIME_SLOTS=parsed_slots,
         # Paths
         DB_PATH=os.environ.get("OSAP_DB_PATH", "./osap.db"),
         DOWNLOAD_DIR=Path(os.environ.get("DOWNLOAD_DIR", "./downloads")),

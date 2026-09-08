@@ -31,7 +31,8 @@ def get_next_prime_time(slots: Optional[List[str]] = None) -> Tuple[datetime.dat
         (target_datetime, seconds_remaining, slot_str)
     """
     if not slots:
-        slots = DEFAULT_PRIME_TIME_SLOTS
+        cfg = get_config()
+        slots = getattr(cfg, "PRIME_TIME_SLOTS", None) or DEFAULT_PRIME_TIME_SLOTS
 
     now = datetime.datetime.now()
     today = now.date()
@@ -61,23 +62,25 @@ def get_next_prime_time(slots: Optional[List[str]] = None) -> Tuple[datetime.dat
 async def run_scheduler(db_path: Optional[str] = None, slots: Optional[List[str]] = None):
     """
     Main asynchronous loop for Prime-Time Scheduler.
-    Sleeps until prime-time, then triggers on-demand pipeline for all enabled platforms.
+    Sleeps until scheduled hour, then triggers JIT video pipeline for all enabled platforms.
     """
     cfg = get_config()
     db_path = db_path or cfg.DB_PATH
-    slots = slots or getattr(cfg, "PRIME_TIME_SLOTS", DEFAULT_PRIME_TIME_SLOTS)
 
-    logger.info(f"[Scheduler] 🕒 Prime-Time Scheduler started. Configured slots: {', '.join(slots)}")
+    logger.info(f"[Scheduler] 🕒 Smart Scheduler started.")
 
     while True:
         try:
-            target_dt, remaining_secs, slot_str = get_next_prime_time(slots)
+            current_cfg = get_config(reload=True)
+            active_slots = slots or getattr(current_cfg, "PRIME_TIME_SLOTS", None) or DEFAULT_PRIME_TIME_SLOTS
+
+            target_dt, remaining_secs, slot_str = get_next_prime_time(active_slots)
             hours = int(remaining_secs // 3600)
             minutes = int((remaining_secs % 3600) // 60)
             
             logger.info(
-                f"[Scheduler] ⏳ Next prime-time post at {slot_str} ({target_dt.strftime('%d/%m %H:%M')}) — "
-                f"waiting {hours}h {minutes}m..."
+                f"[Scheduler] ⏳ Next scheduled post at {slot_str} ({target_dt.strftime('%d/%m %H:%M')}) — "
+                f"waiting {hours}h {minutes}m (Schedule: {', '.join(active_slots)})..."
             )
 
             # Sleep in intervals of up to 15 seconds to allow responsive cancellation
