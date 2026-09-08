@@ -409,8 +409,9 @@ def cmd_web(args):
     import uvicorn
     host = args.host or "0.0.0.0"
     port = args.port or 8080
+    reload_flag = getattr(args, "reload", False)
     console.print(f"[bold green]Starting OSAP Web Dashboard on http://{host}:{port}[/bold green]")
-    uvicorn.run("web.server:app", host=host, port=port, reload=False)
+    uvicorn.run("web.server:app", host=host, port=port, reload=reload_flag)
 
 
 # ─────────────────────────────────────────────
@@ -446,6 +447,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_web = subparsers.add_parser("web", help="Start the Web Dashboard UI server")
     p_web.add_argument("--host", default="0.0.0.0", help="Host address to bind to (default: 0.0.0.0)")
     p_web.add_argument("--port", type=int, default=8080, help="Port to listen on (default: 8080)")
+    p_web.add_argument("--reload", action="store_true", help="Enable auto-reload on code changes")
 
     # setup-auth
     p_auth = subparsers.add_parser("setup-auth", help="Open browser for manual authentication")

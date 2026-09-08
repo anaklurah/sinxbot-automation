@@ -1122,3 +1122,15 @@ main {
         padding: 1.4rem;
     }
 }
+
+/* Spinner Utility */
+.spin-icon {
+    animation: claySpin 0.9s linear infinite;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+@keyframes claySpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}

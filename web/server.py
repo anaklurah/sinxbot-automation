@@ -562,11 +562,18 @@ async def trigger_manual_publish(platform: str):
 
     cfg = get_config()
 
+    # Check if platform is enabled in config
+    enabled = set(cfg.enabled_platforms)
+    if platform not in enabled:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Platform '{platform}' is not enabled. Enable it in the Config tab first."
+        )
+
     # Check how many videos are currently in 'rendered' state
     with db_session(cfg.DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM videos WHERE status = 'rendered'")
-        rendered_count = cursor.fetchone()[0]
+        row = conn.execute("SELECT COUNT(*) FROM videos WHERE status = 'rendered'").fetchone()
+        rendered_count = row[0]
 
     p = multiprocessing.Process(
         target=_run_manual_publish_target,
@@ -576,9 +583,9 @@ async def trigger_manual_publish(platform: str):
     p.start()
 
     if rendered_count > 0:
-        msg = f"Manual post launched for {platform} ({rendered_count} rendered video(s) ready in queue)."
+        msg = f"Manual post launched for {platform} — {rendered_count} rendered video(s) ready in queue."
     else:
-        msg = f"Manual post worker started for {platform}. Will publish as soon as a video finishes rendering."
+        msg = f"Manual post worker started for {platform}. No rendered videos yet — will publish once rendering completes."
 
     logger.info(msg)
     return {"success": True, "message": msg, "rendered_queue": rendered_count}

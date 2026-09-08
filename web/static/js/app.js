@@ -404,7 +404,7 @@ async function loadPlatformsData() {
                             </label>
                         `}
                     </div>
-                    <button class="btn-clay btn-clay-primary btn-clay-sm" onclick="triggerManualPost('${p.id}')">
+                    <button class="btn-clay btn-clay-primary btn-clay-sm" onclick="triggerManualPost('${p.id}', this)">
                         <i data-lucide="send"></i> Post Now
                     </button>
                 </div>
@@ -486,18 +486,40 @@ async function uploadCookies(platformId, inputElement) {
     }
 }
 
-async function triggerManualPost(platformId) {
+async function triggerManualPost(platformId, btnElement) {
+    // Find the button that was clicked and show loading state
+    const btn = btnElement || (typeof event !== 'undefined' ? event?.currentTarget : null) || document.querySelector(`[onclick*="triggerManualPost('${platformId}'"]`);
+    const originalHTML = btn ? btn.innerHTML : null;
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<svg class="spin-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Posting...`;
+    }
+
     try {
         const res = await fetch(`/api/publish/${platformId}`, { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
-            showToast(data.message || `Manual post job triggered for ${platformId}`, 'success');
+            if (data.rendered_queue === 0) {
+                showToast(`⚠️ Antrian video kosong (0 video 'rendered'). Worker ${platformId} standby, tapi belum ada video yang siap di-post. Masukkan URL di tab Ingest & jalankan Pipeline dulu!`, 'warning', 8000);
+            } else {
+                showToast(`🚀 ${data.message}`, 'success', 6000);
+            }
             loadDashboardData(true);
         } else {
-            showToast(data.detail || `Failed manual post for ${platformId}`, 'error');
+            showToast(`❌ ${data.detail || `Failed manual post for ${platformId}`}`, 'error', 6000);
         }
     } catch (err) {
-        showToast(`Error launching manual post: ${err.message}`, 'error');
+        if (err.message && err.message.includes('fetch')) {
+            showToast('⚠️ Cannot connect to server. Is the OSAP server running?', 'error', 8000);
+        } else {
+            showToast(`Error: ${err.message}`, 'error', 6000);
+        }
+    } finally {
+        if (btn && originalHTML) {
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+        }
     }
 }
 
