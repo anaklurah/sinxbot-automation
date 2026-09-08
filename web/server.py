@@ -603,7 +603,7 @@ async def list_platform_states(account_id: Optional[int] = Query(None)):
             "name": p.replace("_", " ").title(),
             "enabled": enabled,
             "auth_status": "configured" if auth_status else "missing",
-            "auth_type": "persistent" if p in persistent_platforms else "cookies/storage_state"
+            "auth_type": "Persistent Profile" if p in persistent_platforms else "Cookies / Session State"
         })
 
     return {"platforms": result, "account_id": acc_id}

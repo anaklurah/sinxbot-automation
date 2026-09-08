@@ -523,12 +523,10 @@ async function loadPlatformsData() {
                         <button class="btn-clay btn-clay-secondary btn-clay-sm" onclick="triggerSetupAuth('${p.id}')" title="Buka browser untuk login manual (cookies kadaluarsa / fresh login)">
                             <i data-lucide="log-in"></i> Login Browser
                         </button>
-                        ${p.auth_type === 'cookies' ? `
-                            <label class="btn-clay btn-clay-secondary btn-clay-sm" style="cursor: pointer; margin: 0;" title="Upload file cookie .json / .txt">
-                                <i data-lucide="upload"></i> Cookie
-                                <input type="file" accept=".txt,.json" style="display: none;" onchange="uploadCookies('${p.id}', this)">
-                            </label>
-                        ` : ''}
+                        <label class="btn-clay btn-clay-secondary btn-clay-sm" style="cursor: pointer; margin: 0;" title="Upload file cookie .json / .txt untuk platform ini">
+                            <i data-lucide="upload"></i> Upload Cookie
+                            <input type="file" accept=".txt,.json" style="display: none;" onchange="uploadCookies('${p.id}', this)">
+                        </label>
                     </div>
                     <button class="btn-clay btn-clay-primary btn-clay-sm" ${!p.enabled ? 'disabled title="Nyalakan switch platform ini terlebih dahulu"' : ''} onclick="triggerManualPost('${p.id}', this)">
                         <i data-lucide="send"></i> Post Now
@@ -594,6 +592,9 @@ async function uploadCookies(platformId, inputElement) {
     const file = inputElement.files[0];
     const formData = new FormData();
     formData.append('file', file);
+    inputElement.value = ''; // Reset input so selecting the same file triggers onchange
+
+    showToast(`Mengunggah cookies untuk ${platformId}...`, 'info', 2500);
 
     try {
         const res = await fetch(`/api/upload-cookies/${platformId}?account_id=${selectedAccountId}`, {
