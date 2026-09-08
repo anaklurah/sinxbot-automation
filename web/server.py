@@ -116,6 +116,40 @@ class PipelineManager:
 pipeline_mgr = PipelineManager()
 
 
+class SchedulerManager:
+    def __init__(self):
+        self.process: Optional[multiprocessing.Process] = None
+
+    def is_running(self) -> bool:
+        return self.process is not None and self.process.is_alive()
+
+    def start_scheduler(self, db_path: str):
+        if self.is_running():
+            raise HTTPException(status_code=400, detail="Scheduler is already running")
+
+        def _run_target():
+            import asyncio
+            from osap.modules.scheduler import run_scheduler
+            try:
+                asyncio.run(run_scheduler(db_path=db_path))
+            except (KeyboardInterrupt, SystemExit):
+                pass
+
+        p = multiprocessing.Process(target=_run_target, name="osap_scheduler", daemon=True)
+        p.start()
+        self.process = p
+        logger.info("Prime-Time Scheduler started via Web Dashboard")
+
+    def stop_scheduler(self):
+        if self.process and self.process.is_alive():
+            self.process.terminate()
+            self.process.join(timeout=3)
+        self.process = None
+        logger.info("Prime-Time Scheduler stopped via Web Dashboard")
+
+scheduler_mgr = SchedulerManager()
+
+
 # ─────────────────────────────────────────────
 # FastAPI Lifespan & App Setup
 # ─────────────────────────────────────────────
@@ -128,6 +162,7 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("OSAP Web Dashboard API shutting down...")
     pipeline_mgr.stop_pipeline()
+    scheduler_mgr.stop_scheduler()
     # Unblock any active SSE log subscribers so uvicorn shuts down cleanly
     for q in list(log_subscribers):
         try:
@@ -183,19 +218,31 @@ class ConfigUpdateRequest(BaseModel):
 
 @app.get("/api/status")
 async def get_dashboard_status():
-    """Get aggregate DB stats, hardware info, and worker status."""
+    """Get aggregate DB stats, hardware info, worker status, and prime-time scheduler."""
     cfg = get_config()
     stats = get_stats(cfg.DB_PATH)
     hw_info = get_system_info()
     workers_status = pipeline_mgr.status()
-    is_pipeline_active = pipeline_mgr.is_running()
+    is_scheduler_active = scheduler_mgr.is_running()
+    is_pipeline_active = pipeline_mgr.is_running() or is_scheduler_active
+
+    from osap.modules.scheduler import get_next_prime_time, DEFAULT_PRIME_TIME_SLOTS
+    _, remaining_secs, next_slot = get_next_prime_time()
+
+    scheduler_info = {
+        "active": is_scheduler_active,
+        "next_slot": next_slot,
+        "remaining_seconds": int(remaining_secs),
+        "slots": DEFAULT_PRIME_TIME_SLOTS,
+    }
 
     return {
         "queue_stats": stats,
         "hardware": hw_info,
         "pipeline_active": is_pipeline_active,
         "workers": workers_status,
-        "enabled_platforms": cfg.enabled_platforms
+        "enabled_platforms": cfg.enabled_platforms,
+        "scheduler": scheduler_info,
     }
 
 
@@ -453,17 +500,23 @@ async def list_platform_states():
 
 @app.post("/api/pipeline/start")
 async def start_pipeline_api():
-    """Start downloader, renderer, and publisher workers."""
+    """Start prime-time automated scheduler (3x daily: 12:00, 18:00, 21:00)."""
     cfg = get_config()
-    pipeline_mgr.start_pipeline(cfg.DB_PATH)
-    return {"success": True, "message": "Pipeline workers launched"}
+    scheduler_mgr.start_scheduler(cfg.DB_PATH)
+    from osap.modules.scheduler import get_next_prime_time
+    _, _, next_slot = get_next_prime_time()
+    return {
+        "success": True,
+        "message": f"Prime-Time Scheduler aktif! Posting otomatis 3x sehari (Jadwal terdekat: {next_slot} WIB)."
+    }
 
 
 @app.post("/api/pipeline/stop")
 async def stop_pipeline_api():
-    """Stop all active pipeline workers."""
+    """Stop prime-time automated scheduler and active workers."""
+    scheduler_mgr.stop_scheduler()
     stopped = pipeline_mgr.stop_pipeline()
-    return {"success": True, "stopped": stopped, "message": "Pipeline workers terminated"}
+    return {"success": True, "stopped": stopped, "message": "Prime-Time Scheduler dinonaktifkan."}
 
 
 @app.post("/api/reset-stuck")
@@ -554,19 +607,18 @@ async def upload_platform_cookies(platform: str, file: UploadFile = File(...)):
 
 
 def _run_manual_publish_target(db_path: str, platform_name: str):
-    """Top-level process target for manual single-platform publishing."""
+    """Top-level process target for on-demand single-video publishing."""
     import asyncio
-    from osap.modules.publisher import PublisherOrchestrator
+    from osap.modules.on_demand import run_single_video_pipeline
     try:
-        orchestrator = PublisherOrchestrator(db_path=db_path, platform_filter=platform_name)
-        asyncio.run(orchestrator.run())
+        asyncio.run(run_single_video_pipeline(platform=platform_name, db_path=db_path))
     except (KeyboardInterrupt, SystemExit):
         pass
 
 
 @app.post("/api/publish/{platform}")
 async def trigger_manual_publish(platform: str):
-    """Trigger manual publishing to a specific platform."""
+    """Trigger on-demand single-video pipeline (Download -> Render -> Caption -> Post) for a specific platform."""
     if platform not in PLATFORMS:
         raise HTTPException(status_code=400, detail=f"Invalid platform: {platform}")
 
@@ -583,17 +635,15 @@ async def trigger_manual_publish(platform: str):
     # Check video counts in various stages
     with db_session(cfg.DB_PATH) as conn:
         rendered_count = conn.execute("SELECT COUNT(*) FROM videos WHERE status = 'rendered'").fetchone()[0]
+        downloaded_count = conn.execute("SELECT COUNT(*) FROM videos WHERE status = 'downloaded'").fetchone()[0]
         pending_count = conn.execute("SELECT COUNT(*) FROM videos WHERE status = 'pending'").fetchone()[0]
-        processing_count = conn.execute("SELECT COUNT(*) FROM videos WHERE status IN ('downloading', 'downloaded', 'rendering')").fetchone()[0]
 
-    if rendered_count == 0:
-        if processing_count > 0:
-            detail_msg = f"Ada {processing_count} video sedang diproses tapi belum selesai dirender. Tunggu statusnya jadi 'rendered' baru klik Post Now."
-        elif pending_count > 0:
-            detail_msg = f"Ada {pending_count} video di antrian, tapi statusnya masih 'pending' (belum di-download & di-render). Klik tombol 'Run Pipeline' di pojok kanan atas dulu!"
-        else:
-            detail_msg = f"Antrian video kosong. Masukkan URL video di tab Ingest dan jalankan Pipeline terlebih dahulu."
-        raise HTTPException(status_code=400, detail=detail_msg)
+    total_available = rendered_count + downloaded_count + pending_count
+    if total_available == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Antrian video kosong. Masukkan URL video di tab Ingest terlebih dahulu."
+        )
 
     p = multiprocessing.Process(
         target=_run_manual_publish_target,
@@ -603,9 +653,22 @@ async def trigger_manual_publish(platform: str):
     )
     p.start()
 
-    msg = f"Manual post launched for {platform} — {rendered_count} rendered video(s) ready in queue."
+    if rendered_count > 0:
+        stage_desc = f"mengupload video siap ({rendered_count} rendered)"
+    elif downloaded_count > 0:
+        stage_desc = "merender video yang sudah didownload lalu upload"
+    else:
+        stage_desc = f"mengambil 1 dari {pending_count} video pending (Download ➔ Render ➔ Post)"
+
+    msg = f"On-Demand Post dimulai untuk {platform}: {stage_desc}. Pantau prosesnya di Live Logs!"
     logger.info(msg)
-    return {"success": True, "message": msg, "rendered_queue": rendered_count}
+    return {
+        "success": True,
+        "message": msg,
+        "rendered_queue": rendered_count,
+        "pending_queue": pending_count,
+        "downloaded_queue": downloaded_count,
+    }
 
 
 @app.get("/api/logs/stream")

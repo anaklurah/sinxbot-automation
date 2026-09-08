@@ -68,7 +68,7 @@ platforms:
   twitter: false
   twitter_nsfw: false
   upscrolled: false
-  youtube: false
+  youtube: true
 proxy:
   facebook: ''
   instagram: ''

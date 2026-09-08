@@ -85,9 +85,9 @@ async function loadDashboardData(silent = false) {
         const enabledCount = (data.enabled_platforms || []).length;
         document.getElementById('sys-platforms-count').innerText = `${enabledCount} Platforms Active`;
 
-        // Pipeline State
+        // Pipeline & Scheduler State
         isPipelineActive = !!data.pipeline_active;
-        updatePipelineStatusUI(isPipelineActive);
+        updatePipelineStatusUI(isPipelineActive, data.scheduler);
 
         if (!silent) {
             loadVideos(currentPage);
@@ -97,10 +97,18 @@ async function loadDashboardData(silent = false) {
     }
 }
 
+function formatRemaining(secs) {
+    if (!secs || secs <= 0) return 'segera';
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    if (h > 0) return `${h}j ${m}m`;
+    return `${m}m`;
+}
+
 /**
- * Update Header Pipeline Status Pill and Toggle Button
+ * Update Header Scheduler Status Pill and Toggle Button
  */
-function updatePipelineStatusUI(active) {
+function updatePipelineStatusUI(active, scheduler) {
     const beacon = document.getElementById('status-beacon');
     const text = document.getElementById('pipeline-status-text');
     const btn = document.getElementById('btn-pipeline-toggle');
@@ -109,28 +117,30 @@ function updatePipelineStatusUI(active) {
 
     if (active) {
         beacon.classList.add('active');
-        text.innerText = 'Pipeline Running';
+        const nextTime = scheduler?.next_slot ? `Next: ${scheduler.next_slot} WIB (${formatRemaining(scheduler.remaining_seconds)})` : 'Running';
+        text.innerText = `Scheduler Aktif • ${nextTime}`;
         text.style.color = 'var(--success)';
         btn.className = 'btn-clay btn-clay-danger';
-        btn.innerHTML = `<i data-lucide="square"></i> <span>Stop Pipeline</span>`;
+        btn.innerHTML = `<i data-lucide="square"></i> <span>Stop Scheduler</span>`;
     } else {
         beacon.classList.remove('active');
-        text.innerText = 'Pipeline Idle';
+        const nextSlot = scheduler?.next_slot ? `Next: ${scheduler.next_slot} WIB` : 'Idle';
+        text.innerText = `Scheduler Idle • ${nextSlot}`;
         text.style.color = 'var(--text-secondary)';
         btn.className = 'btn-clay btn-clay-primary';
-        btn.innerHTML = `<i data-lucide="play"></i> <span>Run Pipeline</span>`;
+        btn.innerHTML = `<i data-lucide="clock"></i> <span>Run Scheduler (3x Daily)</span>`;
     }
     initLucide();
 }
 
 /**
- * Toggle Pipeline (Start / Stop)
+ * Toggle Prime-Time Scheduler (Start / Stop)
  */
 async function togglePipeline() {
     const endpoint = isPipelineActive ? '/api/pipeline/stop' : '/api/pipeline/start';
-    const actionLabel = isPipelineActive ? 'Stopping pipeline...' : 'Starting pipeline...';
+    const actionLabel = isPipelineActive ? 'Mematikan prime-time scheduler...' : 'Mengaktifkan prime-time scheduler (3x sehari)...';
     
-    showToast(actionLabel, 'info', 2000);
+    showToast(actionLabel, 'info', 2500);
 
     try {
         const res = await fetch(endpoint, { method: 'POST' });
@@ -500,14 +510,12 @@ async function triggerManualPost(platformId, btnElement) {
         const res = await fetch(`/api/publish/${platformId}`, { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
-            if (data.rendered_queue === 0) {
-                showToast(`⚠️ Antrian video kosong (0 video 'rendered'). Worker ${platformId} standby, tapi belum ada video yang siap di-post. Masukkan URL di tab Ingest & jalankan Pipeline dulu!`, 'warning', 8000);
-            } else {
-                showToast(`🚀 ${data.message}`, 'success', 6000);
-            }
+            showToast(`🚀 ${data.message}`, 'success', 8000);
             loadDashboardData(true);
+            setTimeout(() => loadDashboardData(true), 3000);
+            setTimeout(() => loadDashboardData(true), 8000);
         } else {
-            showToast(`❌ ${data.detail || `Failed manual post for ${platformId}`}`, 'error', 6000);
+            showToast(`❌ ${data.detail || `Gagal memulai on-demand post untuk ${platformId}`}`, 'error', 7000);
         }
     } catch (err) {
         if (err.message && err.message.includes('fetch')) {
