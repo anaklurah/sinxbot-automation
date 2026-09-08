@@ -235,8 +235,8 @@ def cmd_setup_auth(args):
         "tiktok": "https://www.tiktok.com/login",
         "instagram": "https://www.instagram.com/accounts/login/",
         "facebook": "https://www.facebook.com/login",
-        "twitter": "https://x.com/login",
-        "twitter_nsfw": "https://x.com/login",
+        "twitter": "https://x.com/login?lang=id",
+        "twitter_nsfw": "https://x.com/login?lang=id",
         "upscrolled": "https://upscrolled.com/login",
     }
 

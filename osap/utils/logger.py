@@ -83,8 +83,11 @@ def setup_logging(
     )
     root_logger.setLevel(numeric_level)
 
-    # Remove any previously installed handlers to avoid duplication on reload.
+    # Preserve custom streaming handlers (e.g. SSELogHandler from web.server)
+    custom_handlers = [h for h in root_logger.handlers if "SSE" in h.__class__.__name__]
     root_logger.handlers.clear()
+    for h in custom_handlers:
+        root_logger.addHandler(h)
 
     # ------------------------------------------------------------------
     # 1. Rich console handler
@@ -105,10 +108,11 @@ def setup_logging(
     root_logger.addHandler(rich_handler)
 
     # ------------------------------------------------------------------
-    # 2. Optional file handler
+    # 2. File handler (defaults to project root osap.log)
     # ------------------------------------------------------------------
-    if log_file is not None:
-        log_path = Path(log_file)
+    target_log_file = log_file or (Path(__file__).resolve().parent.parent.parent / "osap.log")
+    if target_log_file:
+        log_path = Path(target_log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         file_handler = logging.FileHandler(
@@ -131,7 +135,7 @@ def setup_logging(
     root_logger.debug(
         "Logging initialised — level=%s, file=%s",
         logging.getLevelName(numeric_level),
-        log_file,
+        target_log_file,
     )
     return root_logger
 
@@ -139,29 +143,9 @@ def setup_logging(
 def get_logger(name: str) -> logging.Logger:
     """
     Return a named :class:`logging.Logger` for use inside an OSAP module.
-
-    This is a thin wrapper around :func:`logging.getLogger` provided for
-    consistency and discoverability.
-
-    Parameters
-    ----------
-    name:
-        Logger name — conventionally ``__name__`` of the calling module.
-
-    Returns
-    -------
-    logging.Logger
-        The named logger.  If :func:`setup_logging` has not been called yet,
-        messages will propagate to the root logger's default ``lastResort``
-        handler (stderr, WARNING+).
-
-    Example
-    -------
-    ::
-
-        from osap.utils.logger import get_logger
-
-        log = get_logger(__name__)
-        log.info("Processing video id=%d", video_id)
     """
+    root_logger = logging.getLogger()
+    if not any(isinstance(h, (RichHandler, logging.FileHandler)) for h in root_logger.handlers):
+        setup_logging(level="INFO")
     return logging.getLogger(name)
+

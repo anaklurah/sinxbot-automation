@@ -69,8 +69,16 @@ class TwitterPublisher(BasePublisher):
 
             try:
                 # ── Step 1: Navigate to compose ────────────────────────────────
-                log.info('[twitter] Navigating to compose URL')
-                await page.goto('https://x.com/compose/tweet', wait_until='domcontentloaded', timeout=60_000)
+                log.info('[twitter] Navigating to compose URL (forcing Indonesian language)')
+                try:
+                    await context.add_cookies([
+                        {'name': 'lang', 'value': 'id', 'domain': '.x.com', 'path': '/'},
+                        {'name': 'lang', 'value': 'id', 'domain': 'x.com', 'path': '/'},
+                    ])
+                except Exception:
+                    pass
+
+                await page.goto('https://x.com/compose/tweet?lang=id', wait_until='domcontentloaded', timeout=60_000)
                 await self._jitter(1500, 3000)
 
                 # If redirected to login
@@ -79,12 +87,12 @@ class TwitterPublisher(BasePublisher):
                     return False
 
                 # Fallback: if compose URL didn't open a dialog, click compose button
-                compose_dialog_sel = '[data-testid="tweetTextarea_0"], [aria-label*="Tweet text" i]'
+                compose_dialog_sel = '[data-testid="tweetTextarea_0"], [aria-label*="Tweet text" i], [aria-label*="Teks postingan" i]'
                 try:
                     await page.wait_for_selector(compose_dialog_sel, timeout=8_000)
                 except Exception:
                     log.debug('[twitter] Compose dialog not open via URL — clicking compose button')
-                    compose_btn_sel = '[data-testid="SideNav_NewTweet_Button"], [aria-label="Post"]'
+                    compose_btn_sel = '[data-testid="SideNav_NewTweet_Button"], [aria-label="Post"], [aria-label="Posting"]'
                     try:
                         await page.wait_for_selector(compose_btn_sel, timeout=10_000)
                         btn = page.locator(compose_btn_sel).first
@@ -113,40 +121,32 @@ class TwitterPublisher(BasePublisher):
                 file_input = page.locator(file_input_sel).first
                 await file_input.wait_for(state='attached', timeout=15_000)
                 await file_input.set_input_files(video_path)
-                log.info('[twitter] File set')
+                log.info('[twitter] Video file attached')
                 await self._jitter(3000, 5000)
 
-                # ── Step 4: Wait for video to upload / process ─────────────────
-                log.info('[twitter] Waiting for video upload/processing')
+                # ── Step 4: Wait for video upload & processing ─────────────────
+                log.info('[twitter] Waiting for video processing')
                 try:
-                    processing_sel = (
-                        '[data-testid="attachments"] [role="progressbar"], '
-                        '[aria-label*="Uploading" i], '
-                        '[aria-label*="Processing" i]'
-                    )
-                    await page.wait_for_selector(processing_sel, timeout=10_000)
-                    log.info('[twitter] Upload progress detected, waiting for completion')
-                    await page.wait_for_selector(
-                        processing_sel, state='hidden', timeout=180_000
-                    )
-                    log.info('[twitter] Upload complete')
+                    # Video player preview element appears when processing completes
+                    player_sel = '[data-testid="videoPlayer"], [data-testid="videoComponent"], video'
+                    await page.wait_for_selector(player_sel, timeout=60_000)
+                    log.info('[twitter] Video player preview confirmed')
                 except Exception:
-                    log.info('[twitter] Upload progress bar completed or not shown — waiting baseline')
-                    await asyncio.sleep(12)
+                    log.warning('[twitter] Video preview element wait timed out; proceeding')
 
-                await self._jitter(1000, 2000)
+                await self._jitter(2000, 3500)
 
-                # ── Step 5: Mark as sensitive (NSFW) if needed ─────────────────
-                if self.NSFW:
+                # ── Step 5: NSFW flag (optional) ───────────────────────────────
+                if getattr(self, 'NSFW', False):
                     await self._mark_sensitive(page)
 
-                # ── Step 6: Click Post ─────────────────────────────────────────
+                # ── Step 6: Click Post / Tweet ──────────────────────────────────
                 log.info('[twitter] Clicking Post button')
                 post_btn_sel = (
-                    '[role="dialog"] [data-testid="tweetButton"], '
                     '[data-testid="tweetButton"], '
                     '[data-testid="tweetButtonInline"], '
                     'button:has-text("Post"), '
+                    'button:has-text("Posting"), '
                     'button:has-text("Tweet")'
                 )
                 await page.wait_for_selector(post_btn_sel, timeout=15_000)

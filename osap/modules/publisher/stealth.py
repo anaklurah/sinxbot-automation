@@ -73,8 +73,8 @@ def get_launch_options(headless: bool = False) -> dict:
 
 
 def get_context_options(
-    locale: str = 'en-US',
-    timezone: str = 'America/New_York',
+    locale: str = 'id-ID',
+    timezone: str = 'Asia/Jakarta',
 ) -> dict:
     """Return browser-context keyword arguments.
 
@@ -82,12 +82,12 @@ def get_context_options(
     included in ``launch_persistent_context(..., **opts)``.
 
     Args:
-        locale: Browser locale string, e.g. ``'en-US'``.
-        timezone: IANA timezone identifier, e.g. ``'America/New_York'``.
+        locale: Browser locale string, e.g. ``'id-ID'``.
+        timezone: IANA timezone identifier, e.g. ``'Asia/Jakarta'``.
 
     Returns:
         Dict of context options including user_agent, viewport, locale,
-        timezone_id.
+        timezone_id, and Accept-Language headers.
     """
     return {
         'user_agent': DEFAULT_USER_AGENT,
@@ -100,4 +100,7 @@ def get_context_options(
         'has_touch': False,
         'java_script_enabled': True,
         'bypass_csp': False,
+        'extra_http_headers': {
+            'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+        },
     }

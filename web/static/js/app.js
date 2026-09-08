@@ -682,43 +682,95 @@ async function triggerPublishAllPlatforms(btnElement) {
  * Live Logs SSE Stream
  * ─────────────────────────────────────────────
  */
-function setupLogStream() {
-    if (eventSource) eventSource.close();
+let logReconnectTimer = null;
+const seenLogSignatures = new Set();
 
-    eventSource = new EventSource('/api/logs/stream');
+function appendLogLine(data) {
+    const term = document.getElementById('terminal-log');
+    if (!term || !data || !data.message) return;
+
+    // Deduplicate identical replayed logs
+    const sig = `${data.timestamp || ''}|${data.level || ''}|${data.message}`;
+    if (seenLogSignatures.has(sig)) return;
+    seenLogSignatures.add(sig);
+    if (seenLogSignatures.size > 300) {
+        const first = seenLogSignatures.values().next().value;
+        seenLogSignatures.delete(first);
+    }
+
+    const line = document.createElement('div');
+    line.className = `terminal-line ${data.level || 'INFO'}`;
+    line.innerHTML = `
+        <span class="term-time">[${data.timestamp || new Date().toLocaleTimeString()}]</span>
+        <span class="term-level">${data.level || 'INFO'}</span>
+        <span class="term-msg">${escapeHtml(data.message)}</span>
+    `;
+    term.appendChild(line);
+    term.scrollTop = term.scrollHeight;
+}
+
+function setupLogStream() {
+    if (eventSource) {
+        try { eventSource.close(); } catch(e) {}
+        eventSource = null;
+    }
+    if (logReconnectTimer) {
+        clearTimeout(logReconnectTimer);
+        logReconnectTimer = null;
+    }
+
     const term = document.getElementById('terminal-log');
     if (!term) return;
+
+    try {
+        eventSource = new EventSource('/api/logs/stream');
+    } catch (err) {
+        console.error("Failed to init EventSource:", err);
+        fallbackPollLogs();
+        return;
+    }
 
     eventSource.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            if (!data.message) return;
-
-            const line = document.createElement('div');
-            line.className = `terminal-line ${data.level || 'INFO'}`;
-            line.innerHTML = `
-                <span class="term-time">[${data.timestamp || new Date().toLocaleTimeString()}]</span>
-                <span class="term-level">${data.level || 'INFO'}</span>
-                <span class="term-msg">${escapeHtml(data.message)}</span>
-            `;
-            
-            term.appendChild(line);
-            term.scrollTop = term.scrollHeight;
+            appendLogLine(data);
         } catch (e) {
             console.error("SSE parse error", e);
         }
     };
 
-    eventSource.onerror = () => {
-        // SSE disconnected, will auto-reconnect
+    eventSource.onerror = (err) => {
+        // Starlette/FastAPI dropped or network interrupted
+        if (eventSource && (eventSource.readyState === EventSource.CLOSED || eventSource.readyState === 2)) {
+            try { eventSource.close(); } catch(e) {}
+            eventSource = null;
+            if (!logReconnectTimer) {
+                logReconnectTimer = setTimeout(() => {
+                    logReconnectTimer = null;
+                    setupLogStream();
+                }, 3000);
+            }
+        }
     };
+}
+
+async function fallbackPollLogs() {
+    try {
+        const res = await fetch('/api/logs/recent?limit=40');
+        if (res.ok) {
+            const data = await res.json();
+            (data.logs || []).forEach(appendLogLine);
+        }
+    } catch (e) {}
 }
 
 function clearLogs() {
     const term = document.getElementById('terminal-log');
     if (term) term.innerHTML = '';
+    seenLogSignatures.clear();
     showToast('Terminal logs cleared', 'info', 2000);
 }
+
 
 /**
  * Security: HTML entity escaper

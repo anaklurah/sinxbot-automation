@@ -842,27 +842,131 @@ async def trigger_manual_publish(platform: str, account_id: Optional[int] = Quer
     }
 
 
+def _parse_log_line(line: str) -> Optional[Dict[str, str]]:
+    """Parse a '%(asctime)s | %(name)s | %(levelname)s | %(message)s' line from osap.log."""
+    raw = line.rstrip("\r\n")
+    if not raw:
+        return None
+    parts = raw.split(" | ", 3)
+    if len(parts) == 4:
+        date_time = parts[0].strip()
+        time_str = date_time.split(" ")[-1] if " " in date_time else date_time
+        return {
+            "timestamp": time_str,
+            "name": parts[1].strip(),
+            "level": parts[2].strip(),
+            "message": parts[3]
+        }
+    else:
+        lvl = "ERROR" if ("Traceback" in raw or "Error" in raw or "Exception" in raw) else "INFO"
+        return {
+            "timestamp": "",
+            "name": "system",
+            "level": lvl,
+            "message": raw
+        }
+
+
+def get_recent_logs(max_lines: int = 50) -> List[Dict[str, str]]:
+    """Read last N log entries from osap.log."""
+    log_file = Path(__file__).resolve().parent.parent / "osap.log"
+    if not log_file.exists():
+        return []
+    try:
+        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        recent = lines[-max_lines:] if len(lines) > max_lines else lines
+        parsed = []
+        for l in recent:
+            p = _parse_log_line(l)
+            if p:
+                parsed.append(p)
+        return parsed
+    except Exception as e:
+        logger.warning(f"Error reading osap.log: {e}")
+        return []
+
+
+@app.get("/api/logs/recent")
+async def get_recent_logs_endpoint(limit: int = Query(50, ge=1, le=200)):
+    """Fetch recent historical logs as JSON."""
+    return {"logs": get_recent_logs(max_lines=limit)}
+
+
 @app.get("/api/logs/stream")
 async def stream_logs(request: Request):
-    """SSE endpoint for streaming real-time system logs with graceful disconnect."""
-    queue = asyncio.Queue()
-    log_subscribers.append(queue)
+    """
+    SSE endpoint for streaming real-time system logs.
+    Tails osap.log for all processes (FastAPI + multiprocessing workers),
+    with backlog replay and periodic keepalive comments.
+    """
+    log_file = Path(__file__).resolve().parent.parent / "osap.log"
+    log_file.touch(exist_ok=True)
 
     async def log_generator():
         try:
-            yield "data: {\"message\": \"Connected to OSAP Live Log Stream\"}\n\n"
+            # 1. Connected banner
+            now_str = datetime.datetime.now().strftime("%H:%M:%S")
+            yield f'data: {json.dumps({"timestamp": now_str, "level": "INFO", "name": "system", "message": "Connected to OSAP Live Log Stream"})}\n\n'
+
+            # 2. Replay backlog (last 40 lines)
+            backlog = get_recent_logs(max_lines=40)
+            for entry in backlog:
+                yield f"data: {json.dumps(entry)}\n\n"
+
+            # 3. Tail osap.log
+            last_pos = 0
+            if log_file.exists():
+                try:
+                    last_pos = log_file.stat().st_size
+                except Exception:
+                    last_pos = 0
+
+            idle_ticks = 0
+
             while True:
                 if await request.is_disconnected():
                     break
-                try:
-                    log_msg = await asyncio.wait_for(queue.get(), timeout=1.5)
-                    yield f"data: {log_msg}\n\n"
-                except asyncio.TimeoutError:
-                    continue
+
+                had_new_lines = False
+                if log_file.exists():
+                    try:
+                        curr_size = log_file.stat().st_size
+                        if curr_size > last_pos:
+                            with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+                                f.seek(last_pos)
+                                lines = f.readlines()
+                                last_pos = f.tell()
+                            for line in lines:
+                                parsed = _parse_log_line(line)
+                                if parsed:
+                                    yield f"data: {json.dumps(parsed)}\n\n"
+                                    had_new_lines = True
+                        elif curr_size < last_pos:
+                            last_pos = 0
+                    except Exception:
+                        pass
+
+                if had_new_lines:
+                    idle_ticks = 0
+                else:
+                    idle_ticks += 1
+
+                # Send SSE comment heartbeat every 3 seconds (6 ticks * 0.5s) to keep connection alive
+                if idle_ticks >= 6:
+                    idle_ticks = 0
+                    yield ": keepalive\n\n"
+
+                await asyncio.sleep(0.5)
+
         except (asyncio.CancelledError, GeneratorExit):
             pass
-        finally:
-            if queue in log_subscribers:
-                log_subscribers.remove(queue)
 
-    return StreamingResponse(log_generator(), media_type="text/event-stream")
+    headers = {
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+        "Content-Type": "text/event-stream"
+    }
+    return StreamingResponse(log_generator(), media_type="text/event-stream", headers=headers)
+
