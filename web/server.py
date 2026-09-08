@@ -580,16 +580,20 @@ async def trigger_manual_publish(platform: str):
             detail=f"Platform '{platform}' is not enabled. Enable it in the Config tab first."
         )
 
-    # Check how many videos are currently in 'rendered' state
+    # Check video counts in various stages
     with db_session(cfg.DB_PATH) as conn:
-        row = conn.execute("SELECT COUNT(*) FROM videos WHERE status = 'rendered'").fetchone()
-        rendered_count = row[0]
+        rendered_count = conn.execute("SELECT COUNT(*) FROM videos WHERE status = 'rendered'").fetchone()[0]
+        pending_count = conn.execute("SELECT COUNT(*) FROM videos WHERE status = 'pending'").fetchone()[0]
+        processing_count = conn.execute("SELECT COUNT(*) FROM videos WHERE status IN ('downloading', 'downloaded', 'rendering')").fetchone()[0]
 
     if rendered_count == 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Tidak ada video yang siap di-post untuk {platform} (antrian 'rendered' masih kosong). Silakan masukkan URL di tab Ingest dan jalankan Pipeline terlebih dahulu."
-        )
+        if processing_count > 0:
+            detail_msg = f"Ada {processing_count} video sedang diproses tapi belum selesai dirender. Tunggu statusnya jadi 'rendered' baru klik Post Now."
+        elif pending_count > 0:
+            detail_msg = f"Ada {pending_count} video di antrian, tapi statusnya masih 'pending' (belum di-download & di-render). Klik tombol 'Run Pipeline' di pojok kanan atas dulu!"
+        else:
+            detail_msg = f"Antrian video kosong. Masukkan URL video di tab Ingest dan jalankan Pipeline terlebih dahulu."
+        raise HTTPException(status_code=400, detail=detail_msg)
 
     p = multiprocessing.Process(
         target=_run_manual_publish_target,
