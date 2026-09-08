@@ -114,78 +114,80 @@ class UpscrolledPublisher(BasePublisher):
                     log.error('[upscrolled] Not authenticated — redirected to login')
                     return False
 
-                # ── Step 2: Click Create / Upload button ──────────────────────
-                log.info('[upscrolled] Looking for Create/Upload button')
-                try:
-                    await page.wait_for_selector(self._SEL_CREATE_BTN, timeout=10_000)
-                    await self._move_click(page, self._SEL_CREATE_BTN)
-                    await self._jitter(1000, 2000)
-                    log.info('[upscrolled] Clicked Create/Upload button')
-                except Exception:
-                    # Try navigating directly to upload paths
-                    for upload_path in ('/upload', '/create', '/upload/video'):
-                        try:
-                            upload_url = f'{self.UPLOAD_URL.rstrip("/")}{upload_path}'
-                            log.debug('[upscrolled] Trying upload URL: %s', upload_url)
-                            await page.goto(upload_url, wait_until='domcontentloaded', timeout=30_000)
-                            await self._jitter(800, 1500)
-                            await page.wait_for_selector(self._SEL_FILE_INPUT, timeout=5_000)
-                            log.info('[upscrolled] Found upload page at %s', upload_url)
-                            break
-                        except Exception:
-                            continue
+                # ── Step 2: Open Create a post modal ──────────────────────────
+                log.info('[upscrolled] Looking for Post button')
+                post_open_sel = 'button[aria-label="Post"], button:has-text("Post"), a[href*="create"]'
+                await page.wait_for_selector(post_open_sel, timeout=15_000)
+                post_open_btn = page.locator(post_open_sel).first
+                await post_open_btn.click(force=True)
+                log.info('[upscrolled] Opened Create a post modal')
+                await self._jitter(1500, 2500)
 
-                # ── Step 3: Set video file ─────────────────────────────────────
+                # ── Step 3: Select "Video post" ───────────────────────────────
+                log.info('[upscrolled] Selecting Video post option')
+                video_opt_sel = ':text("Video post"), button:has-text("Video post"), div:has-text("Video post")'
+                await page.wait_for_selector(video_opt_sel, timeout=15_000)
+                video_opt_btn = page.locator(video_opt_sel).first
+                await video_opt_btn.click(force=True)
+                log.info('[upscrolled] Clicked Video post option')
+                await self._jitter(1500, 2500)
+
+                # ── Step 4: Set video file ─────────────────────────────────────
                 log.info('[upscrolled] Setting video file: %s', video_path)
-                file_input = page.locator(self._SEL_FILE_INPUT).first
+                file_input_sel = 'input[type="file"][accept*="video"], input[type="file"]'
+                file_input = page.locator(file_input_sel).last
                 await file_input.wait_for(state='attached', timeout=20_000)
                 await file_input.set_input_files(video_path)
                 log.info('[upscrolled] File set')
-                await self._jitter(2000, 4000)
+                await self._jitter(3000, 5000)
 
-                # ── Step 4: Wait for upload progress ─────────────────────────
-                log.info('[upscrolled] Waiting for upload to process')
-                await self._wait_for_upload_complete(page, timeout_ms=300_000)
-                await self._jitter(1000, 2000)
-
-                # ── Step 5: Fill title ─────────────────────────────────────────
-                log.info('[upscrolled] Filling title: %r', title)
-                try:
-                    await page.wait_for_selector(self._SEL_TITLE_INPUT, timeout=12_000)
-                    await page.click(self._SEL_TITLE_INPUT)
-                    await page.keyboard.press('Control+a')
-                    await self._jitter(200, 400)
-                    for char in title:
-                        await page.keyboard.type(char, delay=70)
-                    await self._jitter(500, 1000)
-                except Exception as exc:
-                    log.warning('[upscrolled] Title field not found: %s', exc)
-
-                # ── Step 6: Fill caption ────────────────────────────────────────
+                # ── Step 5: Fill caption ────────────────────────────────────────
                 log.info('[upscrolled] Filling caption')
+                caption_text = f'{title}\n\n{caption}'.strip()
+                caption_sel = 'textarea[placeholder*="caption" i], textarea, [contenteditable="true"]'
                 try:
-                    await page.wait_for_selector(self._SEL_CAPTION, timeout=12_000)
-                    await page.click(self._SEL_CAPTION)
+                    await page.wait_for_selector(caption_sel, timeout=12_000)
+                    caption_el = page.locator(caption_sel).first
+                    await caption_el.click(force=True)
                     await self._jitter(300, 600)
-                    for char in caption:
-                        await page.keyboard.type(char, delay=65)
-                    await self._jitter(600, 1200)
+                    for char in caption_text:
+                        await page.keyboard.type(char, delay=35)
+                    log.info('[upscrolled] Caption filled')
+                    await self._jitter(1000, 2000)
                 except Exception as exc:
                     log.warning('[upscrolled] Caption field not found: %s', exc)
 
-                # ── Step 7: Publish ────────────────────────────────────────────
-                log.info('[upscrolled] Clicking Publish button')
-                await page.wait_for_selector(self._SEL_PUBLISH_BTN, timeout=15_000)
-                await self._move_click(page, self._SEL_PUBLISH_BTN)
-                await self._jitter(2000, 4000)
+                # ── Step 6: Publish ────────────────────────────────────────────
+                log.info('[upscrolled] Clicking Publish/Post button')
+                publish_btn_sel = (
+                    '[role="dialog"] button:has-text("Post"), '
+                    'button.bg-brand-gradient, '
+                    'button:has-text("Post"), '
+                    'button:has-text("Publish")'
+                )
+                await page.wait_for_selector(publish_btn_sel, timeout=15_000)
+                publish_btn = page.locator(publish_btn_sel).first
+                try:
+                    await publish_btn.click(force=True)
+                except Exception:
+                    await publish_btn.evaluate("el => el.click()")
+                log.info('[upscrolled] Publish button clicked')
+                await self._jitter(3000, 6000)
 
-                # ── Step 8: Confirm success ────────────────────────────────────
+                # ── Step 7: Confirm success ────────────────────────────────────
                 log.info('[upscrolled] Waiting for success confirmation')
                 try:
-                    await page.wait_for_selector(self._SEL_SUCCESS, timeout=30_000)
+                    success_sel = (
+                        ':text("Upload complete"), '
+                        ':text("Your video is live"), '
+                        ':text("Post published"), '
+                        ':text("Success"), '
+                        '[role="status"]'
+                    )
+                    await page.wait_for_selector(success_sel, timeout=30_000)
                     log.info('[upscrolled] ✓ Video published successfully')
                 except Exception:
-                    log.warning('[upscrolled] Success indicator not found — assuming success based on flow')
+                    log.info('[upscrolled] Success message not detected — flow finished, assuming success')
 
                 return True
 

@@ -85,23 +85,23 @@ class TwitterPublisher(BasePublisher):
                 except Exception:
                     log.debug('[twitter] Compose dialog not open via URL — clicking compose button')
                     compose_btn_sel = '[data-testid="SideNav_NewTweet_Button"], [aria-label="Post"]'
-                    await page.wait_for_selector(compose_btn_sel, timeout=10_000)
-                    await self._move_click(page, compose_btn_sel)
-                    await self._jitter(1000, 2000)
+                    try:
+                        await page.wait_for_selector(compose_btn_sel, timeout=10_000)
+                        btn = page.locator(compose_btn_sel).first
+                        await btn.click(force=True)
+                        await self._jitter(1000, 2000)
+                    except Exception:
+                        pass
 
-                # ── Step 2: Click media attachment icon ────────────────────────
-                log.info('[twitter] Clicking media attachment icon')
-                media_btn_sel = (
-                    '[data-testid="attachments"] button, '
-                    '[aria-label="Add photos or video"], '
-                    '[data-testid="fileInput"] >> ..'
-                )
-                try:
-                    await page.wait_for_selector(media_btn_sel, timeout=10_000)
-                    await self._move_click(page, media_btn_sel)
-                    await self._jitter(500, 1000)
-                except Exception:
-                    log.debug('[twitter] Media button not found — trying file input directly')
+                # ── Step 2: Type tweet text ────────────────────────────────────
+                log.info('[twitter] Typing tweet text: %r', tweet_text[:60])
+                tweet_box = page.locator('[role="dialog"] [data-testid="tweetTextarea_0"], [data-testid="tweetTextarea_0"]').last
+                await tweet_box.wait_for(state='visible', timeout=15_000)
+                await tweet_box.click(force=True)
+                await self._jitter(300, 600)
+                for char in tweet_text:
+                    await page.keyboard.type(char, delay=35)
+                await self._jitter(600, 1200)
 
                 # ── Step 3: Set video file ─────────────────────────────────────
                 log.info('[twitter] Setting video file: %s', video_path)
@@ -114,12 +114,11 @@ class TwitterPublisher(BasePublisher):
                 await file_input.wait_for(state='attached', timeout=15_000)
                 await file_input.set_input_files(video_path)
                 log.info('[twitter] File set')
-                await self._jitter(2000, 4000)
+                await self._jitter(3000, 5000)
 
                 # ── Step 4: Wait for video to upload / process ─────────────────
                 log.info('[twitter] Waiting for video upload/processing')
                 try:
-                    # Twitter shows a progress bar in the compose window
                     processing_sel = (
                         '[data-testid="attachments"] [role="progressbar"], '
                         '[aria-label*="Uploading" i], '
@@ -128,46 +127,38 @@ class TwitterPublisher(BasePublisher):
                     await page.wait_for_selector(processing_sel, timeout=10_000)
                     log.info('[twitter] Upload progress detected, waiting for completion')
                     await page.wait_for_selector(
-                        processing_sel, state='hidden', timeout=300_000
+                        processing_sel, state='hidden', timeout=180_000
                     )
                     log.info('[twitter] Upload complete')
                 except Exception:
-                    log.warning('[twitter] Could not detect upload progress bar — waiting 15s')
-                    await asyncio.sleep(15)
+                    log.info('[twitter] Upload progress bar completed or not shown — waiting baseline')
+                    await asyncio.sleep(12)
 
                 await self._jitter(1000, 2000)
 
-                # ── Step 5: Type tweet text ────────────────────────────────────
-                log.info('[twitter] Typing tweet text: %r', tweet_text[:60])
-                tweet_box_sel = (
-                    '[data-testid="tweetTextarea_0"], '
-                    '[aria-label*="Tweet text" i], '
-                    '.public-DraftEditor-content'
-                )
-                await page.wait_for_selector(tweet_box_sel, timeout=15_000)
-                await page.click(tweet_box_sel)
-                await self._jitter(300, 600)
-                for char in tweet_text:
-                    await page.keyboard.type(char, delay=75)
-                await self._jitter(600, 1200)
-
-                # ── Step 6: Mark as sensitive (NSFW) if needed ─────────────────
+                # ── Step 5: Mark as sensitive (NSFW) if needed ─────────────────
                 if self.NSFW:
                     await self._mark_sensitive(page)
 
-                # ── Step 7: Click Post ─────────────────────────────────────────
+                # ── Step 6: Click Post ─────────────────────────────────────────
                 log.info('[twitter] Clicking Post button')
                 post_btn_sel = (
-                    '[data-testid="tweetButtonInline"], '
+                    '[role="dialog"] [data-testid="tweetButton"], '
                     '[data-testid="tweetButton"], '
+                    '[data-testid="tweetButtonInline"], '
                     'button:has-text("Post"), '
                     'button:has-text("Tweet")'
                 )
                 await page.wait_for_selector(post_btn_sel, timeout=15_000)
-                await self._move_click(page, post_btn_sel)
+                post_btn = page.locator(post_btn_sel).first
+                try:
+                    await post_btn.click(force=True)
+                except Exception:
+                    await post_btn.evaluate("el => el.click()")
+                log.info('[twitter] Post button clicked')
                 await self._jitter(2000, 4000)
 
-                # ── Step 8: Wait for success ────────────────────────────────────
+                # ── Step 7: Wait for success ────────────────────────────────────
                 log.info('[twitter] Waiting for tweet to post')
                 try:
                     # A successful post dismisses the compose dialog and may show a toast

@@ -103,31 +103,33 @@ class TikTokPublisher(BasePublisher):
 
                 await self._jitter(1000, 2000)
 
+                # Dismiss tutorial overlays (react-joyride) if present
+                try:
+                    joyride_btn = page.locator('.react-joyride__tooltip button, button:has-text("Got it"), button:has-text("Skip"), button:has-text("Mengerti")').first
+                    if await joyride_btn.is_visible():
+                        await joyride_btn.click(force=True)
+                        log.info('[tiktok] Dismissed tutorial overlay')
+                        await self._jitter(500, 1000)
+                except Exception:
+                    pass
+
                 # ── Step 4: Fill caption ──────────────────────────────────────
                 log.info('[tiktok] Filling caption: %r', caption[:80])
                 try:
                     cap_el = page.locator(caption_sel).first
-                    await cap_el.click()
+                    await cap_el.click(force=True)
                     await page.keyboard.press('Control+a')
                     await self._jitter(200, 400)
-                    # Type slowly to avoid detection
                     for char in caption:
-                        await page.keyboard.type(char, delay=80)
+                        await page.keyboard.type(char, delay=40)
+                    log.info('[tiktok] Caption filled successfully')
                     await self._jitter(800, 1500)
                 except Exception as exc:
                     log.warning('[tiktok] Caption fill failed: %s', exc)
 
                 # ── Step 5: Wait for processing ────────────────────────────────
                 log.info('[tiktok] Waiting for upload/processing to finish')
-                # TikTok shows a spinner or progress percentage in the upload area
-                processing_done_sel = (
-                    ':text("Upload complete"), '
-                    ':text("Uploading") >> nth=-1, '
-                    '[class*="success"], '
-                    '[class*="upload-progress"]:not([style*="display: none"])'
-                )
                 try:
-                    # Wait for the progress indicator to disappear
                     await page.wait_for_function(
                         """() => {
                             const indicators = document.querySelectorAll(
@@ -140,11 +142,10 @@ class TikTokPublisher(BasePublisher):
                                 !document.body.contains(el)
                             );
                         }""",
-                        timeout=300_000,
+                        timeout=180_000,
                     )
                 except Exception:
-                    log.warning('[tiktok] Could not detect processing completion — waiting 30s baseline')
-                    await asyncio.sleep(30)
+                    log.info('[tiktok] Progress indicator cleared or not detected — continuing')
 
                 await self._jitter(1500, 3000)
 
@@ -152,11 +153,17 @@ class TikTokPublisher(BasePublisher):
                 log.info('[tiktok] Clicking Post button')
                 post_btn_sel = (
                     'button:has-text("Post"), '
+                    'button:has-text("Posting"), '
                     '[data-e2e="post_video_button"], '
                     'button.btn-post'
                 )
                 await page.wait_for_selector(post_btn_sel, timeout=20_000)
-                await self._move_click(page, post_btn_sel)
+                post_btn = page.locator(post_btn_sel).first
+                try:
+                    await post_btn.click(force=True)
+                except Exception:
+                    await post_btn.evaluate("el => el.click()")
+                log.info('[tiktok] Clicked Post button')
                 await self._jitter(2000, 4000)
 
                 # ── Step 7: Confirm success ────────────────────────────────────

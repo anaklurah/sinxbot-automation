@@ -79,93 +79,83 @@ class FacebookPublisher(BasePublisher):
                 log.info('[facebook] File set: %s', video_path)
                 await self._jitter(2000, 4000)
 
-                # ── Step 3: Wait for upload progress ─────────────────────────
-                log.info('[facebook] Waiting for upload to complete')
-                progress_sel = (
-                    '[role="progressbar"], '
-                    '[aria-label*="upload" i], '
-                    '[class*="upload-progress"], '
-                    '[class*="ProgressBar"]'
+                # ── Step 3: Advance wizard (Step 1 -> Step 2 -> Step 3) ──────────────
+                log.info('[facebook] Advancing Reels creation wizard')
+                next_btn_sel = (
+                    ':text("Berikutnya"), '
+                    ':text("Next"), '
+                    '[aria-label="Berikutnya"], '
+                    '[aria-label="Next"], '
+                    'button:has-text("Berikutnya"), '
+                    'button:has-text("Next")'
                 )
-                try:
-                    # Wait for progress bar to appear
-                    await page.wait_for_selector(progress_sel, timeout=15_000)
-                    log.info('[facebook] Upload progress detected, waiting for completion')
-                    # Wait for it to disappear (upload done)
-                    await page.wait_for_selector(
-                        progress_sel, state='hidden', timeout=300_000
-                    )
-                    log.info('[facebook] Upload progress bar gone')
-                except Exception:
-                    log.warning('[facebook] Progress bar not detected — waiting 20s baseline')
-                    await asyncio.sleep(20)
+                for step_idx in (1, 2):
+                    try:
+                        await page.wait_for_selector(next_btn_sel, timeout=20_000)
+                        btn = page.locator(next_btn_sel).first
+                        await btn.click()
+                        log.info('[facebook] Clicked Next (step %d)', step_idx)
+                        await self._jitter(2000, 3500)
+                    except Exception as exc:
+                        log.warning('[facebook] Next button not found on step %d: %s', step_idx, exc)
 
-                await self._jitter(1500, 3000)
-
-                # ── Step 4: Fill title ────────────────────────────────────────
-                log.info('[facebook] Filling title: %r', title)
-                title_sel = (
-                    'input[placeholder*="title" i], '
-                    'input[aria-label*="title" i], '
-                    'textarea[aria-label*="title" i], '
-                    '[name="title"]'
-                )
-                try:
-                    await page.wait_for_selector(title_sel, timeout=10_000)
-                    await page.click(title_sel)
-                    await page.keyboard.press('Control+a')
-                    await self._jitter(200, 400)
-                    for char in title:
-                        await page.keyboard.type(char, delay=70)
-                    await self._jitter(500, 1000)
-                except Exception as exc:
-                    log.warning('[facebook] Title field not found: %s', exc)
-
-                # ── Step 5: Fill description ──────────────────────────────────
-                log.info('[facebook] Filling description')
+                # ── Step 4: Fill description / caption ─────────────────────────
+                log.info('[facebook] Filling description/caption on Step 3')
                 desc_sel = (
-                    'textarea[placeholder*="description" i], '
-                    'textarea[aria-label*="description" i], '
-                    '[contenteditable="true"][aria-label*="description" i], '
-                    '[data-testid="reel-caption-input"], '
-                    '[aria-label="Add a description"]'
+                    'div[role="textbox"][contenteditable="true"], '
+                    '[aria-placeholder*="reel" i], '
+                    '[aria-placeholder*="deskripsi" i], '
+                    '[aria-label*="description" i], '
+                    '[aria-label*="deskripsi" i], '
+                    'textarea[placeholder*="description" i]'
                 )
                 try:
-                    await page.wait_for_selector(desc_sel, timeout=10_000)
-                    await page.click(desc_sel)
+                    await page.wait_for_selector(desc_sel, timeout=15_000)
+                    desc_box = page.locator(desc_sel).first
+                    await desc_box.click()
                     await self._jitter(300, 600)
+                    # Use page.keyboard to type safely
                     for char in full_description:
-                        await page.keyboard.type(char, delay=65)
-                    await self._jitter(700, 1400)
+                        await page.keyboard.type(char, delay=35)
+                    log.info('[facebook] Description filled successfully')
+                    await self._jitter(1000, 2000)
                 except Exception as exc:
-                    log.warning('[facebook] Description field not found: %s', exc)
+                    log.warning('[facebook] Could not fill description: %s', exc)
 
-                # ── Step 6: Click Publish / Share ─────────────────────────────
-                log.info('[facebook] Clicking Publish/Share button')
+                # ── Step 5: Click Publish / Posting / Share ────────────────────
+                log.info('[facebook] Clicking Publish/Posting button')
                 publish_btn_sel = (
+                    'button:has-text("Posting"), '
                     'button:has-text("Publish"), '
                     'button:has-text("Share"), '
                     'button:has-text("Post"), '
+                    '[aria-label="Posting"], '
                     '[aria-label="Publish"], '
+                    '[aria-label="Share"], '
                     '[data-testid="reels-publish-button"]'
                 )
                 await page.wait_for_selector(publish_btn_sel, timeout=20_000)
-                await self._move_click(page, publish_btn_sel)
-                await self._jitter(2000, 4000)
+                publish_btn = page.locator(publish_btn_sel).first
+                await publish_btn.click()
+                log.info('[facebook] Publish button clicked')
+                await self._jitter(3000, 6000)
 
-                # ── Step 7: Wait for success ──────────────────────────────────
+                # ── Step 6: Wait for success confirmation ─────────────────────
                 log.info('[facebook] Waiting for success confirmation')
                 try:
                     success_sel = (
                         ':text("Your reel is now live"), '
                         ':text("Reel published"), '
                         ':text("Published"), '
-                        ':text("Your reel is being processed")'
+                        ':text("Dipublikasikan"), '
+                        ':text("Reel Anda kini tayang"), '
+                        ':text("Your reel is being processed"), '
+                        ':text("sedang diproses")'
                     )
                     await page.wait_for_selector(success_sel, timeout=30_000)
                     log.info('[facebook] ✓ Reel published successfully')
                 except Exception:
-                    log.warning('[facebook] Success message not detected — assuming success based on flow')
+                    log.info('[facebook] Flow completed without explicit success toast — assuming success')
 
                 return True
 
