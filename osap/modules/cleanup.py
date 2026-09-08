@@ -234,15 +234,12 @@ class CleanupWorker:
 
     def _fetch_done_videos(self) -> list[dict]:
         """Retrieve all videos with ``status='done'`` from the database."""
-        with db_session() as conn:
+        with db_session(self.db_path) as conn:
             cursor = conn.execute(
                 "SELECT id, raw_path, rendered_path, meta_path, video_id "
                 "FROM videos WHERE status = 'done'"
             )
-            columns = [col[0] for col in cursor.description]
-            rows = cursor.fetchall()
-
-        return [dict(zip(columns, row)) for row in rows]
+            return [dict(row) for row in cursor.fetchall()]
 
 
 # ──────────────────────────────────────────────────────────────────────────────

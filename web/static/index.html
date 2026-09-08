@@ -3,599 +3,187 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OmniShorts Auto-Publisher — Dashboard</title>
+    <title>OmniShorts Auto-Publisher — Claymorphism Control Center</title>
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-dark: #090d16;
-            --card-bg: rgba(23, 31, 48, 0.6);
-            --card-border: rgba(255, 255, 255, 0.08);
-            --accent-primary: #6366f1;
-            --accent-secondary: #8b5cf6;
-            --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-            --text-main: #f3f4f6;
-            --text-muted: #9ca3af;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-            --info: #3b82f6;
-            --radius-lg: 16px;
-            --radius-md: 10px;
-            --radius-sm: 6px;
-        }
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
 
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-dark);
-            color: var(--text-main);
-            min-height: 100vh;
-            background-image: 
-                radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
-                radial-gradient(circle at 85% 85%, rgba(139, 92, 246, 0.12) 0%, transparent 40%);
-            background-attachment: fixed;
-            display: flex;
-            flex-direction: column;
-        }
-
-        /* Top Header Navigation */
-        header {
-            background: rgba(15, 23, 42, 0.75);
-            backdrop-filter: blur(16px);
-            border-bottom: 1px solid var(--card-border);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            padding: 0.85rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .brand {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .brand-icon {
-            width: 38px;
-            height: 38px;
-            background: var(--accent-gradient);
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 1rem;
-            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.35);
-        }
-
-        .brand-title h1 {
-            font-size: 1.15rem;
-            font-weight: 700;
-            letter-spacing: -0.02em;
-            background: linear-gradient(to right, #ffffff, #c7d2fe);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .brand-title p {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }
-
-        .header-actions {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-        }
-
-        .status-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 500;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid var(--card-border);
-        }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--text-muted);
-        }
-
-        .status-dot.active {
-            background: var(--success);
-            box-shadow: 0 0 10px var(--success);
-        }
-
-        /* Buttons */
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 18px;
-            border-radius: var(--radius-md);
-            font-size: 0.85rem;
-            font-weight: 600;
-            cursor: pointer;
-            border: none;
-            transition: all 0.2s ease;
-        }
-
-        .btn-primary {
-            background: var(--accent-gradient);
-            color: white;
-            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
-        }
-
-        .btn-danger {
-            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-            color: white;
-            box-shadow: 0 4px 14px rgba(239, 68, 68, 0.3);
-        }
-
-        .btn-danger:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 6px 20px rgba(239, 68, 68, 0.45);
-        }
-
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.07);
-            color: var(--text-main);
-            border: 1px solid var(--card-border);
-        }
-
-        .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.12);
-        }
-
-        /* Navigation Tabs Bar */
-        .tabs-bar {
-            display: flex;
-            gap: 8px;
-            padding: 0.75rem 2rem;
-            background: rgba(15, 23, 42, 0.4);
-            border-bottom: 1px solid var(--card-border);
-        }
-
-        .tab-btn {
-            padding: 8px 18px;
-            border-radius: var(--radius-md);
-            background: transparent;
-            border: 1px solid transparent;
-            color: var(--text-muted);
-            font-size: 0.88rem;
-            font-weight: 500;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: all 0.2s ease;
-        }
-
-        .tab-btn:hover {
-            color: var(--text-main);
-            background: rgba(255, 255, 255, 0.03);
-        }
-
-        .tab-btn.active {
-            color: white;
-            background: rgba(99, 102, 241, 0.15);
-            border-color: rgba(99, 102, 241, 0.3);
-            font-weight: 600;
-        }
-
-        /* Main Container */
-        main {
-            flex: 1;
-            padding: 2rem;
-            max-width: 1400px;
-            margin: 0 auto;
-            width: 100%;
-        }
-
-        .tab-content {
-            display: none;
-            animation: fadeIn 0.25s ease;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(4px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* Glass Cards */
-        .glass-card {
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--card-border);
-            border-radius: var(--radius-lg);
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-        }
-
-        /* Stats Grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 1.25rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .stat-card {
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--card-border);
-            border-radius: var(--radius-lg);
-            padding: 1.25rem 1.5rem;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: var(--accent-gradient);
-            opacity: 0.6;
-        }
-
-        .stat-label {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .stat-val {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--text-main);
-        }
-
-        /* Table */
-        .table-header-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-
-        .table-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-        }
-
-        .filters {
-            display: flex;
-            gap: 10px;
-        }
-
-        select, input[type="text"], input[type="number"], textarea {
-            background: rgba(15, 23, 42, 0.8);
-            border: 1px solid var(--card-border);
-            border-radius: var(--radius-md);
-            padding: 8px 14px;
-            color: var(--text-main);
-            font-size: 0.85rem;
-            outline: none;
-        }
-
-        select:focus, input:focus, textarea:focus {
-            border-color: var(--accent-primary);
-        }
-
-        .data-table-container {
-            overflow-x: auto;
-            border-radius: var(--radius-md);
-            border: 1px solid var(--card-border);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.85rem;
-            text-align: left;
-        }
-
-        th {
-            background: rgba(15, 23, 42, 0.9);
-            padding: 12px 16px;
-            color: var(--text-muted);
-            font-weight: 600;
-            border-bottom: 1px solid var(--card-border);
-        }
-
-        td {
-            padding: 14px 16px;
-            border-bottom: 1px solid var(--card-border);
-            background: rgba(255, 255, 255, 0.01);
-        }
-
-        tr:hover td {
-            background: rgba(255, 255, 255, 0.03);
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 3px 10px;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: lowercase;
-        }
-
-        .badge-pending { background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.3); }
-        .badge-downloading, .badge-rendering, .badge-uploading { background: rgba(59, 130, 246, 0.15); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.3); }
-        .badge-downloaded, .badge-rendered { background: rgba(139, 92, 246, 0.15); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.3); }
-        .badge-done { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }
-        .badge-failed { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
-
-        .platform-pills {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 4px;
-        }
-
-        .platform-pill {
-            font-size: 0.7rem;
-            padding: 2px 6px;
-            border-radius: 4px;
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-muted);
-        }
-
-        .platform-pill.done { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
-        .platform-pill.failed { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
-
-        /* Pagination */
-        .pagination {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-top: 1rem;
-            font-size: 0.85rem;
-            color: var(--text-muted);
-        }
-
-        /* Form Grid */
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 1.5rem;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            margin-bottom: 1rem;
-        }
-
-        .form-group label {
-            font-size: 0.85rem;
-            font-weight: 500;
-            color: var(--text-main);
-        }
-
-        .form-group .help-text {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }
-
-        /* Platforms Grid */
-        .platform-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 1.25rem;
-        }
-
-        .platform-card {
-            background: var(--card-bg);
-            border: 1px solid var(--card-border);
-            border-radius: var(--radius-lg);
-            padding: 1.25rem;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .platform-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .platform-name {
-            font-weight: 600;
-            font-size: 1rem;
-        }
-
-        /* Toggle switch */
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 44px;
-            height: 24px;
-        }
-
-        .switch input { opacity: 0; width: 0; height: 0; }
-
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background-color: rgba(255, 255, 255, 0.1);
-            transition: .3s;
-            border-radius: 24px;
-        }
-
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 18px;
-            width: 18px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: .3s;
-            border-radius: 50%;
-        }
-
-        input:checked + .slider { background: var(--accent-primary); }
-        input:checked + .slider:before { transform: translateX(20px); }
-
-        /* Terminal Log Container */
-        .terminal {
-            background: #050811;
-            border: 1px solid var(--card-border);
-            border-radius: var(--radius-md);
-            padding: 1rem;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.8rem;
-            height: 550px;
-            overflow-y: auto;
-            color: #d1d5db;
-            line-height: 1.6;
-        }
-
-        .log-line { margin-bottom: 4px; word-break: break-word; }
-        .log-line .time { color: #6b7280; }
-        .log-line.INFO .level { color: #3b82f6; font-weight: 600; }
-        .log-line.WARNING .level { color: #f59e0b; font-weight: 600; }
-        .log-line.ERROR .level { color: #ef4444; font-weight: 600; }
-
-        /* Alert Banners */
-        .alert {
-            padding: 12px 16px;
-            border-radius: var(--radius-md);
-            margin-bottom: 1rem;
-            font-size: 0.85rem;
-        }
-
-        .alert-success { background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #6ee7b7; }
-        .alert-error { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; }
-    </style>
+    <!-- 3D Claymorphism Stylesheet -->
+    <link rel="stylesheet" href="/static/css/clay.css">
 </head>
 <body>
 
-    <!-- Header Navigation -->
-    <header>
-        <div class="brand">
-            <div class="brand-icon">OS</div>
-            <div class="brand-title">
+    <!-- Clay Floating Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- 3D Clay Navigation Header -->
+    <header class="clay-header">
+        <div class="brand-wrapper">
+            <div class="brand-clay-icon">
+                <i data-lucide="layers"></i>
+            </div>
+            <div class="brand-info">
                 <h1>OmniShorts Auto-Publisher</h1>
-                <p>OSAP Control Center v1.0.0</p>
+                <p>OSAP Claymorphism Control Center v1.0.0</p>
             </div>
         </div>
 
         <div class="header-actions">
-            <div class="status-pill" id="pipeline-status-pill">
-                <span class="status-dot" id="status-dot"></span>
+            <!-- Pipeline Live Status Pill -->
+            <div class="status-clay-pill" id="pipeline-status-pill">
+                <span class="status-beacon" id="status-beacon"></span>
                 <span id="pipeline-status-text">Pipeline Idle</span>
             </div>
 
-            <button class="btn btn-primary" id="btn-pipeline-toggle" onclick="togglePipeline()">
+            <!-- Start / Stop Pipeline Button -->
+            <button class="btn-clay btn-clay-primary" id="btn-pipeline-toggle" onclick="togglePipeline()">
+                <i data-lucide="play"></i>
                 <span>Run Pipeline</span>
             </button>
 
-            <button class="btn btn-secondary" onclick="resetStuckJobs()" title="Reset stuck jobs (>30 min)">
-                Reset Stuck
+            <!-- Reset Stuck Jobs Button -->
+            <button class="btn-clay btn-clay-secondary" onclick="resetStuckJobs()" title="Reset stuck jobs (>30 min)">
+                <i data-lucide="rotate-ccw"></i>
+                <span>Reset Stuck</span>
             </button>
         </div>
     </header>
 
-    <!-- Tabs Navigation Bar -->
-    <div class="tabs-bar">
-        <button class="tab-btn active" onclick="switchTab('dashboard')">Dashboard</button>
-        <button class="tab-btn" onclick="switchTab('urls')">URL Manager</button>
-        <button class="tab-btn" onclick="switchTab('config')">Configuration</button>
-        <button class="tab-btn" onclick="switchTab('platforms')">Platforms</button>
-        <button class="tab-btn" onclick="switchTab('logs')">Live Logs</button>
-    </div>
+    <!-- 3D Clay Tab Navigation Bar -->
+    <nav class="clay-tabs-bar">
+        <button class="clay-tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard', this)">
+            <i data-lucide="layout-dashboard"></i>
+            <span>Dashboard</span>
+        </button>
+        <button class="clay-tab-btn" data-tab="urls" onclick="switchTab('urls', this)">
+            <i data-lucide="link"></i>
+            <span>URL Manager</span>
+        </button>
+        <button class="clay-tab-btn" data-tab="config" onclick="switchTab('config', this)">
+            <i data-lucide="sliders"></i>
+            <span>Configuration</span>
+        </button>
+        <button class="clay-tab-btn" data-tab="platforms" onclick="switchTab('platforms', this)">
+            <i data-lucide="share-2"></i>
+            <span>Platforms</span>
+        </button>
+        <button class="clay-tab-btn" data-tab="logs" onclick="switchTab('logs', this)">
+            <i data-lucide="terminal"></i>
+            <span>Live Logs</span>
+        </button>
+    </nav>
 
     <!-- Main Content Area -->
     <main>
 
-        <!-- 1. DASHBOARD TAB -->
-        <div id="tab-dashboard" class="tab-content active">
-            <!-- Stat Cards -->
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <span class="stat-label">Total Videos</span>
-                    <span class="stat-val" id="stat-total">0</span>
+        <!-- ─────────────────────────────────────────────
+             TAB 1: DASHBOARD
+        ───────────────────────────────────────────── -->
+        <section id="tab-dashboard" class="tab-content active">
+            <!-- 4 KPI Stat Cards (Clay 3D) -->
+            <div class="clay-stats-grid">
+                <div class="stat-clay-card">
+                    <div class="stat-icon-bubble stat-bubble-total">
+                        <i data-lucide="film"></i>
+                    </div>
+                    <div class="stat-details">
+                        <span class="stat-label">Total Videos</span>
+                        <span class="stat-value" id="stat-total">0</span>
+                    </div>
                 </div>
-                <div class="stat-card">
-                    <span class="stat-label">Pending Queue</span>
-                    <span class="stat-val" id="stat-pending" style="color: var(--warning);">0</span>
+
+                <div class="stat-clay-card">
+                    <div class="stat-icon-bubble stat-bubble-pending">
+                        <i data-lucide="clock"></i>
+                    </div>
+                    <div class="stat-details">
+                        <span class="stat-label">Pending Queue</span>
+                        <span class="stat-value" id="stat-pending" style="color: var(--accent-amber);">0</span>
+                    </div>
                 </div>
-                <div class="stat-card">
-                    <span class="stat-label">Published / Done</span>
-                    <span class="stat-val" id="stat-done" style="color: var(--success);">0</span>
+
+                <div class="stat-clay-card">
+                    <div class="stat-icon-bubble stat-bubble-done">
+                        <i data-lucide="check-circle-2"></i>
+                    </div>
+                    <div class="stat-details">
+                        <span class="stat-label">Published / Done</span>
+                        <span class="stat-value" id="stat-done" style="color: var(--accent-emerald);">0</span>
+                    </div>
                 </div>
-                <div class="stat-card">
-                    <span class="stat-label">Errors / Failed</span>
-                    <span class="stat-val" id="stat-failed" style="color: var(--danger);">0</span>
+
+                <div class="stat-clay-card">
+                    <div class="stat-icon-bubble stat-bubble-failed">
+                        <i data-lucide="alert-octagon"></i>
+                    </div>
+                    <div class="stat-details">
+                        <span class="stat-label">Errors / Failed</span>
+                        <span class="stat-value" id="stat-failed" style="color: var(--accent-rose);">0</span>
+                    </div>
                 </div>
             </div>
 
-            <!-- Hardware & System Summary -->
-            <div class="glass-card" style="display: flex; gap: 2rem; align-items: center; justify-content: space-between; flex-wrap: wrap;">
-                <div>
-                    <h3 style="font-size: 0.95rem; margin-bottom: 4px;">Hardware Accelerator</h3>
-                    <p id="sys-encoder" style="font-size: 0.85rem; color: var(--accent-secondary); font-weight: 600;">Detecting...</p>
+            <!-- Hardware & System Specs Strip -->
+            <div class="hardware-clay-strip">
+                <div class="hardware-item">
+                    <div class="hardware-icon-box">
+                        <i data-lucide="cpu"></i>
+                    </div>
+                    <div class="hardware-info">
+                        <h4>Hardware Encoder</h4>
+                        <p id="sys-encoder">Detecting...</p>
+                    </div>
                 </div>
-                <div>
-                    <h3 style="font-size: 0.95rem; margin-bottom: 4px;">System OS</h3>
-                    <p id="sys-os" style="font-size: 0.85rem; color: var(--text-muted);">-</p>
+
+                <div class="hardware-item">
+                    <div class="hardware-icon-box">
+                        <i data-lucide="server"></i>
+                    </div>
+                    <div class="hardware-info">
+                        <h4>Host Operating System</h4>
+                        <p id="sys-os">-</p>
+                    </div>
                 </div>
-                <div>
-                    <h3 style="font-size: 0.95rem; margin-bottom: 4px;">Python Runtime</h3>
-                    <p id="sys-python" style="font-size: 0.85rem; color: var(--text-muted);">-</p>
+
+                <div class="hardware-item">
+                    <div class="hardware-icon-box">
+                        <i data-lucide="code-2"></i>
+                    </div>
+                    <div class="hardware-info">
+                        <h4>Python Runtime</h4>
+                        <p id="sys-python">-</p>
+                    </div>
                 </div>
-                <div>
-                    <h3 style="font-size: 0.95rem; margin-bottom: 4px;">Active Platforms</h3>
-                    <p id="sys-platforms-count" style="font-size: 0.85rem; color: var(--success); font-weight: 600;">8 Enabled</p>
+
+                <div class="hardware-item">
+                    <div class="hardware-icon-box">
+                        <i data-lucide="radio"></i>
+                    </div>
+                    <div class="hardware-info">
+                        <h4>Active Channels</h4>
+                        <p id="sys-platforms-count" style="color: var(--accent-emerald);">8 Platforms Active</p>
+                    </div>
                 </div>
             </div>
 
-            <!-- Video Queue Table -->
-            <div class="glass-card">
-                <div class="table-header-bar">
-                    <h2 class="table-title">Video Queue & Publishing Status</h2>
-                    <div class="filters">
-                        <select id="filter-status" onchange="loadVideos(1)">
+            <!-- Video Queue Table Card -->
+            <div class="clay-card">
+                <div class="clay-card-header">
+                    <div>
+                        <h2 class="clay-card-title">
+                            <i data-lucide="list-video"></i>
+                            <span>Video Queue & Upload Status</span>
+                        </h2>
+                        <p class="clay-card-subtitle">Real-time pipeline progression and per-platform publishing states.</p>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <select id="filter-status" class="clay-select" onchange="loadVideos(1)">
                             <option value="">All Statuses</option>
                             <option value="pending">Pending</option>
                             <option value="downloading">Downloading</option>
@@ -606,584 +194,257 @@
                             <option value="done">Done</option>
                             <option value="failed">Failed</option>
                         </select>
-                        <button class="btn btn-secondary" onclick="loadDashboardData()">Refresh</button>
+
+                        <button class="btn-clay btn-clay-secondary" onclick="loadDashboardData()">
+                            <i data-lucide="refresh-cw"></i>
+                            <span>Refresh</span>
+                        </button>
                     </div>
                 </div>
 
-                <div class="data-table-container">
-                    <table>
+                <div class="clay-table-container">
+                    <table class="clay-table">
                         <thead>
                             <tr>
-                                <th>ID</th>
-                                <th>Source URL</th>
-                                <th>Title</th>
-                                <th>Pipeline Status</th>
-                                <th>Platform Statuses</th>
-                                <th>Created</th>
+                                <th style="width: 70px;">ID</th>
+                                <th>Source URL / ID</th>
+                                <th>Video Title</th>
+                                <th>Pipeline State</th>
+                                <th>Platform Uploads</th>
+                                <th>Created At</th>
                             </tr>
                         </thead>
                         <tbody id="videos-table-body">
                             <tr>
-                                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading videos...</td>
+                                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2.5rem;">
+                                    Loading videos...
+                                </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
 
-                <div class="pagination">
+                <div class="clay-pagination">
                     <span id="page-info">Page 1 of 1</span>
-                    <div style="display: flex; gap: 8px;">
-                        <button class="btn btn-secondary" id="btn-prev-page" onclick="changePage(-1)">Previous</button>
-                        <button class="btn btn-secondary" id="btn-next-page" onclick="changePage(1)">Next</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn-clay btn-clay-secondary btn-clay-sm" id="btn-prev-page" onclick="changePage(-1)">
+                            <i data-lucide="chevron-left"></i> Previous
+                        </button>
+                        <button class="btn-clay btn-clay-secondary btn-clay-sm" id="btn-next-page" onclick="changePage(1)">
+                            Next <i data-lucide="chevron-right"></i>
+                        </button>
                     </div>
                 </div>
             </div>
-        </div>
+        </section>
 
-        <!-- 2. URL MANAGER TAB -->
-        <div id="tab-urls" class="tab-content">
-            <div class="glass-card" style="max-width: 800px;">
-                <h2 style="margin-bottom: 0.5rem;">Ingest Video URLs</h2>
-                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem;">
-                    Paste YouTube Shorts URLs below (one URL per line or separated by commas).
-                    Duplicates will be automatically skipped.
-                </p>
-
-                <div id="ingest-alert"></div>
-
-                <div class="form-group">
-                    <label for="urls-input">Video URLs</label>
-                    <textarea id="urls-input" rows="12" placeholder="https://www.youtube.com/shorts/sample1&#10;https://www.youtube.com/shorts/sample2"></textarea>
+        <!-- ─────────────────────────────────────────────
+             TAB 2: URL MANAGER
+        ───────────────────────────────────────────── -->
+        <section id="tab-urls" class="tab-content">
+            <div class="clay-card" style="max-width: 820px; margin: 0 auto;">
+                <div class="clay-card-header">
+                    <div>
+                        <h2 class="clay-card-title">
+                            <i data-lucide="plus-circle"></i>
+                            <span>Batch URL Ingestion</span>
+                        </h2>
+                        <p class="clay-card-subtitle">
+                            Paste YouTube Shorts URLs below. Paste one URL per line or separate by commas. Duplicates will be deduplicated automatically.
+                        </p>
+                    </div>
                 </div>
 
-                <button class="btn btn-primary" onclick="submitIngest()">
-                    Add URLs to Queue
+                <div class="clay-form-group">
+                    <label for="urls-input">
+                        <i data-lucide="file-text"></i> Source Video URLs
+                    </label>
+                    <textarea id="urls-input" class="clay-textarea" rows="12" placeholder="https://www.youtube.com/shorts/dQw4w9WgXcQ&#10;https://www.youtube.com/shorts/5qap5aO4i9A"></textarea>
+                    <span class="help-text">Input can contain YouTube Shorts, standard YouTube links, or CSV formatted text.</span>
+                </div>
+
+                <button class="btn-clay btn-clay-primary" onclick="submitIngest()">
+                    <i data-lucide="folder-plus"></i>
+                    <span>Add URLs to Queue</span>
                 </button>
             </div>
-        </div>
+        </section>
 
-        <!-- 3. CONFIGURATION TAB -->
-        <div id="tab-config" class="tab-content">
-            <div id="config-alert"></div>
+        <!-- ─────────────────────────────────────────────
+             TAB 3: CONFIGURATION
+        ───────────────────────────────────────────── -->
+        <section id="tab-config" class="tab-content">
+            <div class="clay-form-grid">
+                <!-- 1. Concurrency & Rate Limits -->
+                <div class="clay-card">
+                    <div class="clay-card-header">
+                        <h3 class="clay-card-title">
+                            <i data-lucide="gauge"></i>
+                            <span>Rate Limits & Concurrency</span>
+                        </h3>
+                    </div>
 
-            <div class="form-grid">
-                <!-- Rate Limits & Concurrency -->
-                <div class="glass-card">
-                    <h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--card-border); padding-bottom: 0.5rem;">
-                        Concurrency & Rate Limits
-                    </h3>
-                    <div class="form-group">
+                    <div class="clay-form-group">
                         <label>Posts Per Hour (per platform)</label>
-                        <input type="number" id="cfg-posts-per-hour" min="1" max="24" value="2">
+                        <input type="number" id="cfg-posts-per-hour" class="clay-input" min="1" max="24" value="2">
                         <span class="help-text">Controls anti-ban throttling per platform channel.</span>
                     </div>
-                    <div class="form-group">
+
+                    <div class="clay-form-group">
                         <label>Delay Between Platforms (seconds)</label>
-                        <input type="number" id="cfg-delay-platforms" min="5" max="300" value="30">
+                        <input type="number" id="cfg-delay-platforms" class="clay-input" min="5" max="300" value="30">
                         <span class="help-text">Delay before posting to the next social network.</span>
                     </div>
-                    <div class="form-group">
+
+                    <div class="clay-form-group">
                         <label>Parallel Downloader Workers</label>
-                        <input type="number" id="cfg-workers-download" min="1" max="8" value="2">
+                        <input type="number" id="cfg-workers-download" class="clay-input" min="1" max="8" value="2">
+                        <span class="help-text">Number of parallel yt-dlp worker threads.</span>
                     </div>
                 </div>
 
-                <!-- FFmpeg Video Editing -->
-                <div class="glass-card">
-                    <h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--card-border); padding-bottom: 0.5rem;">
-                        FFmpeg Anti-Hash Filters
-                    </h3>
-                    <div class="form-group">
+                <!-- 2. FFmpeg Anti-Hash Filters -->
+                <div class="clay-card">
+                    <div class="clay-card-header">
+                        <h3 class="clay-card-title">
+                            <i data-lucide="wand-2"></i>
+                            <span>FFmpeg Anti-Hash Filters</span>
+                        </h3>
+                    </div>
+
+                    <div class="clay-form-group">
                         <label>Zoom Crop Factor</label>
-                        <input type="number" step="0.01" id="cfg-ffmpeg-zoom" value="1.10">
+                        <input type="number" step="0.01" id="cfg-ffmpeg-zoom" class="clay-input" value="1.10">
                         <span class="help-text">E.g., 1.10 = 10% zoom crop to break frame boundary hash.</span>
                     </div>
-                    <div class="form-group">
+
+                    <div class="clay-form-group">
                         <label>Speed Factor</label>
-                        <input type="number" step="0.01" id="cfg-ffmpeg-speed" value="1.05">
-                        <span class="help-text">Speed up multiplier (also adjusts audio pitch).</span>
+                        <input type="number" step="0.01" id="cfg-ffmpeg-speed" class="clay-input" value="1.05">
+                        <span class="help-text">Speed multiplier with pitch-preserving audio shift.</span>
                     </div>
-                    <div class="form-group">
+
+                    <div class="clay-form-group">
                         <label>Micro-Noise Amount</label>
-                        <input type="number" id="cfg-ffmpeg-noise" value="3">
+                        <input type="number" id="cfg-ffmpeg-noise" class="clay-input" value="3">
                         <span class="help-text">Subtle noise injection (0-10) for pixel hash alteration.</span>
                     </div>
-                    <div class="form-group">
+
+                    <div class="clay-form-group">
                         <label>Contrast / Saturation</label>
                         <div style="display: flex; gap: 10px;">
-                            <input type="number" step="0.01" id="cfg-ffmpeg-contrast" value="1.05" placeholder="Contrast">
-                            <input type="number" step="0.01" id="cfg-ffmpeg-saturation" value="1.08" placeholder="Saturation">
+                            <input type="number" step="0.01" id="cfg-ffmpeg-contrast" class="clay-input" value="1.05" placeholder="Contrast">
+                            <input type="number" step="0.01" id="cfg-ffmpeg-saturation" class="clay-input" value="1.08" placeholder="Saturation">
                         </div>
                     </div>
                 </div>
 
-                <!-- Browser Mode Setting -->
-                <div class="glass-card">
-                    <h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--card-border); padding-bottom: 0.5rem;">
-                        Browser Execution Mode
-                    </h3>
-                    <div class="form-group">
-                        <label>Browser Visibility</label>
-                        <select id="cfg-browser-headless">
+                <!-- 3. Browser Execution Mode -->
+                <div class="clay-card">
+                    <div class="clay-card-header">
+                        <h3 class="clay-card-title">
+                            <i data-lucide="monitor"></i>
+                            <span>Browser Visibility Mode</span>
+                        </h3>
+                    </div>
+
+                    <div class="clay-form-group">
+                        <label>Execution Mode</label>
+                        <select id="cfg-browser-headless" class="clay-select">
                             <option value="false">Non-Headless (Tampak - Jendela Browser Terbuka)</option>
                             <option value="true">Headless Mode (Latar Belakang - Sembunyi)</option>
                         </select>
-                        <span class="help-text">Pilih 'Non-Headless' untuk melihat jendela browser saat posting, atau 'Headless' untuk berjalan di latar belakang.</span>
+                        <span class="help-text">Pilih 'Non-Headless' untuk melihat otomatisasi Playwright berjalan langsung di layar desktop Anda.</span>
                     </div>
                 </div>
 
-                <!-- DeepSeek AI Captions -->
-                <div class="glass-card">
-                    <h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--card-border); padding-bottom: 0.5rem;">
-                        DeepSeek AI Caption Generator
-                    </h3>
-                    <div class="form-group">
-                        <label>DeepSeek API Key</label>
-                        <input type="text" id="cfg-deepseek-key" placeholder="sk-...">
+                <!-- 4. DeepSeek AI Captions -->
+                <div class="clay-card">
+                    <div class="clay-card-header">
+                        <h3 class="clay-card-title">
+                            <i data-lucide="sparkles"></i>
+                            <span>DeepSeek AI Generator</span>
+                        </h3>
                     </div>
-                    <div class="form-group">
+
+                    <div class="clay-form-group">
+                        <label>DeepSeek API Key</label>
+                        <input type="text" id="cfg-deepseek-key" class="clay-input" placeholder="sk-...">
+                        <span class="help-text">API key untuk generate judul viral, deskripsi, & hashtag.</span>
+                    </div>
+
+                    <div class="clay-form-group">
                         <label>AI Model</label>
-                        <input type="text" id="cfg-deepseek-model" value="deepseek-chat">
+                        <input type="text" id="cfg-deepseek-model" class="clay-input" value="deepseek-chat">
                     </div>
                 </div>
             </div>
 
             <div style="margin-top: 1rem;">
-                <button class="btn btn-primary" onclick="saveConfiguration()">
-                    Save Configuration
+                <button class="btn-clay btn-clay-primary" onclick="saveConfiguration()">
+                    <i data-lucide="save"></i>
+                    <span>Save Configuration</span>
                 </button>
             </div>
-        </div>
+        </section>
 
-        <!-- 4. PLATFORMS TAB -->
-        <div id="tab-platforms" class="tab-content">
-            <div class="glass-card">
-                <h2 style="margin-bottom: 0.5rem;">Social Media Platform Targets</h2>
-                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem;">
-                    Enable or disable publishing platforms. Connect cookies or persistent profiles to authorize uploads.
-                </p>
-                <div class="platform-grid" id="platforms-grid">
-                    <!-- Dynamic platform cards -->
-                </div>
-            </div>
-        </div>
-
-        <!-- 5. LIVE LOGS TAB -->
-        <div id="tab-logs" class="tab-content">
-            <div class="glass-card">
-                <div class="table-header-bar">
-                    <h2>Live System Stream Logs</h2>
-                    <div class="filters">
-                        <button class="btn btn-secondary" onclick="clearLogs()">Clear</button>
+        <!-- ─────────────────────────────────────────────
+             TAB 4: PLATFORMS
+        ───────────────────────────────────────────── -->
+        <section id="tab-platforms" class="tab-content">
+            <div class="clay-card">
+                <div class="clay-card-header">
+                    <div>
+                        <h2 class="clay-card-title">
+                            <i data-lucide="share-2"></i>
+                            <span>Social Media Publishing Targets</span>
+                        </h2>
+                        <p class="clay-card-subtitle">
+                            Toggle channels on/off, manage cookie authorizations or launch interactive browser sessions for login.
+                        </p>
                     </div>
                 </div>
 
-                <div class="terminal" id="terminal-log">
-                    <div class="log-line INFO"><span class="time">[System]</span> <span class="level">INFO</span> Connected to OSAP log stream...</div>
+                <div class="clay-platform-grid" id="platforms-grid">
+                    <!-- Populated dynamically via app.js -->
                 </div>
             </div>
-        </div>
+        </section>
+
+        <!-- ─────────────────────────────────────────────
+             TAB 5: LIVE LOGS
+        ───────────────────────────────────────────── -->
+        <section id="tab-logs" class="tab-content">
+            <div class="clay-terminal-frame">
+                <div class="clay-card-header" style="margin-bottom: 1rem;">
+                    <div>
+                        <h2 class="clay-card-title">
+                            <i data-lucide="terminal"></i>
+                            <span>Live System Logs (SSE Stream)</span>
+                        </h2>
+                        <p class="clay-card-subtitle">Real-time terminal output streamed directly from background worker processes.</p>
+                    </div>
+
+                    <button class="btn-clay btn-clay-secondary" onclick="clearLogs()">
+                        <i data-lucide="trash-2"></i>
+                        <span>Clear Logs</span>
+                    </button>
+                </div>
+
+                <div class="terminal-bezel" id="terminal-log">
+                    <div class="terminal-line INFO">
+                        <span class="term-time">[System]</span>
+                        <span class="term-level">INFO</span>
+                        <span class="term-msg">Connected to OSAP Claymorphism log stream...</span>
+                    </div>
+                </div>
+            </div>
+        </section>
 
     </main>
 
-    <!-- Javascript Client Logic -->
-    <script>
-        let currentPage = 1;
-        let isPipelineActive = false;
-        let eventSource = null;
-
-        // Init on page load
-        document.addEventListener('DOMContentLoaded', () => {
-            loadDashboardData();
-            loadPlatformsData();
-            loadConfigData();
-            setupLogStream();
-
-            // Auto refresh dashboard stats every 5 seconds
-            setInterval(() => {
-                loadDashboardData(true);
-            }, 5000);
-        });
-
-        // Tab Switching
-        function switchTab(tabId) {
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-
-            event.currentTarget.classList.add('active');
-            document.getElementById(`tab-${tabId}`).classList.add('active');
-
-            if (tabId === 'dashboard') loadDashboardData();
-            if (tabId === 'platforms') loadPlatformsData();
-            if (tabId === 'config') loadConfigData();
-        }
-
-        // Fetch Dashboard Data
-        async function loadDashboardData(silent = false) {
-            try {
-                const res = await fetch('/api/status');
-                const data = await res.json();
-
-                // Stats
-                document.getElementById('stat-total').innerText = data.queue_stats.total || 0;
-                document.getElementById('stat-pending').innerText = data.queue_stats.by_status.pending || 0;
-                document.getElementById('stat-done').innerText = data.queue_stats.by_status.done || 0;
-                document.getElementById('stat-failed').innerText = data.queue_stats.by_status.failed || 0;
-
-                // System info
-                document.getElementById('sys-encoder').innerText = `${data.hardware.gpu} (${data.hardware.encoder})`;
-                document.getElementById('sys-os').innerText = `${data.hardware.os}`;
-                document.getElementById('sys-python').innerText = `Python ${data.hardware.python_version}`;
-                document.getElementById('sys-platforms-count').innerText = `${data.enabled_platforms.length} Enabled`;
-
-                // Pipeline State
-                isPipelineActive = data.pipeline_active;
-                updatePipelineStatusUI(isPipelineActive);
-
-                if (!silent) {
-                    loadVideos(currentPage);
-                }
-            } catch (err) {
-                console.error("Error loading dashboard data:", err);
-            }
-        }
-
-        function updatePipelineStatusUI(active) {
-            const dot = document.getElementById('status-dot');
-            const text = document.getElementById('pipeline-status-text');
-            const btn = document.getElementById('btn-pipeline-toggle');
-
-            if (active) {
-                dot.classList.add('active');
-                text.innerText = 'Pipeline Running';
-                btn.className = 'btn btn-danger';
-                btn.innerHTML = '<span>Stop Pipeline</span>';
-            } else {
-                dot.classList.remove('active');
-                text.innerText = 'Pipeline Idle';
-                btn.className = 'btn btn-primary';
-                btn.innerHTML = '<span>Run Pipeline</span>';
-            }
-        }
-
-        async function togglePipeline() {
-            const endpoint = isPipelineActive ? '/api/pipeline/stop' : '/api/pipeline/start';
-            try {
-                const res = await fetch(endpoint, { method: 'POST' });
-                const data = await res.json();
-                loadDashboardData();
-            } catch (err) {
-                alert("Failed to toggle pipeline status");
-            }
-        }
-
-        async function resetStuckJobs() {
-            try {
-                const res = await fetch('/api/reset-stuck', { method: 'POST' });
-                const data = await res.json();
-                alert(data.message);
-                loadDashboardData();
-            } catch (err) {
-                alert("Error resetting stuck jobs");
-            }
-        }
-
-        // Videos Pagination & Search
-        async function loadVideos(page = 1) {
-            currentPage = page;
-            const statusFilter = document.getElementById('filter-status').value;
-            const tbody = document.getElementById('videos-table-body');
-
-            try {
-                const res = await fetch(`/api/videos?page=${page}&limit=10&status=${statusFilter}`);
-                const data = await res.json();
-
-                tbody.innerHTML = '';
-                if (data.videos.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">No videos found in queue.</td></tr>`;
-                    return;
-                }
-
-                data.videos.forEach(v => {
-                    let platformHtml = '';
-                    if (v.platforms && Object.keys(v.platforms).length > 0) {
-                        for (const [pName, pData] of Object.entries(v.platforms)) {
-                            platformHtml += `<span class="platform-pill ${pData.status}">${pName}: ${pData.status}</span> `;
-                        }
-                    } else {
-                        platformHtml = `<span style="color: var(--text-muted); font-size: 0.75rem;">-</span>`;
-                    }
-
-                    const row = `
-                        <tr>
-                            <td>#${v.id}</td>
-                            <td><a href="${v.url}" target="_blank" style="color: var(--accent-primary); text-decoration: none;">${v.video_id || 'Link'}</a></td>
-                            <td>${v.ai_title || v.title || 'Processing...'}</td>
-                            <td><span class="badge badge-${v.status}">${v.status}</span></td>
-                            <td><div class="platform-pills">${platformHtml}</div></td>
-                            <td style="color: var(--text-muted); font-size: 0.75rem;">${v.created_at || ''}</td>
-                        </tr>
-                    `;
-                    tbody.innerHTML += row;
-                });
-
-                document.getElementById('page-info').innerText = `Page ${data.page} of ${data.pages}`;
-                document.getElementById('btn-prev-page').disabled = (data.page <= 1);
-                document.getElementById('btn-next-page').disabled = (data.page >= data.pages);
-
-            } catch (err) {
-                console.error("Error loading videos:", err);
-            }
-        }
-
-        function changePage(delta) {
-            loadVideos(currentPage + delta);
-        }
-
-        // Submit Ingest
-        async function submitIngest() {
-            const urlsText = document.getElementById('urls-input').value;
-            const alertBox = document.getElementById('ingest-alert');
-            alertBox.innerHTML = '';
-
-            if (!urlsText.trim()) {
-                alertBox.innerHTML = `<div class="alert alert-error">Please enter at least one valid URL.</div>`;
-                return;
-            }
-
-            try {
-                const res = await fetch('/api/ingest', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ urls: urlsText })
-                });
-                const data = await res.json();
-
-                if (res.ok) {
-                    alertBox.innerHTML = `<div class="alert alert-success">Successfully added ${data.added} new video(s) to queue (${data.skipped} skipped).</div>`;
-                    document.getElementById('urls-input').value = '';
-                    loadDashboardData();
-                } else {
-                    alertBox.innerHTML = `<div class="alert alert-error">${data.detail || 'Ingestion failed'}</div>`;
-                }
-            } catch (err) {
-                alertBox.innerHTML = `<div class="alert alert-error">Failed to connect to backend server.</div>`;
-            }
-        }
-
-        // Config Load/Save
-        async function loadConfigData() {
-            try {
-                const res = await fetch('/api/config');
-                const data = await res.json();
-
-                const yaml = data.yaml || {};
-                const env = data.env || {};
-
-                document.getElementById('cfg-posts-per-hour').value = yaml.rate_limits?.posts_per_hour_per_platform || 2;
-                document.getElementById('cfg-delay-platforms').value = yaml.rate_limits?.delay_between_platforms_sec || 30;
-                document.getElementById('cfg-workers-download').value = yaml.rate_limits?.workers_downloader || 2;
-
-                const isHeadless = env.HEADLESS !== undefined ? (env.HEADLESS === true || env.HEADLESS === 'true') : (yaml.browser?.headless || false);
-                document.getElementById('cfg-browser-headless').value = isHeadless ? 'true' : 'false';
-
-                document.getElementById('cfg-ffmpeg-zoom').value = yaml.ffmpeg?.zoom_factor || 1.10;
-                document.getElementById('cfg-ffmpeg-speed').value = yaml.ffmpeg?.speed_factor || 1.05;
-                document.getElementById('cfg-ffmpeg-noise').value = yaml.ffmpeg?.noise_amount || 3;
-                document.getElementById('cfg-ffmpeg-contrast').value = yaml.ffmpeg?.contrast || 1.05;
-                document.getElementById('cfg-ffmpeg-saturation').value = yaml.ffmpeg?.saturation || 1.08;
-
-                document.getElementById('cfg-deepseek-key').value = env.DEEPSEEK_API_KEY_MASKED || '';
-                document.getElementById('cfg-deepseek-model').value = env.DEEPSEEK_MODEL || 'deepseek-chat';
-            } catch (err) {
-                console.error("Error loading config:", err);
-            }
-        }
-
-        async function saveConfiguration() {
-            const alertBox = document.getElementById('config-alert');
-            alertBox.innerHTML = '';
-
-            const payload = {
-                posts_per_hour: parseInt(document.getElementById('cfg-posts-per-hour').value),
-                delay_between_platforms_sec: parseInt(document.getElementById('cfg-delay-platforms').value),
-                workers_downloader: parseInt(document.getElementById('cfg-workers-download').value),
-                headless: document.getElementById('cfg-browser-headless').value === 'true',
-                ffmpeg_zoom: parseFloat(document.getElementById('cfg-ffmpeg-zoom').value),
-                ffmpeg_speed: parseFloat(document.getElementById('cfg-ffmpeg-speed').value),
-                ffmpeg_noise: parseInt(document.getElementById('cfg-ffmpeg-noise').value),
-                ffmpeg_contrast: parseFloat(document.getElementById('cfg-ffmpeg-contrast').value),
-                ffmpeg_saturation: parseFloat(document.getElementById('cfg-ffmpeg-saturation').value),
-                deepseek_api_key: document.getElementById('cfg-deepseek-key').value,
-                deepseek_model: document.getElementById('cfg-deepseek-model').value
-            };
-
-            try {
-                const res = await fetch('/api/config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    alertBox.innerHTML = `<div class="alert alert-success">${data.message}</div>`;
-                } else {
-                    alertBox.innerHTML = `<div class="alert alert-error">Failed to save config</div>`;
-                }
-            } catch (err) {
-                alertBox.innerHTML = `<div class="alert alert-error">Network error saving config</div>`;
-            }
-        }
-
-
-        // Platforms
-        async function loadPlatformsData() {
-            const container = document.getElementById('platforms-grid');
-            try {
-                const res = await fetch('/api/platforms');
-                const data = await res.json();
-
-                container.innerHTML = '';
-                data.platforms.forEach(p => {
-                    const isConfigured = p.auth_status === 'configured';
-                    const card = `
-                        <div class="platform-card">
-                            <div class="platform-header">
-                                <span class="platform-name">${p.name}</span>
-                                <label class="switch">
-                                    <input type="checkbox" ${p.enabled ? 'checked' : ''} onchange="togglePlatform('${p.id}', this.checked)">
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                            <div style="font-size: 0.8rem; color: var(--text-muted);">
-                                Auth Mode: <strong>${p.auth_type}</strong>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                <span class="badge ${isConfigured ? 'badge-done' : 'badge-failed'}">
-                                    ${isConfigured ? 'Cookie/Profile OK' : 'Auth Missing'}
-                                </span>
-                                <div style="display: flex; gap: 6px;">
-                                    ${p.auth_type === 'persistent' ? `
-                                        <button class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 10px;" onclick="triggerSetupAuth('${p.id}')">
-                                            Login Browser
-                                        </button>
-                                    ` : `
-                                        <label class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 10px; cursor: pointer;">
-                                            Upload Cookie
-                                            <input type="file" accept=".txt,.json" style="display: none;" onchange="uploadCookies('${p.id}', this)">
-                                        </label>
-                                    `}
-                                    <button class="btn btn-primary" style="font-size: 0.75rem; padding: 4px 10px;" onclick="triggerManualPost('${p.id}')">
-                                        Manual Post
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    container.innerHTML += card;
-                });
-            } catch (err) {
-                console.error("Error loading platforms:", err);
-            }
-        }
-
-        async function togglePlatform(platformId, enabled) {
-            const enabledMap = {};
-            enabledMap[platformId] = enabled;
-            try {
-                await fetch('/api/config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ enabled_platforms: enabledMap })
-                });
-                await loadPlatformsData();
-                await loadDashboardData(true);
-            } catch (err) {
-                console.error("Failed to toggle platform", err);
-            }
-        }
-
-        async function triggerSetupAuth(platformId) {
-            try {
-                const res = await fetch(`/api/setup-auth/${platformId}`, { method: 'POST' });
-                const data = await res.json();
-                alert(data.message);
-            } catch (err) {
-                alert("Failed to launch auth browser");
-            }
-        }
-
-        async function uploadCookies(platformId, inputElement) {
-            if (!inputElement.files || inputElement.files.length === 0) return;
-            const file = inputElement.files[0];
-            const formData = new FormData();
-            formData.append('file', file);
-
-            try {
-                const res = await fetch(`/api/upload-cookies/${platformId}`, {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    alert(data.message || `Cookies uploaded for ${platformId}`);
-                    await loadPlatformsData();
-                } else {
-                    alert(data.detail || `Failed to upload cookies for ${platformId}`);
-                }
-            } catch (err) {
-                alert(`Error uploading cookie file: ${err.message}`);
-            }
-        }
-
-        async function triggerManualPost(platformId) {
-            try {
-                const res = await fetch(`/api/publish/${platformId}`, { method: 'POST' });
-                const data = await res.json();
-                if (res.ok) {
-                    alert(data.message || `Manual post launched for ${platformId}`);
-                    loadDashboardData(true);
-                } else {
-                    alert(data.detail || `Failed to trigger manual post for ${platformId}`);
-                }
-            } catch (err) {
-                alert(`Error triggering manual post: ${err.message}`);
-            }
-        }
-
-
-
-        // Live Log SSE Stream
-        function setupLogStream() {
-            if (eventSource) eventSource.close();
-
-            eventSource = new EventSource('/api/logs/stream');
-            const term = document.getElementById('terminal-log');
-
-            eventSource.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (!data.message) return;
-
-                    const line = document.createElement('div');
-                    line.className = `log-line ${data.level || 'INFO'}`;
-                    line.innerHTML = `<span class="time">[${data.timestamp || ''}]</span> <span class="level">${data.level || 'INFO'}</span> <span class="msg">${escapeHtml(data.message)}</span>`;
-                    
-                    term.appendChild(line);
-                    term.scrollTop = term.scrollHeight;
-                } catch (e) {
-                    console.error("SSE parse error", e);
-                }
-            };
-        }
-
-        function clearLogs() {
-            document.getElementById('terminal-log').innerHTML = '';
-        }
-
-        function escapeHtml(str) {
-            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        }
-    </script>
+    <!-- Application JavaScript Logic -->
+    <script src="/static/js/toast.js"></script>
+    <script src="/static/js/app.js"></script>
 </body>
 </html>

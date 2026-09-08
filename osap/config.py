@@ -320,7 +320,10 @@ def get_config(*, reload: bool = False) -> Config:
         PROFILES_DIR=Path(os.environ.get("PROFILES_DIR", "./assets/profiles")),
         # AI
         DEEPSEEK_API_KEY=os.environ.get("DEEPSEEK_API_KEY", ""),
-        DEEPSEEK_MODEL=os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
+        DEEPSEEK_MODEL=os.environ.get(
+            "DEEPSEEK_MODEL",
+            _nested_get(yaml_data, "ai_caption", "model", default="deepseek-chat"),
+        ),
         CAPTION_MODE="ai",
         CAPTION_SYSTEM_PROMPT=_nested_get(
             yaml_data, "ai", "caption_system_prompt",
@@ -383,23 +386,23 @@ def get_config(*, reload: bool = False) -> Config:
             default=bool(_nested_get(yaml_data, "browser", "headless", default=False)),
         ),
 
-        # FFmpeg
+        # FFmpeg — keys aligned with config.yaml naming convention
         FFMPEG_ZOOM=float(
             os.environ.get(
                 "FFMPEG_ZOOM",
-                _nested_get(yaml_data, "ffmpeg", "zoom", default=1.04),
+                _nested_get(yaml_data, "ffmpeg", "zoom_factor", default=1.04),
             )
         ),
         FFMPEG_SPEED=float(
             os.environ.get(
                 "FFMPEG_SPEED",
-                _nested_get(yaml_data, "ffmpeg", "speed", default=1.0),
+                _nested_get(yaml_data, "ffmpeg", "speed_factor", default=1.0),
             )
         ),
         FFMPEG_NOISE=int(
             os.environ.get(
                 "FFMPEG_NOISE",
-                _nested_get(yaml_data, "ffmpeg", "noise", default=2),
+                _nested_get(yaml_data, "ffmpeg", "noise_amount", default=2),
             )
         ),
         FFMPEG_CONTRAST=float(

@@ -1,0 +1,1124 @@
+/* ============================================================
+   OmniShorts Auto-Publisher (OSAP) — 3D Claymorphism Theme
+   ============================================================ */
+
+:root {
+    /* Color Palette - Dark Clay Aesthetics */
+    --bg-main: #0c1017;
+    --bg-surface: #131b2a;
+    --bg-surface-elevated: #1a2438;
+    
+    /* Clay Colors */
+    --clay-base: #172236;
+    --clay-base-hover: #1c2942;
+    --clay-dark: #0f1624;
+    --clay-border: rgba(255, 255, 255, 0.08);
+
+    /* Primary Accent - Vibrant Clay Indigo/Violet */
+    --primary: #6366f1;
+    --primary-light: #818cf8;
+    --primary-dark: #4f46e5;
+    --primary-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    
+    /* Clay Button Accents */
+    --accent-cyan: #06b6d4;
+    --accent-emerald: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-rose: #f43f5e;
+    
+    /* Semantic Colors */
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --info: #3b82f6;
+
+    /* Text Colors */
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+
+    /* Typography */
+    --font-sans: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+
+    /* 3D Clay Shadows & Highlights */
+    /* Standard Clay Card: Soft outer elevation + top-left highlight + bottom-right bevel shadow */
+    --clay-card-shadow: 
+        12px 16px 32px rgba(0, 0, 0, 0.45),
+        -6px -6px 16px rgba(255, 255, 255, 0.02),
+        inset 3px 3px 6px rgba(255, 255, 255, 0.08),
+        inset -4px -4px 10px rgba(0, 0, 0, 0.4);
+
+    --clay-card-shadow-hover: 
+        16px 22px 40px rgba(0, 0, 0, 0.55),
+        -8px -8px 20px rgba(255, 255, 255, 0.03),
+        inset 3px 3px 6px rgba(255, 255, 255, 0.12),
+        inset -4px -4px 10px rgba(0, 0, 0, 0.45);
+
+    /* Small Clay Pill / Chip */
+    --clay-pill-shadow:
+        4px 6px 12px rgba(0, 0, 0, 0.3),
+        inset 2px 2px 4px rgba(255, 255, 255, 0.1),
+        inset -2px -2px 5px rgba(0, 0, 0, 0.35);
+
+    /* Primary Clay Button */
+    --clay-btn-primary-shadow:
+        0 8px 20px rgba(99, 102, 241, 0.35),
+        inset 2px 2px 5px rgba(255, 255, 255, 0.35),
+        inset -3px -3px 8px rgba(0, 0, 0, 0.35);
+
+    --clay-btn-primary-active:
+        0 3px 8px rgba(99, 102, 241, 0.25),
+        inset 3px 3px 6px rgba(0, 0, 0, 0.4),
+        inset -2px -2px 4px rgba(255, 255, 255, 0.15);
+
+    /* Secondary Clay Button */
+    --clay-btn-secondary-shadow:
+        6px 8px 16px rgba(0, 0, 0, 0.35),
+        inset 2px 2px 4px rgba(255, 255, 255, 0.08),
+        inset -2px -2px 6px rgba(0, 0, 0, 0.3);
+
+    /* Danger Clay Button */
+    --clay-btn-danger-shadow:
+        0 8px 20px rgba(239, 68, 68, 0.35),
+        inset 2px 2px 5px rgba(255, 255, 255, 0.35),
+        inset -3px -3px 8px rgba(0, 0, 0, 0.35);
+
+    /* Inset Form Controls (Pressed into clay surface) */
+    --clay-input-shadow:
+        inset 3px 3px 8px rgba(0, 0, 0, 0.5),
+        inset -2px -2px 6px rgba(255, 255, 255, 0.03),
+        0 2px 4px rgba(0, 0, 0, 0.2);
+
+    /* Radii */
+    --radius-xl: 28px;
+    --radius-lg: 22px;
+    --radius-md: 16px;
+    --radius-sm: 10px;
+    --radius-pill: 9999px;
+
+    /* Transitions */
+    --bounce-transition: all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+    --smooth-transition: all 0.2s ease-in-out;
+}
+
+/* ============================================================
+   Global Reset & Base Styles
+   ============================================================ */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+}
+
+body {
+    font-family: var(--font-sans);
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+    background-image: 
+        radial-gradient(circle at 12% 10%, rgba(99, 102, 241, 0.09) 0%, transparent 45%),
+        radial-gradient(circle at 88% 20%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+        radial-gradient(circle at 50% 90%, rgba(6, 182, 212, 0.05) 0%, transparent 40%);
+    background-attachment: fixed;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: var(--bg-main);
+}
+::-webkit-scrollbar-thumb {
+    background: #243147;
+    border-radius: var(--radius-pill);
+    box-shadow: inset 1px 1px 2px rgba(255,255,255,0.1);
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #334460;
+}
+
+/* ============================================================
+   Clay Header Navigation
+   ============================================================ */
+.clay-header {
+    background: rgba(19, 27, 42, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--clay-border);
+    position: sticky;
+    top: 0;
+    z-index: 90;
+    padding: 0.9rem 2.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.brand-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+/* 3D Clay Brand Icon */
+.brand-clay-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-md);
+    background: var(--primary-gradient);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    box-shadow: var(--clay-btn-primary-shadow);
+    transition: var(--bounce-transition);
+}
+
+.brand-clay-icon:hover {
+    transform: scale(1.06) rotate(-3deg);
+}
+
+.brand-clay-icon svg {
+    width: 24px;
+    height: 24px;
+}
+
+.brand-info h1 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.brand-info p {
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+/* 3D Clay Status Pill */
+.status-clay-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 18px;
+    border-radius: var(--radius-pill);
+    font-size: 0.82rem;
+    font-weight: 600;
+    background: var(--clay-base);
+    box-shadow: var(--clay-pill-shadow);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+}
+
+.status-beacon {
+    position: relative;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    transition: var(--smooth-transition);
+}
+
+.status-beacon.active {
+    background: var(--success);
+    box-shadow: 0 0 10px var(--success);
+}
+
+.status-beacon.active::after {
+    content: '';
+    position: absolute;
+    top: -4px; left: -4px; right: -4px; bottom: -4px;
+    border-radius: 50%;
+    border: 2px solid var(--success);
+    animation: beaconPulse 2s infinite ease-out;
+}
+
+@keyframes beaconPulse {
+    0% { transform: scale(0.6); opacity: 1; }
+    100% { transform: scale(1.8); opacity: 0; }
+}
+
+/* ============================================================
+   Clay Buttons
+   ============================================================ */
+.btn-clay {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    padding: 10px 20px;
+    border-radius: var(--radius-md);
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: var(--bounce-transition);
+    user-select: none;
+    text-decoration: none;
+}
+
+.btn-clay svg {
+    width: 17px;
+    height: 17px;
+    transition: transform 0.2s ease;
+}
+
+.btn-clay:hover {
+    transform: translateY(-2px) scale(1.02);
+}
+
+.btn-clay:active {
+    transform: translateY(2px) scale(0.97);
+}
+
+.btn-clay-primary {
+    background: var(--primary-gradient);
+    color: white;
+    box-shadow: var(--clay-btn-primary-shadow);
+}
+
+.btn-clay-primary:hover {
+    box-shadow: 0 12px 28px rgba(99, 102, 241, 0.45),
+                inset 2px 2px 6px rgba(255, 255, 255, 0.45),
+                inset -3px -3px 8px rgba(0, 0, 0, 0.35);
+}
+
+.btn-clay-primary:active {
+    box-shadow: var(--clay-btn-primary-active);
+}
+
+.btn-clay-secondary {
+    background: var(--clay-base);
+    color: var(--text-primary);
+    box-shadow: var(--clay-btn-secondary-shadow);
+    border: 1px solid var(--clay-border);
+}
+
+.btn-clay-secondary:hover {
+    background: var(--clay-base-hover);
+    box-shadow: 8px 12px 22px rgba(0, 0, 0, 0.45),
+                inset 2px 2px 5px rgba(255, 255, 255, 0.12),
+                inset -2px -2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.btn-clay-secondary:active {
+    transform: translateY(2px) scale(0.97);
+    box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+.btn-clay-danger {
+    background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
+    color: white;
+    box-shadow: var(--clay-btn-danger-shadow);
+}
+
+.btn-clay-danger:hover {
+    box-shadow: 0 12px 28px rgba(244, 63, 94, 0.45),
+                inset 2px 2px 6px rgba(255, 255, 255, 0.45),
+                inset -3px -3px 8px rgba(0, 0, 0, 0.35);
+}
+
+.btn-clay-danger:active {
+    transform: translateY(2px) scale(0.97);
+    box-shadow: inset 3px 3px 6px rgba(0, 0, 0, 0.45);
+}
+
+.btn-clay-sm {
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    border-radius: var(--radius-sm);
+    gap: 6px;
+}
+
+.btn-clay-sm svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* ============================================================
+   Navigation Tabs Bar (Clay Pills)
+   ============================================================ */
+.clay-tabs-bar {
+    display: flex;
+    gap: 10px;
+    padding: 0.85rem 2.5rem;
+    background: rgba(15, 22, 34, 0.6);
+    border-bottom: 1px solid var(--clay-border);
+    overflow-x: auto;
+}
+
+.clay-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 20px;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--bounce-transition);
+    white-space: nowrap;
+}
+
+.clay-tab-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.clay-tab-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.clay-tab-btn.active {
+    color: #ffffff;
+    background: var(--clay-base);
+    box-shadow: var(--clay-pill-shadow);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.clay-tab-btn.active svg {
+    color: var(--primary-light);
+}
+
+/* ============================================================
+   Main Layout & Content Sections
+   ============================================================ */
+main {
+    flex: 1;
+    padding: 2.2rem 2.5rem;
+    max-width: 1480px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.tab-content {
+    display: none;
+    animation: clayFadeIn 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tab-content.active {
+    display: block;
+}
+
+@keyframes clayFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px) scale(0.99);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* ============================================================
+   3D Clay Cards
+   ============================================================ */
+.clay-card {
+    background: var(--clay-base);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--clay-card-shadow);
+    border: 1px solid var(--clay-border);
+    padding: 1.8rem;
+    margin-bottom: 1.8rem;
+    position: relative;
+    transition: var(--bounce-transition);
+}
+
+.clay-card-hover:hover {
+    box-shadow: var(--clay-card-shadow-hover);
+    transform: translateY(-2px);
+}
+
+/* Card Header */
+.clay-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.4rem;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.clay-card-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.clay-card-title svg {
+    color: var(--primary-light);
+    width: 20px;
+    height: 20px;
+}
+
+.clay-card-subtitle {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+/* ============================================================
+   Dashboard: 3D KPI Stat Cards
+   ============================================================ */
+.clay-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1.4rem;
+    margin-bottom: 1.8rem;
+}
+
+.stat-clay-card {
+    background: var(--clay-base);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--clay-card-shadow);
+    border: 1px solid var(--clay-border);
+    padding: 1.4rem 1.6rem;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    position: relative;
+    overflow: hidden;
+    transition: var(--bounce-transition);
+}
+
+.stat-clay-card:hover {
+    transform: translateY(-3px) scale(1.015);
+    box-shadow: var(--clay-card-shadow-hover);
+}
+
+.stat-icon-bubble {
+    width: 54px;
+    height: 54px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: var(--clay-pill-shadow);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-icon-bubble svg {
+    width: 26px;
+    height: 26px;
+}
+
+.stat-bubble-total {
+    background: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
+    color: #e0e7ff;
+}
+
+.stat-bubble-pending {
+    background: linear-gradient(135deg, #f59e0b 0%, #b45309 100%);
+    color: #fef3c7;
+}
+
+.stat-bubble-done {
+    background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+    color: #d1fae5;
+}
+
+.stat-bubble-failed {
+    background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+    color: #fee2e2;
+}
+
+.stat-details {
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.stat-value {
+    font-size: 2.1rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1.1;
+    margin-top: 4px;
+}
+
+/* ============================================================
+   Hardware System Strip (Clay Bar)
+   ============================================================ */
+.hardware-clay-strip {
+    background: var(--clay-base);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--clay-card-shadow);
+    border: 1px solid var(--clay-border);
+    padding: 1.2rem 1.8rem;
+    margin-bottom: 1.8rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    align-items: center;
+}
+
+.hardware-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.hardware-icon-box {
+    width: 42px;
+    height: 42px;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: var(--clay-pill-shadow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary-light);
+    flex-shrink: 0;
+}
+
+.hardware-icon-box svg {
+    width: 20px;
+    height: 20px;
+}
+
+.hardware-info h4 {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+.hardware-info p {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-top: 2px;
+}
+
+/* ============================================================
+   Clay Table & Badges
+   ============================================================ */
+.clay-table-container {
+    overflow-x: auto;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--clay-input-shadow);
+    background: rgba(12, 16, 23, 0.6);
+    border: 1px solid var(--clay-border);
+    margin: 1rem 0;
+}
+
+.clay-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+    text-align: left;
+}
+
+.clay-table th {
+    background: rgba(19, 27, 42, 0.95);
+    padding: 14px 18px;
+    color: var(--text-secondary);
+    font-weight: 600;
+    border-bottom: 1px solid var(--clay-border);
+    white-space: nowrap;
+}
+
+.clay-table td {
+    padding: 15px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    vertical-align: middle;
+}
+
+.clay-table tr:last-child td {
+    border-bottom: none;
+}
+
+.clay-table tr:hover td {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Clay Status Badges */
+.badge-clay {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: var(--radius-pill);
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: lowercase;
+    box-shadow: var(--clay-pill-shadow);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.badge-pending {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+}
+
+.badge-downloading, .badge-rendering, .badge-uploading {
+    background: rgba(6, 182, 212, 0.15);
+    color: #38bdf8;
+}
+
+.badge-downloaded, .badge-rendered {
+    background: rgba(139, 92, 246, 0.15);
+    color: #c084fc;
+}
+
+.badge-done {
+    background: rgba(16, 185, 129, 0.18);
+    color: #4ade80;
+}
+
+.badge-failed {
+    background: rgba(239, 68, 68, 0.18);
+    color: #f87171;
+}
+
+/* Clay Platform Pills in Table */
+.platform-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.platform-pill {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: var(--radius-pill);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-muted);
+    box-shadow: var(--clay-pill-shadow);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.platform-pill.done {
+    background: rgba(16, 185, 129, 0.2);
+    color: #4ade80;
+}
+
+.platform-pill.failed {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+}
+
+.platform-pill.uploading {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+}
+
+/* Pagination Bar */
+.clay-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1.2rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+/* ============================================================
+   Clay Form Controls & Inputs
+   ============================================================ */
+.clay-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.6rem;
+}
+
+.clay-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 1.2rem;
+}
+
+.clay-form-group label {
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.clay-form-group label svg {
+    width: 16px;
+    height: 16px;
+    color: var(--primary-light);
+}
+
+.clay-form-group .help-text {
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+/* Inset Clay Inputs */
+.clay-input, .clay-select, .clay-textarea {
+    background: rgba(12, 17, 26, 0.75);
+    border: 1px solid var(--clay-border);
+    border-radius: var(--radius-md);
+    padding: 10px 16px;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 0.9rem;
+    box-shadow: var(--clay-input-shadow);
+    outline: none;
+    transition: var(--smooth-transition);
+}
+
+.clay-input:focus, .clay-select:focus, .clay-textarea:focus {
+    border-color: var(--primary-light);
+    box-shadow: var(--clay-input-shadow), 0 0 0 3px rgba(99, 102, 241, 0.25);
+}
+
+.clay-textarea {
+    resize: vertical;
+    line-height: 1.6;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+}
+
+/* ============================================================
+   Platform Targets Grid (3D Clay Cards & Switch)
+   ============================================================ */
+.clay-platform-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: 1.4rem;
+}
+
+.clay-platform-card {
+    background: var(--clay-base);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--clay-card-shadow);
+    border: 1px solid var(--clay-border);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    transition: var(--bounce-transition);
+}
+
+.clay-platform-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--clay-card-shadow-hover);
+}
+
+.clay-platform-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.clay-platform-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 1.05rem;
+}
+
+.platform-clay-badge {
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--clay-pill-shadow);
+    color: white;
+}
+
+.badge-youtube { background: linear-gradient(135deg, #ff0000 0%, #b30000 100%); }
+.badge-facebook { background: linear-gradient(135deg, #1877f2 0%, #0c56b8 100%); }
+.badge-instagram { background: linear-gradient(135deg, #e1306c 0%, #833ab4 100%); }
+.badge-twitter { background: linear-gradient(135deg, #1da1f2 0%, #0d8bd9 100%); }
+.badge-twitter_nsfw { background: linear-gradient(135deg, #f43f5e 0%, #881337 100%); }
+.badge-tiktok { background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%); color: #000; }
+.badge-upscrolled { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+.badge-febspot { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+
+/* 3D Clay Switch */
+.clay-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 28px;
+}
+
+.clay-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.clay-switch-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #0e141f;
+    box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.6), inset -1px -1px 3px rgba(255, 255, 255, 0.05);
+    transition: var(--smooth-transition);
+    border-radius: var(--radius-pill);
+}
+
+.clay-switch-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 4px;
+    bottom: 4px;
+    background: #475569;
+    box-shadow: 2px 3px 6px rgba(0,0,0,0.4), inset 2px 2px 4px rgba(255,255,255,0.25);
+    transition: var(--bounce-transition);
+    border-radius: 50%;
+}
+
+.clay-switch input:checked + .clay-switch-slider {
+    background-color: var(--primary-dark);
+}
+
+.clay-switch input:checked + .clay-switch-slider:before {
+    transform: translateX(22px);
+    background: #ffffff;
+    box-shadow: 0 4px 10px rgba(99, 102, 241, 0.5), inset 2px 2px 4px rgba(255,255,255,0.4);
+}
+
+/* Platform Footer Actions */
+.platform-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 8px;
+    flex-wrap: wrap;
+}
+
+/* ============================================================
+   Live Logs Terminal (Clay Bezel + OLED Console)
+   ============================================================ */
+.clay-terminal-frame {
+    background: var(--clay-base);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--clay-card-shadow);
+    border: 1px solid var(--clay-border);
+    padding: 1.5rem;
+}
+
+.terminal-bezel {
+    background: #060910;
+    border-radius: var(--radius-md);
+    box-shadow: var(--clay-input-shadow);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 1.2rem;
+    height: 560px;
+    overflow-y: auto;
+    font-family: var(--font-mono);
+    font-size: 0.84rem;
+    color: #e2e8f0;
+    line-height: 1.65;
+}
+
+.terminal-line {
+    margin-bottom: 5px;
+    word-break: break-all;
+    display: flex;
+    gap: 10px;
+}
+
+.terminal-line .term-time {
+    color: #475569;
+    flex-shrink: 0;
+}
+
+.terminal-line.INFO .term-level {
+    color: #38bdf8;
+    font-weight: 700;
+}
+
+.terminal-line.WARNING .term-level {
+    color: #fbbf24;
+    font-weight: 700;
+}
+
+.terminal-line.ERROR .term-level {
+    color: #f87171;
+    font-weight: 700;
+}
+
+.terminal-line .term-msg {
+    color: #cbd5e1;
+}
+
+/* ============================================================
+   3D Clay Toast Notifications
+   ============================================================ */
+#toast-container {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    pointer-events: none;
+}
+
+.clay-toast {
+    pointer-events: auto;
+    background: var(--clay-base);
+    border-radius: var(--radius-md);
+    box-shadow: 
+        14px 18px 36px rgba(0, 0, 0, 0.6),
+        inset 2px 2px 4px rgba(255, 255, 255, 0.12),
+        inset -3px -3px 8px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 12px 18px;
+    min-width: 300px;
+    max-width: 440px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-primary);
+    font-size: 0.88rem;
+    font-weight: 500;
+    animation: toastBounceIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: var(--smooth-transition);
+}
+
+.clay-toast.toast-leave {
+    animation: toastBounceOut 0.25s forwards ease-in;
+}
+
+@keyframes toastBounceIn {
+    from {
+        opacity: 0;
+        transform: translateX(50px) scale(0.85);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+}
+
+@keyframes toastBounceOut {
+    from {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(60px) scale(0.85);
+    }
+}
+
+.toast-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: var(--clay-pill-shadow);
+}
+
+.toast-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+.toast-success .toast-icon {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+}
+
+.toast-error .toast-icon {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+}
+
+.toast-info .toast-icon {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+}
+
+.toast-body {
+    flex: 1;
+    line-height: 1.4;
+}
+
+.toast-close {
+    cursor: pointer;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+}
+
+.toast-close:hover {
+    color: var(--text-primary);
+}
+
+/* ============================================================
+   Responsive Design
+   ============================================================ */
+@media (max-width: 900px) {
+    .clay-header {
+        padding: 0.9rem 1.4rem;
+        flex-direction: column;
+        gap: 14px;
+        align-items: flex-start;
+    }
+
+    .header-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .clay-tabs-bar {
+        padding: 0.7rem 1.4rem;
+    }
+
+    main {
+        padding: 1.4rem;
+    }
+}

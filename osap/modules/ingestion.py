@@ -24,6 +24,7 @@ from osap.config import get_config
 from osap.db.queue import (
     add_urls_batch,
     claim_next,
+    init_platform_rows,
     log_error,
     mark_platform_failed,
     update_video,
@@ -173,16 +174,7 @@ class IngestionWorker:
             return
 
         try:
-            result = add_urls_batch(urls)
-            # add_urls_batch is expected to return a dict with at least
-            # {'added': int, 'skipped': int} – handle both styles gracefully.
-            if isinstance(result, dict):
-                added = result.get("added", 0)
-                skipped = result.get("skipped", len(urls) - added)
-            else:
-                # Older implementations may return just the count added.
-                added = int(result or 0)
-                skipped = len(urls) - added
+            added, skipped = add_urls_batch(urls, db_path=self.db_path)
         except Exception as exc:  # noqa: BLE001
             logger.exception("DB error during batch insert: %s", exc)
             self._print_summary(total=len(urls), added=0, skipped=0, error=str(exc))
