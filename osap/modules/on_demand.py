@@ -1,4 +1,4 @@
-﻿"""
+"""
 osap/modules/on_demand.py
 ─────────────────────────
 On-demand single video pipeline for the "Post Now" button.
@@ -205,14 +205,14 @@ async def run_single_video_pipeline(platform: str, db_path: Optional[str] = None
             return True
         else:
             mark_platform_failed(vid_id, platform, "Upload failed or returned False", db_path=db_path)
-            update_video(vid_id, {"status": "failed"}, db_path=db_path)
-            logger.warning(f"[Post Now] Upload to {platform.title()} returned False for video #{vid_id}")
+            update_video(vid_id, {"status": "rendered"}, db_path=db_path)
+            logger.warning(f"[Post Now] Upload to {platform.title()} returned False for video #{vid_id}. Status kept as 'rendered' for retry.")
             return False
 
     except Exception as e:
         msg = f"Exception during upload to {platform}: {e}"
         logger.exception(f"[Post Now] {msg}")
         mark_platform_failed(vid_id, platform, str(e), db_path=db_path)
-        update_video(vid_id, {"status": "failed"}, db_path=db_path)
+        update_video(vid_id, {"status": "rendered"}, db_path=db_path)
         log_error(vid_id, "on_demand", str(e), platform=platform, db_path=db_path)
         return False

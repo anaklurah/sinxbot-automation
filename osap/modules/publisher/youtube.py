@@ -59,24 +59,53 @@ class YouTubePublisher(BasePublisher):
             try:
                 # ── Step 1: Navigate ──────────────────────────────────────────
                 log.info('[youtube] Navigating to %s', self.UPLOAD_URL)
-                await page.goto(self.UPLOAD_URL, wait_until='networkidle', timeout=60_000)
-                await self._jitter(800, 1800)
+                await page.goto(self.UPLOAD_URL, wait_until='domcontentloaded', timeout=60_000)
+                await self._jitter(2000, 3500)
 
                 # ── Step 2: Click upload button ───────────────────────────────
-                # Try the visible upload button first; fall back to direct input
-                log.info('[youtube] Clicking upload button')
-                upload_btn_sel = 'ytcp-button#upload-icon, [aria-label="Upload videos"], #upload-icon'
-                try:
-                    await page.wait_for_selector(upload_btn_sel, timeout=15_000)
-                    await self._move_click(page, upload_btn_sel)
-                    await self._jitter(500, 1200)
-                except Exception:
-                    log.debug('[youtube] Upload button not found via selector — trying input directly')
+                log.info('[youtube] Finding and clicking upload button')
+                upload_clicked = False
+                for direct_sel in [
+                    'ytcp-button#upload-icon',
+                    '[aria-label="Upload videos"]',
+                    '#upload-icon',
+                    'button[aria-label="Upload videos"]',
+                ]:
+                    try:
+                        el = await page.query_selector(direct_sel)
+                        if el and await el.is_visible():
+                            await el.click()
+                            upload_clicked = True
+                            await self._jitter(1000, 2000)
+                            break
+                    except Exception:
+                        pass
+
+                if not upload_clicked:
+                    # Fallback: Click the Create button, then click Upload videos from dropdown
+                    log.info('[youtube] Trying Create button dropdown fallback')
+                    for create_sel in ['#create-icon', 'button#create-icon', 'ytcp-button#create-icon', '[aria-label="Create"]']:
+                        try:
+                            create_btn = await page.query_selector(create_sel)
+                            if create_btn and await create_btn.is_visible():
+                                await create_btn.click()
+                                await self._jitter(800, 1500)
+                                menu_item = await page.wait_for_selector(
+                                    '#text-item-0, [test-id="upload-action"], tp-yt-paper-item:has-text("Upload videos"), ytcp-text-menu tp-yt-paper-item',
+                                    timeout=8_000,
+                                )
+                                if menu_item:
+                                    await menu_item.click()
+                                    upload_clicked = True
+                                    await self._jitter(1000, 2000)
+                                    break
+                        except Exception as e:
+                            log.debug('[youtube] Create selector %s failed: %s', create_sel, e)
 
                 # ── Step 3: Set file via input ────────────────────────────────
                 log.info('[youtube] Setting input file: %s', video_path)
                 file_input_sel = 'input[type="file"]'
-                await page.wait_for_selector(file_input_sel, timeout=15_000, state='attached')
+                await page.wait_for_selector(file_input_sel, timeout=25_000, state='attached')
                 await page.locator(file_input_sel).set_input_files(video_path)
                 log.info('[youtube] File set, waiting for upload dialog to open')
 

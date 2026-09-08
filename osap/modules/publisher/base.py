@@ -178,38 +178,43 @@ class BasePublisher(ABC):
 
         context_kwargs = dict(ctx_opts)
 
+        context = None
+        # Priority 1: Try Playwright native storage_state
         if storage_state_path.exists():
-            self._log.debug(
-                '[%s] Loading storage state from %s', self.PLATFORM_NAME, storage_state_path
-            )
-            context_kwargs['storage_state'] = str(storage_state_path)
-            context = await browser.new_context(**context_kwargs)
+            try:
+                self._log.debug(
+                    '[%s] Attempting to load native storage state from %s', self.PLATFORM_NAME, storage_state_path
+                )
+                context_kwargs['storage_state'] = str(storage_state_path)
+                context = await browser.new_context(**context_kwargs)
+            except Exception as err:
+                self._log.warning('[%s] Native storage_state failed (%s), falling back to cookie_loader', self.PLATFORM_NAME, err)
+                context = None
+                context_kwargs.pop('storage_state', None)
 
-        elif json_cookies_path.exists():
-            self._log.debug(
-                '[%s] Loading JSON cookies from %s', self.PLATFORM_NAME, json_cookies_path
-            )
+        if context is None:
             context = await browser.new_context(**context_kwargs)
-            cookies = load_cookies(json_cookies_path)
-            if cookies:
-                await context.add_cookies(cookies)
+            # Find candidate cookie file
+            target_cookie_file = None
+            if storage_state_path.exists():
+                target_cookie_file = storage_state_path
+            elif json_cookies_path.exists():
+                target_cookie_file = json_cookies_path
+            elif netscape_cookies_path.exists():
+                target_cookie_file = netscape_cookies_path
 
-        elif netscape_cookies_path.exists():
-            self._log.debug(
-                '[%s] Loading Netscape cookies from %s',
-                self.PLATFORM_NAME, netscape_cookies_path,
-            )
-            context = await browser.new_context(**context_kwargs)
-            cookies = load_cookies(netscape_cookies_path)
-            if cookies:
-                await context.add_cookies(cookies)
-
-        else:
-            self._log.warning(
-                '[%s] No auth file found in %s — launching unauthenticated context.',
-                self.PLATFORM_NAME, profiles_dir,
-            )
-            context = await browser.new_context(**context_kwargs)
+            if target_cookie_file:
+                cookies = load_cookies(target_cookie_file)
+                if cookies:
+                    await context.add_cookies(cookies)
+                    self._log.info('[%s] Injected %d normalized cookies from %s', self.PLATFORM_NAME, len(cookies), target_cookie_file.name)
+                else:
+                    self._log.warning('[%s] No valid cookies parsed from %s', self.PLATFORM_NAME, target_cookie_file)
+            else:
+                self._log.warning(
+                    '[%s] No auth file found in %s — launching unauthenticated context.',
+                    self.PLATFORM_NAME, profiles_dir,
+                )
 
         await apply_stealth(context)
         return context

@@ -588,6 +588,16 @@ async def upload_platform_cookies(platform: str, file: UploadFile = File(...)):
     count = len(parsed)
     logger.info(f"Uploaded cookie file for platform {platform}: {save_path.name} ({count} cookies parsed)")
 
+    if count > 0:
+        # Save normalized cookies in valid Playwright storage_state format
+        storage_path = cfg.PROFILES_DIR / f"{platform}_storage.json"
+        try:
+            with open(storage_path, "w", encoding="utf-8") as sf:
+                json.dump({"cookies": parsed, "origins": []}, sf, indent=2)
+            save_path = storage_path
+        except Exception as e:
+            logger.warning(f"Could not write normalized storage state for {platform}: {e}")
+
     if count == 0:
         return {
             "success": True,
@@ -602,7 +612,7 @@ async def upload_platform_cookies(platform: str, file: UploadFile = File(...)):
         "filename": file.filename,
         "saved_to": save_path.name,
         "cookies_count": count,
-        "message": f"Successfully uploaded {count} cookies for {platform}!"
+        "message": f"Successfully uploaded and normalized {count} cookies for {platform}!"
     }
 
 
