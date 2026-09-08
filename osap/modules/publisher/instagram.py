@@ -115,76 +115,180 @@ class InstagramPublisher(BasePublisher):
                 log.info('[instagram] File set')
                 await self._jitter(2500, 4500)
 
-                # ── Step 4: Handle aspect-ratio / Reels notification dialog ───
-                log.info('[instagram] Checking for reels notice or crop dialog')
+                # ── Step 4: Handle Aspect Ratio ("Original") ──────────────────
+                log.info('[instagram] Checking aspect ratio and crop screen')
+                await self._jitter(1500, 2500)
+
+                # Dismiss any overlay Reels dialogs ("Reels are here", "Video posts are now shared as reels", etc.)
                 try:
-                    ok_btn = page.locator('button:has-text("OK"), button:has-text("Mengerti"), button:has-text("Continue")').first
-                    if await ok_btn.is_visible():
-                        await ok_btn.click()
-                        log.info('[instagram] Dismissed Reels/crop dialog with OK')
-                        await self._jitter(800, 1500)
+                    for _ in range(2):
+                        notice_ok = page.locator(
+                            'div[role="dialog"] button:has-text("OK"), '
+                            'div[role="dialog"] button:has-text("Mengerti"), '
+                            'div[role="dialog"] button:has-text("Continue"), '
+                            ':text-is("OK")'
+                        ).first
+                        if await notice_ok.is_visible():
+                            await notice_ok.click(force=True)
+                            log.info('[instagram] Dismissed Reels notice modal')
+                            await self._jitter(600, 1200)
                 except Exception:
                     pass
 
-                # ── Step 5: Click through editing steps (Next / Selanjutnya) ───
-                next_btn_sel = (
-                    'button:has-text("Next"), '
-                    'button:has-text("Selanjutnya"), '
-                    '[aria-label="Next"], '
-                    '[aria-label="Selanjutnya"], '
-                    'div[role="button"]:has-text("Next"), '
-                    'div[role="button"]:has-text("Selanjutnya")'
+                # Check if the Aspect Ratio popover is open; if not, click the Crop button in bottom-left
+                try:
+                    original_opt = page.locator(
+                        'div[role="dialog"] :text-is("Original"), '
+                        'div[role="dialog"] :text-is("Asli"), '
+                        'div[role="dialog"] span:has-text("Original"), '
+                        'div[role="dialog"] button:has-text("Original"), '
+                        ':text-is("Original"), '
+                        ':text-is("Asli")'
+                    ).first
+
+                    if not await original_opt.is_visible():
+                        # Click the crop button at bottom left of media container
+                        crop_btn = page.locator(
+                            'div[role="dialog"] button:has(svg[aria-label*="crop" i]), '
+                            'div[role="dialog"] button:has(svg[aria-label*="potong" i]), '
+                            'div[role="dialog"] [aria-label="Select crop"], '
+                            'div[role="dialog"] [aria-label="Pilih pemotongan"], '
+                            'div[role="dialog"] [aria-label="Open media crop options"], '
+                            'svg[aria-label="Select crop"], '
+                            'svg[aria-label="Pilih pemotongan"]'
+                        ).first
+
+                        if await crop_btn.is_visible():
+                            log.info('[instagram] Clicking Crop / Aspect Ratio button at bottom left')
+                            await crop_btn.click(force=True)
+                            await self._jitter(600, 1200)
+                        else:
+                            # Fallback: find circular buttons inside dialog positioned near the bottom
+                            log.info('[instagram] Looking for bottom-left circular crop button')
+                            cand_buttons = page.locator('div[role="dialog"] button:has(svg)')
+                            btn_count = await cand_buttons.count()
+                            for b_idx in range(btn_count):
+                                b_cand = cand_buttons.nth(b_idx)
+                                box = await b_cand.bounding_box()
+                                # Bottom left quadrant
+                                if box and box['y'] > 250 and box['x'] < 600:
+                                    await b_cand.click(force=True)
+                                    await self._jitter(600, 1000)
+                                    if await page.locator(':text-is("Original"), :text-is("Asli")').first.is_visible():
+                                        break
+
+                    # Select "Original" option from menu
+                    original_opt = page.locator(
+                        'div[role="dialog"] :text-is("Original"), '
+                        'div[role="dialog"] :text-is("Asli"), '
+                        'div[role="dialog"] span:has-text("Original"), '
+                        'div[role="dialog"] button:has-text("Original"), '
+                        ':text-is("Original"), '
+                        ':text-is("Asli")'
+                    ).first
+
+                    if await original_opt.is_visible():
+                        await original_opt.click(force=True)
+                        log.info('[instagram] ✓ Aspect ratio set to "Original"')
+                        await self._jitter(800, 1500)
+                    else:
+                        # Fallback: check for 9:16
+                        ratio_916 = page.locator(
+                            'div[role="dialog"] :text-is("9:16"), '
+                            'div[role="dialog"] button:has-text("9:16"), '
+                            ':text-is("9:16")'
+                        ).first
+                        if await ratio_916.is_visible():
+                            await ratio_916.click(force=True)
+                            log.info('[instagram] ✓ Aspect ratio set to "9:16"')
+                            await self._jitter(800, 1500)
+                        else:
+                            log.warning('[instagram] Aspect ratio menu options not found, continuing...')
+
+                except Exception as exc:
+                    log.warning('[instagram] Aspect ratio handling error: %s', exc)
+
+                # ── Step 5: Advance through wizard steps (Next / Selanjutnya) ─
+                log.info('[instagram] Advancing through wizard steps until caption screen appears')
+                caption_sel = (
+                    'div[role="dialog"] div[contenteditable="true"][role="textbox"], '
+                    'div[role="dialog"] div[contenteditable="true"], '
+                    'div[role="dialog"] [aria-label*="caption" i], '
+                    'div[role="dialog"] [aria-label*="keterangan" i], '
+                    'div[role="dialog"] textarea'
                 )
-                for step_name in ('Filter/Trim', 'Adjust'):
-                    log.info('[instagram] Advancing past step: %s', step_name)
-                    try:
-                        await page.wait_for_selector(next_btn_sel, timeout=15_000)
-                        btn = page.locator(next_btn_sel).first
-                        await btn.click(force=True)
-                        await self._jitter(1500, 3000)
-                    except Exception:
-                        log.warning('[instagram] Next button not found at step %r', step_name)
 
-                # Dismiss any secondary OK prompts
-                try:
-                    ok_btn = page.locator('button:has-text("OK"), button:has-text("Mengerti")').first
-                    if await ok_btn.is_visible():
-                        await ok_btn.click(force=True)
-                        await self._jitter(800, 1500)
-                except Exception:
-                    pass
+                max_next_attempts = 5
+                for step_num in range(1, max_next_attempts + 1):
+                    # Check if we already reached caption box
+                    cap_cand = page.locator(caption_sel).first
+                    if await cap_cand.is_visible():
+                        log.info('[instagram] Reached caption box at step %d', step_num)
+                        break
+
+                    # Look for Next button in dialog header
+                    next_btn = page.locator(
+                        'div[role="dialog"] :text-is("Next"), '
+                        'div[role="dialog"] :text-is("Selanjutnya"), '
+                        'div[role="dialog"] div[role="button"]:has-text("Next"), '
+                        'div[role="dialog"] div[role="button"]:has-text("Selanjutnya"), '
+                        'div[role="dialog"] button:has-text("Next"), '
+                        'div[role="dialog"] button:has-text("Selanjutnya"), '
+                        'div[role="dialog"] [aria-label="Next"], '
+                        'div[role="dialog"] [aria-label="Selanjutnya"]'
+                    ).first
+
+                    try:
+                        await next_btn.wait_for(state='visible', timeout=12_000)
+                        log.info('[instagram] Clicking Next button (pass %d)', step_num)
+                        await next_btn.click(force=True)
+                        await self._jitter(2000, 3500)
+                    except Exception as e:
+                        log.warning('[instagram] Next button wait failed at pass %d: %s', step_num, e)
+                        # Check if caption appeared despite wait error
+                        if await page.locator(caption_sel).first.is_visible():
+                            break
+
+                    # Dismiss any intermediate dialogs
+                    try:
+                        int_ok = page.locator('div[role="dialog"] button:has-text("OK"), div[role="dialog"] button:has-text("Mengerti")').first
+                        if await int_ok.is_visible():
+                            await int_ok.click(force=True)
+                            await self._jitter(800, 1500)
+                    except Exception:
+                        pass
 
                 # ── Step 6: Fill caption ──────────────────────────────────────
                 log.info('[instagram] Filling caption')
-                caption_sel = (
-                    'div[contenteditable="true"][role="textbox"], '
-                    'div[contenteditable="true"], '
-                    'div[role="textbox"], '
-                    '[aria-label*="caption" i], '
-                    '[aria-label*="keterangan" i], '
-                    'textarea'
-                )
                 try:
-                    await page.wait_for_selector(caption_sel, timeout=10_000)
+                    await page.wait_for_selector(caption_sel, timeout=15_000)
                     caption_box = page.locator(caption_sel).first
                     await caption_box.click(force=True)
-                    await self._jitter(300, 600)
-                    for char in caption:
-                        await page.keyboard.type(char, delay=35)
-                    log.info('[instagram] Caption filled')
-                    await self._jitter(800, 1500)
+                    await self._jitter(400, 800)
+                    
+                    # Fill using evaluate or keyboard
+                    try:
+                        await page.keyboard.insert_text(caption)
+                    except Exception:
+                        for char in caption:
+                            await page.keyboard.type(char, delay=25)
+
+                    log.info('[instagram] Caption filled successfully')
+                    await self._jitter(1000, 2000)
                 except Exception as exc:
                     log.warning('[instagram] Caption fill failed: %s', exc)
 
                 # ── Step 7: Click Share / Bagikan ─────────────────────────────
                 log.info('[instagram] Clicking Share button')
                 share_btn_sel = (
+                    'div[role="dialog"] :text-is("Share"), '
+                    'div[role="dialog"] :text-is("Bagikan"), '
+                    'div[role="dialog"] div[role="button"]:has-text("Share"), '
+                    'div[role="dialog"] div[role="button"]:has-text("Bagikan"), '
+                    'div[role="dialog"] button:has-text("Share"), '
+                    'div[role="dialog"] button:has-text("Bagikan"), '
                     'button:has-text("Share"), '
-                    'button:has-text("Bagikan"), '
-                    '[aria-label="Share"], '
-                    '[aria-label="Bagikan"], '
-                    'div[role="button"]:has-text("Share"), '
-                    'div[role="button"]:has-text("Bagikan")'
+                    'button:has-text("Bagikan")'
                 )
                 await page.wait_for_selector(share_btn_sel, timeout=15_000)
                 share_btn = page.locator(share_btn_sel).first
@@ -196,7 +300,7 @@ class InstagramPublisher(BasePublisher):
                 await self._jitter(3000, 6000)
 
                 # ── Step 8: Wait for success ───────────────────────────────────
-                log.info('[instagram] Waiting for success confirmation')
+                log.info('[instagram] Waiting for upload and sharing confirmation')
                 try:
                     success_sel = (
                         ':text("Your reel has been shared"), '
@@ -206,10 +310,15 @@ class InstagramPublisher(BasePublisher):
                         ':text("Postingan dibagikan"), '
                         '[aria-label*="shared" i]'
                     )
-                    await page.wait_for_selector(success_sel, timeout=45_000)
+                    await page.wait_for_selector(success_sel, timeout=60_000)
                     log.info('[instagram] ✓ Post shared successfully')
                 except Exception:
-                    log.info('[instagram] Success message not detected — flow finished, assuming success')
+                    # Check if dialog closed as indication of success
+                    dialog = page.locator('div[role="dialog"]').first
+                    if not await dialog.is_visible():
+                        log.info('[instagram] Dialog closed — assuming upload completed successfully')
+                    else:
+                        log.info('[instagram] Timeout waiting for confirmation text — proceeding')
 
                 return True
 
