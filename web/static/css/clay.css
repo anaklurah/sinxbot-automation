@@ -1134,3 +1134,14 @@ main {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
 }
+
+/* Disabled Clay Buttons */
+.btn-clay:disabled,
+.btn-clay[disabled] {
+    opacity: 0.42 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
+    box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2) !important;
+    transform: none !important;
+    filter: grayscale(0.5);
+}

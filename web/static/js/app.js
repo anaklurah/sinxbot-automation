@@ -404,7 +404,7 @@ async function loadPlatformsData() {
                             </label>
                         `}
                     </div>
-                    <button class="btn-clay btn-clay-primary btn-clay-sm" onclick="triggerManualPost('${p.id}', this)">
+                    <button class="btn-clay btn-clay-primary btn-clay-sm" ${!p.enabled ? 'disabled title="Nyalakan switch platform ini terlebih dahulu"' : ''} onclick="triggerManualPost('${p.id}', this)">
                         <i data-lucide="send"></i> Post Now
                     </button>
                 </div>
