@@ -61,7 +61,7 @@ class FacebookPublisher(BasePublisher):
             try:
                 # ── Step 1: Navigate ──────────────────────────────────────────
                 log.info('[facebook] Navigating to %s', self.UPLOAD_URL)
-                await page.goto(self.UPLOAD_URL, wait_until='networkidle', timeout=60_000)
+                await page.goto(self.UPLOAD_URL, wait_until='domcontentloaded', timeout=60_000)
                 await self._jitter(1500, 3000)
 
                 # Check authentication

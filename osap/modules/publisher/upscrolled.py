@@ -106,7 +106,7 @@ class UpscrolledPublisher(BasePublisher):
             try:
                 # ── Step 1: Navigate ──────────────────────────────────────────
                 log.info('[upscrolled] Navigating to %s', self.UPLOAD_URL)
-                await page.goto(self.UPLOAD_URL, wait_until='networkidle', timeout=60_000)
+                await page.goto(self.UPLOAD_URL, wait_until='domcontentloaded', timeout=60_000)
                 await self._jitter(1500, 3000)
 
                 # Check authentication
@@ -127,7 +127,7 @@ class UpscrolledPublisher(BasePublisher):
                         try:
                             upload_url = f'{self.UPLOAD_URL.rstrip("/")}{upload_path}'
                             log.debug('[upscrolled] Trying upload URL: %s', upload_url)
-                            await page.goto(upload_url, wait_until='networkidle', timeout=30_000)
+                            await page.goto(upload_url, wait_until='domcontentloaded', timeout=30_000)
                             await self._jitter(800, 1500)
                             await page.wait_for_selector(self._SEL_FILE_INPUT, timeout=5_000)
                             log.info('[upscrolled] Found upload page at %s', upload_url)

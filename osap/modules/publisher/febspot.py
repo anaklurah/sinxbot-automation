@@ -100,7 +100,7 @@ class FebspotPublisher(BasePublisher):
             try:
                 # ── Step 1: Navigate to Febspot ────────────────────────────────
                 log.info('[febspot] Navigating to %s', self.UPLOAD_URL)
-                await page.goto(self.UPLOAD_URL, wait_until='networkidle', timeout=60_000)
+                await page.goto(self.UPLOAD_URL, wait_until='domcontentloaded', timeout=60_000)
                 await self._jitter(1500, 3000)
 
                 # ── Step 2: Click Upload nav link ──────────────────────────────
@@ -116,7 +116,7 @@ class FebspotPublisher(BasePublisher):
                         try:
                             upload_url = f'{self.UPLOAD_URL.rstrip("/")}{upload_path}'
                             log.debug('[febspot] Trying upload URL: %s', upload_url)
-                            await page.goto(upload_url, wait_until='networkidle', timeout=30_000)
+                            await page.goto(upload_url, wait_until='domcontentloaded', timeout=30_000)
                             await self._jitter(800, 1500)
                             # Check if a file input is present
                             await page.wait_for_selector(self._SEL_FILE_INPUT, timeout=5_000)

@@ -150,6 +150,13 @@ class BasePublisher(ABC):
         """
         cfg = self._cfg
         launch_opts = get_launch_options(headless=getattr(cfg, 'HEADLESS', False))
+        
+        # Inject proxy if configured
+        proxy_url = getattr(cfg, 'PROXY_URL', None) or os.environ.get('PROXY_URL')
+        if proxy_url:
+            self._log.info('[%s] Routing browser traffic through proxy: %s', self.PLATFORM_NAME, proxy_url)
+            launch_opts['proxy'] = {'server': proxy_url}
+
         ctx_opts = get_context_options(
             locale=getattr(cfg, 'BROWSER_LOCALE', 'en-US'),
             timezone=getattr(cfg, 'BROWSER_TIMEZONE', 'America/New_York'),

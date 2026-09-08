@@ -61,13 +61,13 @@ platform_captions:
     max_title_chars: 100
     use_description: true
 platforms:
-  facebook: false
-  febspot: false
+  facebook: true
+  febspot: true
   instagram: false
   tiktok: false
   twitter: false
   twitter_nsfw: false
-  upscrolled: false
+  upscrolled: true
   youtube: true
 proxy:
   facebook: ''

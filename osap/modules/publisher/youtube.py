@@ -109,24 +109,29 @@ class YouTubePublisher(BasePublisher):
                 await page.locator(file_input_sel).set_input_files(video_path)
                 log.info('[youtube] File set, waiting for upload dialog to open')
 
-                # Wait for the upload dialog / title field to appear
-                await page.wait_for_selector(
-                    'ytcp-uploads-dialog, #title-textarea, ytcp-upload-dialog',
-                    timeout=30_000,
+                # Wait for title field to appear in the details dialog
+                log.info('[youtube] Waiting for details dialog and title field...')
+                title_sel = (
+                    '#title-textarea #textbox, '
+                    'ytcp-uploads-dialog #title-textarea #textbox, '
+                    '[aria-label*="title" i] #textbox, '
+                    '#textbox[aria-label*="title" i], '
+                    'ytcp-video-title #textbox'
                 )
+                try:
+                    title_box = page.locator(title_sel).first
+                    await title_box.wait_for(state='visible', timeout=45_000)
+                except Exception:
+                    # Fallback: wait for any textbox inside dialog
+                    log.warning('[youtube] Primary title selector timed out, trying generic textbox')
+                    title_box = page.locator('#textbox').first
+                    await title_box.wait_for(state='visible', timeout=20_000)
+
                 await self._jitter(1000, 2000)
 
                 # ── Step 4a: Fill title ───────────────────────────────────────
                 log.info('[youtube] Filling title: %r', title[:100])
-                title_sel = (
-                    'ytcp-uploads-dialog #title-textarea #textbox, '
-                    '#title-textarea #textbox, '
-                    '[aria-label="Title"] #textbox'
-                )
-                title_box = page.locator(title_sel).first
-                await title_box.wait_for(timeout=20_000)
                 await title_box.click()
-                # Select all & replace to avoid leftover default text
                 await title_box.press('Control+a')
                 await self._jitter(200, 400)
                 await human_type_locator(title_box, title[:100])
@@ -165,7 +170,14 @@ class YouTubePublisher(BasePublisher):
                     log.warning('[youtube] Could not find "Not for kids" radio — skipping')
 
                 # ── Steps 6–8: Click through wizard ───────────────────────────
-                next_btn_sel = 'ytcp-button#next-button, [aria-label="Next"]'
+                next_btn_sel = (
+                    'ytcp-button#next-button, '
+                    '#next-button, '
+                    '[aria-label="Next"], '
+                    '[aria-label="Berikutnya"], '
+                    'ytcp-button:has-text("Next"), '
+                    'ytcp-button:has-text("Berikutnya")'
+                )
                 for step_name in ('Video elements', 'Checks', 'Visibility'):
                     log.info('[youtube] Advancing to step: %s', step_name)
                     try:
@@ -191,31 +203,34 @@ class YouTubePublisher(BasePublisher):
 
                 # ── Step 10: Wait for processing / Save ───────────────────────
                 log.info('[youtube] Waiting for upload/processing to finish')
-                # YouTube shows "Uploading X%" then "Processing" before Save unlocks
-                try:
-                    await page.wait_for_selector(
-                        'ytcp-video-upload-progress[uploading="false"], '
-                        ':text("Upload complete"), '
-                        ':text("Processing complete"), '
-                        ':text("Checks complete")',
-                        timeout=540_000,
-                    )
-                except Exception:
-                    log.warning('[youtube] Timed out waiting for processing — attempting save anyway')
+                save_sel = (
+                    'ytcp-button#done-button, '
+                    '#done-button, '
+                    '[aria-label="Publish"], '
+                    '[aria-label="Publikasikan"], '
+                    '[aria-label="Save"], '
+                    '[aria-label="Simpan"], '
+                    'ytcp-button:has-text("Publish"), '
+                    'ytcp-button:has-text("Publikasikan")'
+                )
+                # Modern YouTube Studio allows publishing immediately; wait up to 30s for button to be enabled
+                for _ in range(20):
+                    try:
+                        btn = page.locator(save_sel).first
+                        if await btn.is_visible() and await btn.is_enabled():
+                            log.info('[youtube] Save/Publish button is active and ready')
+                            break
+                    except Exception:
+                        pass
+                    await asyncio.sleep(2)
 
                 await self._jitter(800, 1500)
 
                 # ── Step 11: Click Save / Publish ─────────────────────────────
                 log.info('[youtube] Clicking Save/Publish')
-                save_sel = (
-                    'ytcp-button#done-button, '
-                    '[aria-label="Publish"], '
-                    '[aria-label="Save"], '
-                    '#done-button'
-                )
                 await page.wait_for_selector(save_sel, timeout=15_000)
                 await self._move_click(page, save_sel)
-                await self._jitter(1000, 2000)
+                await self._jitter(2000, 4000)
 
                 # ── Step 12: Confirm success ──────────────────────────────────
                 log.info('[youtube] Waiting for success confirmation')
@@ -223,11 +238,13 @@ class YouTubePublisher(BasePublisher):
                     ':text("Your video is published"), '
                     ':text("Video published"), '
                     ':text("Your video is now live"), '
+                    ':text("Video dipublikasikan"), '
+                    ':text("dipublikasikan"), '
                     'ytcp-video-published-dialog, '
                     '[class*="published"]'
                 )
                 try:
-                    await page.wait_for_selector(success_sel, timeout=30_000)
+                    await page.wait_for_selector(success_sel, timeout=25_000)
                     log.info('[youtube] ✓ Upload published successfully')
                 except Exception:
                     log.warning('[youtube] Could not detect explicit success dialog — assuming success')
