@@ -146,6 +146,34 @@ class Config:
     FFMPEG_SATURATION: float = 1.1
 
     # ------------------------------------------------------------------
+    # Watermark parameters
+    # ------------------------------------------------------------------
+
+    #: Whether to overlay text watermark on rendered videos.
+    WATERMARK_ENABLED: bool = True
+
+    #: Text content for the watermark.
+    WATERMARK_TEXT: str = "SINXBOT"
+
+    #: Path to TTF font file.
+    WATERMARK_FONT: str = "font/KOMIKAX_.ttf"
+
+    #: Watermark font size in points.
+    WATERMARK_FONT_SIZE: int = 32
+
+    #: Watermark font color.
+    WATERMARK_COLOR: str = "white"
+
+    #: Watermark opacity (0.0 to 1.0).
+    WATERMARK_OPACITY: float = 0.85
+
+    #: Watermark X position expression in FFmpeg (e.g. 40 for left-side margin).
+    WATERMARK_X: str = "40"
+
+    #: Watermark Y position expression in FFmpeg (e.g. (h-text_h)/2 for center).
+    WATERMARK_Y: str = "(h-text_h)/2"
+
+    # ------------------------------------------------------------------
     # Derived / computed properties
     # ------------------------------------------------------------------
 
@@ -420,6 +448,43 @@ def get_config(*, reload: bool = False) -> Config:
                 "FFMPEG_SATURATION",
                 _nested_get(yaml_data, "ffmpeg", "saturation", default=1.1),
             )
+        ),
+        # Watermark
+        WATERMARK_ENABLED=_parse_bool(
+            os.environ.get("WATERMARK_ENABLED"),
+            default=bool(_nested_get(yaml_data, "watermark", "enabled", default=True)),
+        ),
+        WATERMARK_TEXT=os.environ.get(
+            "WATERMARK_TEXT",
+            _nested_get(yaml_data, "watermark", "text", default="SINXBOT"),
+        ),
+        WATERMARK_FONT=os.environ.get(
+            "WATERMARK_FONT",
+            _nested_get(yaml_data, "watermark", "font_path", default="font/KOMIKAX_.ttf"),
+        ),
+        WATERMARK_FONT_SIZE=int(
+            os.environ.get(
+                "WATERMARK_FONT_SIZE",
+                _nested_get(yaml_data, "watermark", "font_size", default=32),
+            )
+        ),
+        WATERMARK_COLOR=os.environ.get(
+            "WATERMARK_COLOR",
+            _nested_get(yaml_data, "watermark", "color", default="white"),
+        ),
+        WATERMARK_OPACITY=float(
+            os.environ.get(
+                "WATERMARK_OPACITY",
+                _nested_get(yaml_data, "watermark", "opacity", default=0.85),
+            )
+        ),
+        WATERMARK_X=os.environ.get(
+            "WATERMARK_X",
+            str(_nested_get(yaml_data, "watermark", "x", default="40")),
+        ),
+        WATERMARK_Y=os.environ.get(
+            "WATERMARK_Y",
+            str(_nested_get(yaml_data, "watermark", "y", default="(h-text_h)/2")),
         ),
     )
 

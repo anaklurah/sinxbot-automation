@@ -19,6 +19,15 @@ ffmpeg:
   saturation: 1.08
   speed_factor: 1.05
   zoom_factor: 1.1
+watermark:
+  enabled: true
+  text: "SINXBOT"
+  font_path: "font/KOMIKAX_.ttf"
+  font_size: 32
+  color: "white"
+  opacity: 0.85
+  x: "40"
+  y: "(h-text_h)/2"
 platform_captions:
   facebook:
     max_caption_chars: 63206

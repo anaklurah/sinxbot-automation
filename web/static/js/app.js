@@ -318,6 +318,14 @@ async function loadConfigData() {
         document.getElementById('cfg-ffmpeg-contrast').value = yaml.ffmpeg?.contrast || 1.05;
         document.getElementById('cfg-ffmpeg-saturation').value = yaml.ffmpeg?.saturation || 1.08;
 
+        // Watermark settings
+        const isWmEnabled = env.WATERMARK_ENABLED !== undefined
+            ? (env.WATERMARK_ENABLED === true || env.WATERMARK_ENABLED === 'true')
+            : (yaml.watermark?.enabled ?? true);
+        document.getElementById('cfg-watermark-enabled').value = isWmEnabled ? 'true' : 'false';
+        document.getElementById('cfg-watermark-text').value = env.WATERMARK_TEXT || yaml.watermark?.text || 'SINXBOT';
+        document.getElementById('cfg-watermark-size').value = env.WATERMARK_FONT_SIZE || yaml.watermark?.font_size || 32;
+
         document.getElementById('cfg-deepseek-key').value = env.DEEPSEEK_API_KEY_MASKED || '';
         document.getElementById('cfg-deepseek-model').value = env.DEEPSEEK_MODEL || 'deepseek-chat';
     } catch (err) {
@@ -336,6 +344,9 @@ async function saveConfiguration() {
         ffmpeg_noise: parseInt(document.getElementById('cfg-ffmpeg-noise').value),
         ffmpeg_contrast: parseFloat(document.getElementById('cfg-ffmpeg-contrast').value),
         ffmpeg_saturation: parseFloat(document.getElementById('cfg-ffmpeg-saturation').value),
+        watermark_enabled: document.getElementById('cfg-watermark-enabled').value === 'true',
+        watermark_text: document.getElementById('cfg-watermark-text').value,
+        watermark_font_size: parseInt(document.getElementById('cfg-watermark-size').value) || 32,
         deepseek_api_key: document.getElementById('cfg-deepseek-key').value,
         deepseek_model: document.getElementById('cfg-deepseek-model').value
     };

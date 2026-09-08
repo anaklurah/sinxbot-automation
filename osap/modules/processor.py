@@ -183,6 +183,41 @@ class VideoProcessor:
                 allf="t+u",
             )
 
+            # 6. Watermark text overlay (middle-left position).
+            if getattr(cfg, "WATERMARK_ENABLED", True) and getattr(cfg, "WATERMARK_TEXT", ""):
+                font_rel = getattr(cfg, "WATERMARK_FONT", "font/KOMIKAX_.ttf")
+                font_file = Path(font_rel)
+                if not font_file.is_absolute():
+                    font_file = (Path(__file__).resolve().parents[2] / font_file).resolve()
+
+                drawtext_kwargs: dict = {
+                    "text": str(cfg.WATERMARK_TEXT),
+                    "fontsize": int(getattr(cfg, "WATERMARK_FONT_SIZE", 32)),
+                    "fontcolor": f"{getattr(cfg, 'WATERMARK_COLOR', 'white')}@{getattr(cfg, 'WATERMARK_OPACITY', 0.85)}",
+                    "shadowcolor": "black@0.6",
+                    "shadowx": 2,
+                    "shadowy": 2,
+                    "borderw": 2,
+                    "bordercolor": "black@0.7",
+                    "x": str(getattr(cfg, "WATERMARK_X", "40")),
+                    "y": str(getattr(cfg, "WATERMARK_Y", "(h-text_h)/2")),
+                }
+                if font_file.exists():
+                    drawtext_kwargs["fontfile"] = font_file.as_posix()
+
+                video_stream = ffmpeg.filter(
+                    video_stream,
+                    "drawtext",
+                    **drawtext_kwargs,
+                )
+                logger.info(
+                    "Applied watermark text=%r with font=%s at x=%s, y=%s",
+                    cfg.WATERMARK_TEXT,
+                    font_file.name if font_file.exists() else "default",
+                    drawtext_kwargs["x"],
+                    drawtext_kwargs["y"],
+                )
+
             # ── Audio chain ─────────────────────────────────────────── #
             audio_stream = input_node.audio
 

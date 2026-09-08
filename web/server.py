@@ -207,6 +207,9 @@ class ConfigUpdateRequest(BaseModel):
     ffmpeg_noise: Optional[int] = None
     ffmpeg_contrast: Optional[float] = None
     ffmpeg_saturation: Optional[float] = None
+    watermark_enabled: Optional[bool] = None
+    watermark_text: Optional[str] = None
+    watermark_font_size: Optional[int] = None
     deepseek_api_key: Optional[str] = None
     deepseek_model: Optional[str] = None
     enabled_platforms: Optional[Dict[str, bool]] = None
@@ -348,6 +351,9 @@ async def read_configuration():
             "DEEPSEEK_MODEL": cfg.DEEPSEEK_MODEL,
             "WORKERS_DOWNLOADER": cfg.WORKERS_DOWNLOADER,
             "HEADLESS": cfg.HEADLESS,
+            "WATERMARK_ENABLED": getattr(cfg, "WATERMARK_ENABLED", True),
+            "WATERMARK_TEXT": getattr(cfg, "WATERMARK_TEXT", "SINXBOT"),
+            "WATERMARK_FONT_SIZE": getattr(cfg, "WATERMARK_FONT_SIZE", 32),
             "enabled_platforms": {p: getattr(cfg, f"PLATFORM_{p.upper()}", True) for p in PLATFORMS}
         }
     }
@@ -399,11 +405,29 @@ async def update_configuration(req: ConfigUpdateRequest):
     if req.deepseek_model is not None:
         yaml_data["ai_caption"]["model"] = req.deepseek_model
 
+    if "watermark" not in yaml_data:
+        yaml_data["watermark"] = {}
+    if req.watermark_enabled is not None:
+        yaml_data["watermark"]["enabled"] = req.watermark_enabled
+    if req.watermark_text is not None:
+        yaml_data["watermark"]["text"] = req.watermark_text
+    if req.watermark_font_size is not None:
+        yaml_data["watermark"]["font_size"] = req.watermark_font_size
+
     with open(yaml_path, "w", encoding="utf-8") as f:
         yaml.dump(yaml_data, f, default_flow_style=False)
 
     # Update .env if deepseek key, headless, or platform toggles changed
     env_updates = {}
+    if req.watermark_enabled is not None:
+        env_updates["WATERMARK_ENABLED"] = "true" if req.watermark_enabled else "false"
+        os.environ["WATERMARK_ENABLED"] = "true" if req.watermark_enabled else "false"
+    if req.watermark_text is not None:
+        env_updates["WATERMARK_TEXT"] = req.watermark_text
+        os.environ["WATERMARK_TEXT"] = req.watermark_text
+    if req.watermark_font_size is not None:
+        env_updates["WATERMARK_FONT_SIZE"] = str(req.watermark_font_size)
+        os.environ["WATERMARK_FONT_SIZE"] = str(req.watermark_font_size)
     if req.deepseek_api_key and not req.deepseek_api_key.startswith("****"):
         env_updates["DEEPSEEK_API_KEY"] = req.deepseek_api_key
         os.environ["DEEPSEEK_API_KEY"] = req.deepseek_api_key
