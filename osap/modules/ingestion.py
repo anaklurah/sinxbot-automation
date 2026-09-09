@@ -232,6 +232,54 @@ class IngestionWorker:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# YouTube Cookies Resolver & Auto-Exporter
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _get_youtube_cookiefile(cfg) -> Path | None:
+    """Find or auto-export YouTube cookies from browser profile to Netscape format."""
+    profiles_dir = getattr(cfg, "PROFILES_DIR", None) or (Path(__file__).resolve().parents[2] / "assets" / "profiles")
+    candidate_cookies = [
+        profiles_dir / "youtube_cookies.txt",
+        profiles_dir / "youtube.txt",
+        profiles_dir / "cookies.txt",
+    ]
+    for c_path in candidate_cookies:
+        if c_path.exists() and c_path.stat().st_size > 0:
+            return c_path
+
+    # Try auto-exporting from persistent YouTube profile if available
+    yt_profile_dir = profiles_dir / "youtube"
+    if yt_profile_dir.exists():
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                ctx = p.chromium.launch_persistent_context(str(yt_profile_dir), headless=True)
+                cookies = ctx.cookies()
+                ctx.close()
+                if cookies:
+                    lines = ["# Netscape HTTP Cookie File\n# http://curl.haxx.se/rfc/cookie_spec.html\n\n"]
+                    for c in cookies:
+                        domain = c.get("domain", "")
+                        flag = "TRUE" if domain.startswith(".") else "FALSE"
+                        path = c.get("path", "/")
+                        secure = "TRUE" if c.get("secure", False) else "FALSE"
+                        expires = int(c.get("expires", 0))
+                        if expires <= 0:
+                            expires = 2147483647
+                        name = c.get("name", "")
+                        value = c.get("value", "")
+                        lines.append(f"{domain}\t{flag}\t{path}\t{secure}\t{expires}\t{name}\t{value}\n")
+                    target_file = profiles_dir / "youtube_cookies.txt"
+                    target_file.write_text("".join(lines), encoding="utf-8")
+                    logger.info("  [yt-dlp] Auto-exported %d YouTube cookies from profile to %s", len(cookies), target_file.name)
+                    return target_file
+        except Exception as exc:
+            logger.debug("  [yt-dlp] Note: Could not auto-export cookies from profile: %s", exc)
+
+    return None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Download Worker
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -364,7 +412,14 @@ class DownloadWorker:
             ],
             "merge_output_format": "mp4",
             "progress_hooks": [_progress_hook],
+            "js_runtimes": {"node": {}},
         }
+
+        # Resolve YouTube cookies from profile if available
+        cookie_file = _get_youtube_cookiefile(cfg)
+        if cookie_file:
+            ydl_opts["cookiefile"] = str(cookie_file)
+            logger.info("  [yt-dlp] Using YouTube cookies from profile: %s", cookie_file.name)
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:

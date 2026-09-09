@@ -297,6 +297,26 @@ def cmd_setup_auth(args):
                     console.print(f"[green]✓ Session also saved to {storage_path}[/green]")
                 except Exception:
                     pass
+                try:
+                    cookies = await context.cookies()
+                    if cookies:
+                        lines = ["# Netscape HTTP Cookie File\n# http://curl.haxx.se/rfc/cookie_spec.html\n\n"]
+                        for c in cookies:
+                            domain = c.get("domain", "")
+                            flag = "TRUE" if domain.startswith(".") else "FALSE"
+                            path = c.get("path", "/")
+                            secure = "TRUE" if c.get("secure", False) else "FALSE"
+                            expires = int(c.get("expires", 0))
+                            if expires <= 0:
+                                expires = 2147483647
+                            name = c.get("name", "")
+                            value = c.get("value", "")
+                            lines.append(f"{domain}\t{flag}\t{path}\t{secure}\t{expires}\t{name}\t{value}\n")
+                        cookie_file = profiles_dir / f"{target_key}_cookies.txt"
+                        cookie_file.write_text("".join(lines), encoding="utf-8")
+                        console.print(f"[green]✓ Exported {len(cookies)} cookies to {cookie_file.name} for yt-dlp[/green]")
+                except Exception:
+                    pass
                 await context.close()
 
             elif base_platform in COOKIE_PLATFORMS:
