@@ -212,21 +212,38 @@ class UpscrolledPublisher(BasePublisher):
                     await asyncio.sleep(1)
 
                 await self._jitter(500, 1000)
-                log.info('[upscrolled] Submitting post')
-                # Trigger click directly to bypass video overlay pointer interception
+                log.info('[upscrolled] Submitting post via dispatch_event click')
+                # Note: Playwright's click() is intercepted by the Radix modal backdrop (z-[80] inset-0).
+                # dispatch_event('click') dispatches directly to the DOM element without OS pointer interception.
                 try:
-                    await dialog_post_btn.click(force=True, timeout=5000)
-                except Exception:
-                    await dialog_post_btn.evaluate('el => el.click()')
+                    await dialog_post_btn.dispatch_event('click')
+                    log.info('[upscrolled] Post button click dispatched')
+                except Exception as e:
+                    log.warning('[upscrolled] dispatch_event failed: %s, falling back', e)
+                    try:
+                        await dialog_post_btn.click(force=True, timeout=5000)
+                    except Exception:
+                        await dialog_post_btn.evaluate('el => el.click()')
 
                 # ── Step 7: Wait for dialog close & "Posting..." banner / "Your post is live!" ─────────
                 log.info('[upscrolled] Waiting for post dialog to close')
+                dialog_closed = False
                 for w in range(25):
                     await asyncio.sleep(1)
-                    dialogs = await page.locator('div[role="dialog"]').count()
-                    if dialogs == 0:
-                        log.info('[upscrolled] Post dialog closed')
+                    # Check specifically if the compose dialog is closed
+                    is_open = await page.locator('div[role="dialog"]:has-text("Video post")').is_visible()
+                    if not is_open:
+                        log.info('[upscrolled] ✓ Post dialog closed after %ds', w + 1)
+                        dialog_closed = True
                         break
+
+                if not dialog_closed:
+                    log.warning('[upscrolled] Post dialog still open, re-triggering click...')
+                    try:
+                        await dialog_post_btn.dispatch_event('click')
+                    except Exception:
+                        pass
+                    await asyncio.sleep(2)
 
                 # Upscrolled displays a bottom banner: "Posting... Please don't close this window"
                 # followed by "Your post is live!" or the banner disappearing.
@@ -244,7 +261,7 @@ class UpscrolledPublisher(BasePublisher):
                         break
 
                     # Check if "Posting..." banner appeared and finished
-                    if sec > 10 and not await posting_banner.is_visible() and not await page.locator('div[role="dialog"]').count():
+                    if sec > 10 and not await posting_banner.is_visible() and not await page.locator('div[role="dialog"]:has-text("Video post")').is_visible():
                         toast_found = True
                         log.info('[upscrolled] ✓ Upload banner finished and closed after %ds', sec + 1)
                         break
