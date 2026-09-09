@@ -285,6 +285,8 @@ class VideoProcessor:
                         "b:v": "2500k",
                         "maxrate": "3500k",
                         "bufsize": "6000k",
+                        "profile:v": "main",   # Twitter/X requires H.264 main or baseline profile
+                        "pix_fmt": "yuv420p",   # Ensures maximum compatibility across all platforms
                     }
                 )
             else:
@@ -295,6 +297,8 @@ class VideoProcessor:
                         "crf": 23,
                         "maxrate": "3500k",
                         "bufsize": "6000k",
+                        "profile:v": "main",   # Twitter/X requires H.264 main or baseline profile
+                        "pix_fmt": "yuv420p",   # Ensures maximum compatibility across all platforms
                     }
                 )
 
