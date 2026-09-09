@@ -290,14 +290,33 @@ class InstagramPublisher(BasePublisher):
                     'button:has-text("Share"), '
                     'button:has-text("Bagikan")'
                 )
-                await page.wait_for_selector(share_btn_sel, timeout=15_000)
+
+                # Extend wait to 45s because video processing on IG can delay the Share button
+                share_appeared = False
+                for wait_attempt in range(3):
+                    try:
+                        await page.wait_for_selector(share_btn_sel, timeout=45_000)
+                        share_appeared = True
+                        break
+                    except Exception as e:
+                        log.warning('[instagram] Share button wait attempt %d failed: %s', wait_attempt + 1, e)
+                        # Check if we can still see the dialog before retrying
+                        if not await page.locator('div[role="dialog"]').first.is_visible():
+                            break
+
+                if not share_appeared:
+                    log.error('[instagram] Share button never appeared after 135s')
+                    return False
+
                 share_btn = page.locator(share_btn_sel).first
                 try:
                     await share_btn.click(force=True)
                 except Exception:
                     await share_btn.evaluate("el => el.click()")
                 log.info('[instagram] Clicked Share button')
-                await self._jitter(2000, 4000)
+
+                # Give Instagram time to start uploading before we begin checking
+                await self._jitter(4000, 7000)
 
                 # Check for any post-share confirmation dialogs (e.g. "Share as Reel", "Continue")
                 try:
@@ -310,14 +329,14 @@ class InstagramPublisher(BasePublisher):
                     if await confirm_btn.is_visible():
                         log.info('[instagram] Clicking post-share confirmation modal')
                         await confirm_btn.click(force=True)
-                        await self._jitter(1000, 2000)
+                        await self._jitter(2000, 3000)
                 except Exception:
                     pass
 
                 # ── Step 8: Strict wait for upload and sharing confirmation ────
-                log.info('[instagram] Waiting for upload and sharing confirmation (strict wait up to 180s)...')
+                log.info('[instagram] Waiting for upload and sharing confirmation (strict wait up to 300s)...')
 
-                max_wait_sec = 180
+                max_wait_sec = 300
                 poll_interval = 2.0
                 elapsed = 0.0
                 upload_confirmed = False
@@ -356,9 +375,12 @@ class InstagramPublisher(BasePublisher):
                     dialog = page.locator('div[role="dialog"]').first
                     dialog_visible = await dialog.is_visible()
 
-                    # 4. Check if actively sharing
+                    # 4. Check if actively sharing/uploading — MUST keep browser open during this!
                     is_sharing = False
-                    for sh_pattern in ["Sharing", "Membagikan", "Uploading", "Mengunggah"]:
+                    for sh_pattern in [
+                        "Sharing", "Membagikan", "Uploading", "Mengunggah",
+                        "Sharing your post", "Sedang membagikan", "Sedang mengunggah"
+                    ]:
                         sh_el = page.locator(f':text("{sh_pattern}")').first
                         if await sh_el.is_visible():
                             is_sharing = True
@@ -367,7 +389,10 @@ class InstagramPublisher(BasePublisher):
                     if is_sharing:
                         if int(elapsed) % 10 == 0:
                             log.info('[instagram] Upload in progress... (%ds elapsed, please wait)', int(elapsed))
-                    elif not dialog_visible and elapsed > 10:
+                    elif not dialog_visible and elapsed > 25:
+                        # Only accept dialog-closed as "success" if:
+                        # - At least 25s have passed (upload can take 20+ seconds on slow connections)
+                        # - No error was detected above
                         log.info('[instagram] ✓ Upload dialog closed after %ds — upload completed successfully', int(elapsed))
                         upload_confirmed = True
                         break
@@ -379,9 +404,9 @@ class InstagramPublisher(BasePublisher):
                     log.error('[instagram] ✗ Timeout waiting for upload confirmation after %ds. Browser will not assume success.', max_wait_sec)
                     return False
 
-                # Hold browser open for 6 seconds so Instagram finishes all network transactions
-                log.info('[instagram] Video published! Holding browser open for 6s to finalize network session...')
-                await asyncio.sleep(6)
+                # Hold browser open for 10 seconds so Instagram finishes all network transactions
+                log.info('[instagram] Video published! Holding browser open for 10s to finalize network session...')
+                await asyncio.sleep(10)
                 return True
 
             except Exception as exc:
