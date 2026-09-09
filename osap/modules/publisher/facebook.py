@@ -147,71 +147,128 @@ class FacebookPublisher(BasePublisher):
                     log.warning('[facebook] Could not fill description: %s', exc)
 
                 # ── Step 5: Click Publish / Posting / Share ────────────────────
-                log.info('[facebook] Looking for Publish/Posting button')
-                publish_btn_sel = (
-                    'div[aria-label="Posting"][role="button"], '
-                    'div[aria-label="Publish"][role="button"], '
-                    'div[aria-label="Publikasikan"][role="button"], '
-                    'div[aria-label="Bagikan"][role="button"], '
-                    'button:has-text("Posting"), '
-                    'button:has-text("Publish"), '
-                    'button:has-text("Publikasikan"), '
-                    'button:has-text("Bagikan"), '
-                    'button:has-text("Share"), '
-                    'button:has-text("Post"), '
-                    'div[role="button"]:has-text("Posting"), '
-                    'div[role="button"]:has-text("Publish"), '
-                    'div[role="button"]:has-text("Publikasikan"), '
-                    'div[role="button"]:has-text("Bagikan"), '
-                    '[aria-label="Posting"], '
-                    '[aria-label="Publish"], '
-                    '[aria-label="Share"], '
-                    '[data-testid="reels-publish-button"]'
-                )
-                await page.wait_for_selector(publish_btn_sel, timeout=30_000)
-                publish_btn = page.locator(publish_btn_sel).first
+                # ── Step 5: Wait for Posting button to turn BLUE ───────────────
+                log.info('[facebook] Waiting for video upload to finish and Posting button to turn BLUE...')
 
-                # Wait for publish button to become enabled (video upload & processing)
-                log.info('[facebook] Waiting for video upload/processing to complete and Publish button to become enabled...')
+                check_blue_js = """() => {
+                    // Check if warning tooltip or uploading indicator is present
+                    const textWarning = Array.from(document.querySelectorAll('*')).some(el => {
+                        const t = (el.innerText || '').toLowerCase();
+                        return (t.includes('sedang diunggah') || t.includes('media is uploading')) && el.offsetHeight > 0;
+                    });
+                    if (textWarning) return { ready: false, reason: 'uploading_warning_active' };
+
+                    const candidates = Array.from(document.querySelectorAll(
+                        'div[role="dialog"] div[role="button"], div[role="dialog"] button, div[role="button"], button'
+                    )).filter(el => {
+                        const text = (el.innerText || '').trim().toLowerCase();
+                        const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+                        return ['posting', 'publish', 'publikasikan', 'bagikan', 'share', 'post'].includes(text) ||
+                               ['posting', 'publish', 'publikasikan', 'bagikan', 'share', 'post'].includes(aria);
+                    });
+
+                    if (!candidates.length) return { ready: false, reason: 'no_candidate' };
+
+                    // Check candidates from bottom up (wizard submit button is at the bottom)
+                    for (let i = candidates.length - 1; i >= 0; i--) {
+                        const btn = candidates[i];
+                        if (btn.offsetHeight === 0) continue;
+                        if (btn.getAttribute('aria-disabled') === 'true' || btn.closest('[aria-disabled="true"]') || btn.disabled) {
+                            continue;
+                        }
+
+                        // Inspect computed background color (walk up parents if on wrapper)
+                        let curr = btn;
+                        let isBlue = false;
+                        let colorStr = '';
+                        while (curr && curr !== document.body) {
+                            const style = window.getComputedStyle(curr);
+                            const bg = style.backgroundColor || '';
+                            const match = bg.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+                            if (match) {
+                                const r = parseInt(match[1]);
+                                const g = parseInt(match[2]);
+                                const b = parseInt(match[3]);
+                                // Facebook blue has high blue value, significantly higher than red & green
+                                if (b > 150 && b > r + 40 && b > g + 20) {
+                                    isBlue = true;
+                                    colorStr = bg;
+                                    break;
+                                }
+                            }
+                            curr = curr.parentElement;
+                        }
+
+                        if (isBlue) {
+                            return { ready: true, index: i, color: colorStr };
+                        }
+                    }
+                    return { ready: false, reason: 'button_still_grey' };
+                }"""
+
+                button_ready = False
                 for elapsed in range(0, 180, 2):
-                    is_disabled = False
                     try:
-                        aria_dis = await publish_btn.get_attribute("aria-disabled")
-                        dis = await publish_btn.get_attribute("disabled")
-                        if aria_dis == "true" or dis is not None:
-                            is_disabled = True
-                        elif not await publish_btn.is_enabled():
-                            is_disabled = True
-                    except Exception:
-                        pass
+                        status = await page.evaluate(check_blue_js)
+                        if status and status.get("ready"):
+                            log.info('[facebook] ✓ Posting button has turned BLUE (%s) after %ds! Ready to post.', status.get("color"), elapsed)
+                            button_ready = True
+                            break
+                        else:
+                            if elapsed % 10 == 0 and elapsed > 0:
+                                log.info('[facebook] Still waiting for video upload... Posting button is grey (%s, %ds elapsed)', status.get("reason"), elapsed)
+                    except Exception as e:
+                        log.debug('[facebook] Check blue error: %s', e)
 
-                    if not is_disabled:
-                        log.info('[facebook] Publish button is enabled after %ds', elapsed)
-                        break
-                    if elapsed % 20 == 0 and elapsed > 0:
-                        log.info('[facebook] Still waiting for video processing... (%ds elapsed)', elapsed)
                     await asyncio.sleep(2)
 
-                await publish_btn.scroll_into_view_if_needed()
+                if not button_ready:
+                    log.warning('[facebook] Button did not turn blue within 180s, attempting click anyway')
+
+                # Click the blue Posting button
                 clicked = False
+                publish_btn_sel = (
+                    'div[role="dialog"] div[aria-label="Posting"][role="button"], '
+                    'div[role="dialog"] div[role="button"]:has-text("Posting"), '
+                    'div[role="dialog"] button:has-text("Posting"), '
+                    'div[role="button"]:has-text("Posting"), '
+                    'button:has-text("Posting"), '
+                    'div[role="button"]:has-text("Publish"), '
+                    'button:has-text("Publish")'
+                )
                 try:
-                    await publish_btn.click(timeout=15_000)
-                    clicked = True
-                    log.info('[facebook] Publish button clicked successfully')
+                    btn = page.locator(publish_btn_sel).last
+                    if await btn.count() and await btn.is_visible():
+                        await btn.scroll_into_view_if_needed()
+                        await btn.click(timeout=10_000)
+                        clicked = True
+                        log.info('[facebook] Clicked blue Posting button via locator click')
                 except Exception:
                     pass
 
                 if not clicked:
-                    try:
-                        await publish_btn.click(force=True, timeout=5_000)
+                    click_blue_js = """() => {
+                        const candidates = Array.from(document.querySelectorAll(
+                            'div[role="dialog"] div[role="button"], div[role="dialog"] button, div[role="button"], button'
+                        )).filter(el => {
+                            const text = (el.innerText || '').trim().toLowerCase();
+                            const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+                            return ['posting', 'publish', 'publikasikan', 'bagikan', 'share', 'post'].includes(text) ||
+                                   ['posting', 'publish', 'publikasikan', 'bagikan', 'share', 'post'].includes(aria);
+                        });
+                        for (let i = candidates.length - 1; i >= 0; i--) {
+                            const btn = candidates[i];
+                            if (btn.offsetHeight === 0) continue;
+                            if (btn.getAttribute('aria-disabled') === 'true' || btn.closest('[aria-disabled="true"]') || btn.disabled) continue;
+                            btn.click();
+                            return true;
+                        }
+                        return false;
+                    }"""
+                    res = await page.evaluate(click_blue_js)
+                    if res:
                         clicked = True
-                        log.info('[facebook] Publish button clicked via force=True')
-                    except Exception:
-                        pass
-
-                if not clicked:
-                    await publish_btn.evaluate("el => el.click()")
-                    log.info('[facebook] Publish button clicked via DOM evaluate')
+                        log.info('[facebook] Clicked blue Posting button via evaluate click')
 
                 await self._jitter(3000, 6000)
 
