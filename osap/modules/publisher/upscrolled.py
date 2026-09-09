@@ -56,6 +56,8 @@ class UpscrolledPublisher(BasePublisher):
         'button[type="submit"]'
     )
     _SEL_SUCCESS = (
+        ':text("Your post is live"), '
+        ':text("Your post is live!"), '
         ':text("Upload complete"), '
         ':text("Your video is live"), '
         ':text("Posted"), '
@@ -180,8 +182,15 @@ class UpscrolledPublisher(BasePublisher):
                     except Exception:
                         pass
 
+                # Dismiss "Choose cover" dialog if open
+                done_btn = page.locator('button:has-text("Done")')
+                if await done_btn.is_visible():
+                    log.info('[upscrolled] "Choose cover" dialog detected, clicking Done')
+                    await done_btn.click()
+                    await self._jitter(1000, 2000)
+
                 # ── Step 6: Publish ────────────────────────────────────────────
-                log.info('[upscrolled] Clicking Publish/Post button')
+                log.info('[upscrolled] Waiting for Post button to become enabled...')
                 publish_btn_sel = (
                     '[role="dialog"] button:has-text("Post"), '
                     '[role="dialog"] button:has-text("Publish"), '
@@ -191,28 +200,63 @@ class UpscrolledPublisher(BasePublisher):
                 publish_btn = page.locator('[role="dialog"] button:has-text("Post")').last
                 if not await publish_btn.count():
                     publish_btn = page.locator(publish_btn_sel).last
+
+                # Wait for Post button to be active/clickable (not disabled or opacity-50)
+                for _ in range(45):
+                    is_disabled = await publish_btn.get_attribute('disabled')
+                    is_aria_disabled = await publish_btn.get_attribute('aria-disabled')
+                    btn_class = await publish_btn.evaluate('el => el.className') or ''
+                    if not is_disabled and is_aria_disabled != 'true' and 'disabled:opacity-50' not in btn_class.replace('hover:', ''):
+                        break
+                    # Check if Choose cover needs Done
+                    if await done_btn.is_visible():
+                        await done_btn.click()
+                    await asyncio.sleep(1)
+
+                await publish_btn.scroll_into_view_if_needed()
                 try:
                     await publish_btn.click()
                 except Exception:
                     await publish_btn.click(force=True)
-                log.info('[upscrolled] Publish button clicked')
-                await self._jitter(3000, 6000)
+                log.info('[upscrolled] Publish button clicked. Waiting for upload to complete...')
+                await self._jitter(2000, 4000)
 
-                # ── Step 7: Confirm success ────────────────────────────────────
-                log.info('[upscrolled] Waiting for success confirmation')
-                try:
-                    success_sel = (
-                        ':text("Upload complete"), '
-                        ':text("Your video is live"), '
-                        ':text("Post published"), '
-                        ':text("Success"), '
-                        '[role="status"]'
-                    )
-                    await page.wait_for_selector(success_sel, timeout=30_000)
-                    log.info('[upscrolled] ✓ Video published successfully')
-                except Exception:
-                    log.info('[upscrolled] Success message not detected — flow finished, assuming success')
+                # ── Step 7: Confirm success ("Your post is live!") ───────────────
+                # Do NOT close browser until "Your post is live!" appears
+                log.info('[upscrolled] Waiting for "Your post is live!" confirmation...')
+                success_sel = (
+                    ':text("Your post is live"), '
+                    ':text("Your post is live!"), '
+                    ':text("post is live"), '
+                    'div:has-text("Your post is live")'
+                )
 
+                success_confirmed = False
+                for elapsed in range(1, 181):
+                    # Check for "Your post is live!" banner
+                    toast = page.locator(success_sel).first
+                    if await toast.is_visible():
+                        log.info('[upscrolled] ✓ Confirmed: "Your post is live!" detected after %ds!', elapsed)
+                        success_confirmed = True
+                        break
+
+                    # Check if "Choose cover" popped up late
+                    if await done_btn.is_visible():
+                        log.info('[upscrolled] Late "Choose cover" dialog detected, clicking Done')
+                        await done_btn.click()
+
+                    if elapsed % 15 == 0:
+                        log.info('[upscrolled] Still uploading / processing on server... (%ds elapsed)', elapsed)
+
+                    await asyncio.sleep(1)
+
+                if not success_confirmed:
+                    log.error('[upscrolled] ✗ "Your post is live!" was not detected within 180 seconds. Keeping browser open or aborting.')
+                    return False
+
+                # Settle for 5 seconds before closing browser
+                log.info('[upscrolled] Video successfully posted and confirmed live. Finalizing...')
+                await self._jitter(4000, 6000)
                 return True
 
             except Exception as exc:
