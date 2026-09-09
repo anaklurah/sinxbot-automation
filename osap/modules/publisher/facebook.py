@@ -14,8 +14,11 @@ from playwright.async_api import async_playwright, BrowserContext, Page
 from osap.modules.publisher.base import BasePublisher
 
 
+_FB_MAX_CAPTION_CHARS = 100  # Enforce 90-120 character limit so reels dialog does not push Posting button offscreen
+
+
 class FacebookPublisher(BasePublisher):
-    """Uploads a video as a Facebook Reel."""
+    """Uploads a video as a Facebook Reel via web UI."""
 
     PLATFORM_NAME = 'facebook'
     AUTH_METHOD = 'storage_state'
@@ -31,13 +34,12 @@ class FacebookPublisher(BasePublisher):
         """Perform the Facebook Reels upload flow.
 
         Steps:
-            1. Navigate to Reels creator
-            2. Find video file input and set file
-            3. Wait for upload progress bar to appear and complete
-            4. Fill title field
-            5. Fill description / caption textarea
-            6. Click Publish / Share
-            7. Wait for success confirmation
+            1. Navigate to Reels creation URL
+            2. Attach video file
+            3. Advance through wizard steps (Add Video -> Audio/Edit -> Publish)
+            4. Fill description / caption text (max 90-120 chars)
+            5. Click Publish / Posting button
+            6. Wait for success confirmation
 
         Args:
             video_path: Absolute path to the video file.
@@ -51,8 +53,30 @@ class FacebookPublisher(BasePublisher):
         log = self._log
         video_path = str(Path(video_path).resolve())
 
-        hashtags = ' '.join(f'#{t.lstrip("#")}' for t in tags)
-        full_description = f'{description}\n\n{hashtags}'.strip()
+        # Build concise caption within 90 - 120 chars (target max 100 chars)
+        # Normalize whitespace and remove newlines so the modal dialog does not stretch vertically
+        raw_text = (description or title or '').strip()
+        raw_text = ' '.join(raw_text.split())
+
+        if len(raw_text) > _FB_MAX_CAPTION_CHARS:
+            trimmed = raw_text[:_FB_MAX_CAPTION_CHARS]
+            last_sp = trimmed.rfind(' ')
+            if last_sp > int(_FB_MAX_CAPTION_CHARS * 0.7):
+                full_description = trimmed[:last_sp].rstrip()
+            else:
+                full_description = trimmed.rstrip()
+        else:
+            full_description = raw_text
+            if tags:
+                for t in tags:
+                    clean_tag = f'#{t.lstrip("#")}'
+                    candidate = f'{full_description} {clean_tag}'.strip()
+                    if len(candidate) <= _FB_MAX_CAPTION_CHARS:
+                        full_description = candidate
+                    else:
+                        break
+
+        log.info('[facebook] Formatted caption text (%d chars): %r', len(full_description), full_description)
 
         async with async_playwright() as pw:
             context: BrowserContext = await self._get_context(pw)

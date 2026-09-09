@@ -13,7 +13,7 @@ from playwright.async_api import async_playwright, BrowserContext, Page
 
 from osap.modules.publisher.base import BasePublisher
 
-_TWEET_MAX_CHARS = 280
+_TWEET_MAX_CHARS = 100  # Enforce 90-120 character limit so compose dialog doesn't overflow or hide Post button
 
 
 class TwitterPublisher(BasePublisher):
@@ -38,7 +38,7 @@ class TwitterPublisher(BasePublisher):
             2. Click media attachment icon
             3. Set video file via file input
             4. Wait for video to upload/process
-            5. Type tweet text (title + tags, max 280 chars)
+            5. Type tweet text (title + tags, max 90-120 chars)
             6. Optionally mark as sensitive content
             7. Click Post
             8. Wait for success
@@ -55,13 +55,30 @@ class TwitterPublisher(BasePublisher):
         log = self._log
         video_path = str(Path(video_path).resolve())
 
-        # Build tweet text within 280 char limit
-        hashtags = ' '.join(f'#{t.lstrip("#")}' for t in tags)
-        tweet_text = f'{title} {hashtags}'.strip()
-        if len(tweet_text) < _TWEET_MAX_CHARS - 2:
-            remaining = _TWEET_MAX_CHARS - len(tweet_text) - 1
-            tweet_text = (tweet_text + ' ' + description).strip()[:_TWEET_MAX_CHARS]
-        tweet_text = tweet_text[:_TWEET_MAX_CHARS]
+        # Build concise tweet text within 90 - 120 chars (target max 100 chars)
+        # Normalize whitespace and remove newlines so the modal does not expand vertically
+        raw_text = (title or description or '').strip()
+        raw_text = ' '.join(raw_text.split())
+
+        if len(raw_text) > _TWEET_MAX_CHARS:
+            trimmed = raw_text[:_TWEET_MAX_CHARS]
+            last_sp = trimmed.rfind(' ')
+            if last_sp > int(_TWEET_MAX_CHARS * 0.7):
+                tweet_text = trimmed[:last_sp].rstrip()
+            else:
+                tweet_text = trimmed.rstrip()
+        else:
+            tweet_text = raw_text
+            if tags:
+                for t in tags:
+                    clean_tag = f'#{t.lstrip("#")}'
+                    candidate = f'{tweet_text} {clean_tag}'.strip()
+                    if len(candidate) <= _TWEET_MAX_CHARS:
+                        tweet_text = candidate
+                    else:
+                        break
+
+        log.info('[twitter] Formatted tweet text (%d chars): %r', len(tweet_text), tweet_text)
 
         async with async_playwright() as pw:
             context: BrowserContext = await self._get_context(pw)
