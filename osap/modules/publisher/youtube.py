@@ -201,8 +201,32 @@ class YouTubePublisher(BasePublisher):
                 except Exception:
                     log.warning('[youtube] Could not find Public radio button')
 
-                # ── Step 10: Wait for processing / Save ───────────────────────
-                log.info('[youtube] Waiting for upload/processing to finish')
+                # ── Step 10: Wait for upload transfer to finish ────────────────
+                log.info('[youtube] Ensuring video file upload is complete before publishing...')
+                progress_label_sel = (
+                    'ytcp-video-upload-progress span, '
+                    '.progress-label, '
+                    'span:has-text("Uploading"), '
+                    'span:has-text("Mengunggah")'
+                )
+                for elapsed in range(0, 180, 2):
+                    still_uploading = False
+                    try:
+                        progress_el = page.locator(progress_label_sel).first
+                        if await progress_el.count() and await progress_el.is_visible():
+                            txt = (await progress_el.inner_text()).lower()
+                            if "uploading" in txt or "mengunggah" in txt:
+                                still_uploading = True
+                                if elapsed % 10 == 0:
+                                    log.info('[youtube] Still uploading file to YouTube: %s (%ds elapsed)', txt, elapsed)
+                    except Exception:
+                        pass
+
+                    if not still_uploading:
+                        log.info('[youtube] File upload transfer complete!')
+                        break
+                    await asyncio.sleep(2)
+
                 save_sel = (
                     'ytcp-button#done-button, '
                     '#done-button, '
@@ -213,7 +237,7 @@ class YouTubePublisher(BasePublisher):
                     'ytcp-button:has-text("Publish"), '
                     'ytcp-button:has-text("Publikasikan")'
                 )
-                # Modern YouTube Studio allows publishing immediately; wait up to 30s for button to be enabled
+                # Wait up to 30s for save button to be active
                 for _ in range(20):
                     try:
                         btn = page.locator(save_sel).first
@@ -222,7 +246,7 @@ class YouTubePublisher(BasePublisher):
                             break
                     except Exception:
                         pass
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(1.5)
 
                 await self._jitter(800, 1500)
 
@@ -249,6 +273,8 @@ class YouTubePublisher(BasePublisher):
                 except Exception:
                     log.warning('[youtube] Could not detect explicit success dialog — assuming success')
 
+                # Hold context open 5 seconds to ensure backend persistence
+                await self._jitter(4000, 6000)
                 return True
 
             except Exception as exc:
