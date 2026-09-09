@@ -125,17 +125,24 @@ class UpscrolledPublisher(BasePublisher):
 
                 # ── Step 3: Select "Video post" ───────────────────────────────
                 log.info('[upscrolled] Selecting Video post option')
-                video_opt_sel = ':text("Video post"), button:has-text("Video post"), div:has-text("Video post")'
-                await page.wait_for_selector(video_opt_sel, timeout=15_000)
-                video_opt_btn = page.locator(video_opt_sel).first
-                await video_opt_btn.click(force=True)
+                video_opt = page.locator('button, [role="button"], div').filter(has_text='Video post').filter(has_text='Share a single video').last
+                if not await video_opt.count():
+                    video_opt = page.locator('button:has-text("Video post"), button:has-text("Share a single video")').first
+                if not await video_opt.count():
+                    video_opt = page.locator(':text("Video post")').first
+
+                await video_opt.wait_for(state='visible', timeout=15_000)
+                await video_opt.scroll_into_view_if_needed()
+                await video_opt.click()
                 log.info('[upscrolled] Clicked Video post option')
                 await self._jitter(1500, 2500)
 
+                # Wait for transition to Video post view
+                await page.wait_for_selector('input[type="file"][accept*="video"], :text("Select a video")', timeout=15_000)
+
                 # ── Step 4: Set video file ─────────────────────────────────────
                 log.info('[upscrolled] Setting video file: %s', video_path)
-                file_input_sel = 'input[type="file"][accept*="video"], input[type="file"]'
-                file_input = page.locator(file_input_sel).last
+                file_input = page.locator('input[type="file"][accept*="video"], input[type="file"]').last
                 await file_input.wait_for(state='attached', timeout=20_000)
                 await file_input.set_input_files(video_path)
                 log.info('[upscrolled] File set')
@@ -150,27 +157,32 @@ class UpscrolledPublisher(BasePublisher):
                     caption_el = page.locator(caption_sel).first
                     await caption_el.click(force=True)
                     await self._jitter(300, 600)
-                    for char in caption_text:
-                        await page.keyboard.type(char, delay=35)
+                    await caption_el.fill(caption_text)
                     log.info('[upscrolled] Caption filled')
                     await self._jitter(1000, 2000)
                 except Exception as exc:
-                    log.warning('[upscrolled] Caption field not found: %s', exc)
+                    log.warning('[upscrolled] Caption fill via fill() failed, trying keyboard typing: %s', exc)
+                    try:
+                        for char in caption_text:
+                            await page.keyboard.type(char, delay=35)
+                    except Exception:
+                        pass
 
                 # ── Step 6: Publish ────────────────────────────────────────────
                 log.info('[upscrolled] Clicking Publish/Post button')
                 publish_btn_sel = (
                     '[role="dialog"] button:has-text("Post"), '
-                    'button.bg-brand-gradient, '
-                    'button:has-text("Post"), '
-                    'button:has-text("Publish")'
+                    '[role="dialog"] button:has-text("Publish"), '
+                    'button:has-text("Post"):not([class*="w-[52px]"])'
                 )
-                await page.wait_for_selector(publish_btn_sel, timeout=15_000)
-                publish_btn = page.locator(publish_btn_sel).first
+                await page.wait_for_selector(publish_btn_sel, timeout=20_000)
+                publish_btn = page.locator('[role="dialog"] button:has-text("Post")').last
+                if not await publish_btn.count():
+                    publish_btn = page.locator(publish_btn_sel).last
                 try:
-                    await publish_btn.click(force=True)
+                    await publish_btn.click()
                 except Exception:
-                    await publish_btn.evaluate("el => el.click()")
+                    await publish_btn.click(force=True)
                 log.info('[upscrolled] Publish button clicked')
                 await self._jitter(3000, 6000)
 
