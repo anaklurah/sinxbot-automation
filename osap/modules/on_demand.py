@@ -301,7 +301,34 @@ async def run_jit_video_pipeline(
             platform_results[target_key] = False
 
     # ─────────────────────────────────────────────────────────────
-    # Step 4: Final Status & Auto-Cleanup of Local Storage
+    # Step 4: Extract Latest Post Links from Profiles & Send Telegram Report
+    # ─────────────────────────────────────────────────────────────
+    post_links = {}
+    successful_targets = [t for t in targets_to_run if platform_results.get(t.get("target_key")) is True]
+    failed_target_names = [t.get("name") or t.get("target_key") for t in targets_to_run if platform_results.get(t.get("target_key")) is not True]
+
+    if successful_targets:
+        logger.info(f"[JIT Pipeline] 📲 Mengambil link postingan terbaru dari profil {len(successful_targets)} target sukses...")
+        try:
+            from osap.modules.post_fetcher import fetch_all_latest_posts
+            post_links = await fetch_all_latest_posts(successful_targets, account_id=account_id)
+        except Exception as fetch_err:
+            logger.warning(f"[JIT Pipeline] Gagal mengekstrak link profil: {fetch_err}")
+
+        # Send Telegram notification
+        try:
+            from osap.modules.telegram_notifier import send_post_summary_to_telegram
+            upload_title = captions.get("title") or title
+            await send_post_summary_to_telegram(
+                video_title=upload_title,
+                post_links=post_links,
+                failed_platforms=failed_target_names if failed_target_names else None,
+            )
+        except Exception as tg_err:
+            logger.warning(f"[JIT Pipeline] Gagal mengirim notifikasi Telegram: {tg_err}")
+
+    # ─────────────────────────────────────────────────────────────
+    # Step 5: Final Status & Auto-Cleanup of Local Storage
     # ─────────────────────────────────────────────────────────────
     if any_success:
         update_video(vid_id, {"status": "done"}, db_path=db_path)
@@ -341,6 +368,7 @@ async def run_jit_video_pipeline(
         "video_id": vid_id,
         "status": status_text,
         "results": platform_results,
+        "post_links": post_links,
     }
 
 

@@ -177,6 +177,19 @@ class Config:
     WATERMARK_Y: str = "(h-text_h)/2"
 
     # ------------------------------------------------------------------
+    # Telegram Notifications
+    # ------------------------------------------------------------------
+
+    #: Whether to send post summaries and alerts to Telegram.
+    TELEGRAM_ENABLED: bool = True
+
+    #: Telegram Bot Token from @BotFather.
+    TELEGRAM_BOT_TOKEN: str = ""
+
+    #: Telegram Chat ID (user or group ID) to receive messages.
+    TELEGRAM_CHAT_ID: str = ""
+
+    # ------------------------------------------------------------------
     # Derived / computed properties
     # ------------------------------------------------------------------
 
@@ -501,6 +514,19 @@ def get_config(*, reload: bool = False) -> Config:
         WATERMARK_Y=os.environ.get(
             "WATERMARK_Y",
             str(_nested_get(yaml_data, "watermark", "y", default="(h-text_h)/2")),
+        ),
+        # Telegram
+        TELEGRAM_ENABLED=_parse_bool(
+            os.environ.get("TELEGRAM_ENABLED"),
+            default=bool(_nested_get(yaml_data, "telegram", "enabled", default=True)),
+        ),
+        TELEGRAM_BOT_TOKEN=os.environ.get(
+            "TELEGRAM_BOT_TOKEN",
+            _nested_get(yaml_data, "telegram", "bot_token", default=""),
+        ),
+        TELEGRAM_CHAT_ID=os.environ.get(
+            "TELEGRAM_CHAT_ID",
+            _nested_get(yaml_data, "telegram", "chat_id", default=""),
         ),
     )
 

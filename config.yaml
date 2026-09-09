@@ -96,3 +96,7 @@ workers:
   downloader: 2
   publisher: 1
   renderer: 1
+telegram:
+  enabled: true
+  bot_token: ''
+  chat_id: ''

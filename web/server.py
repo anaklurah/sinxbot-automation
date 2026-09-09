@@ -234,6 +234,14 @@ class ConfigUpdateRequest(BaseModel):
     deepseek_api_key: Optional[str] = None
     deepseek_model: Optional[str] = None
     enabled_platforms: Optional[Dict[str, bool]] = None
+    telegram_enabled: Optional[bool] = None
+    telegram_bot_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+
+
+class TelegramTestRequest(BaseModel):
+    bot_token: Optional[str] = None
+    chat_id: Optional[str] = None
 
 
 # ─────────────────────────────────────────────
@@ -376,6 +384,11 @@ async def read_configuration():
 
     active_slots = getattr(cfg, "PRIME_TIME_SLOTS", None) or ["12:00", "18:00", "21:00"]
 
+    tg_token_masked = "****"
+    tg_token = getattr(cfg, "TELEGRAM_BOT_TOKEN", None) or _nested_get(yaml_data, "telegram", "bot_token", default="")
+    if tg_token:
+        tg_token_masked = f"{tg_token[:4]}...{tg_token[-4:]}" if len(tg_token) > 8 else "****"
+
     return {
         "yaml": yaml_data,
         "schedule_slots": active_slots,
@@ -387,7 +400,11 @@ async def read_configuration():
             "WATERMARK_ENABLED": getattr(cfg, "WATERMARK_ENABLED", True),
             "WATERMARK_TEXT": getattr(cfg, "WATERMARK_TEXT", "SINXBOT"),
             "WATERMARK_FONT_SIZE": getattr(cfg, "WATERMARK_FONT_SIZE", 32),
-            "enabled_platforms": {p: getattr(cfg, f"PLATFORM_{p.upper()}", True) for p in PLATFORMS}
+            "enabled_platforms": {p: getattr(cfg, f"PLATFORM_{p.upper()}", True) for p in PLATFORMS},
+            "TELEGRAM_ENABLED": getattr(cfg, "TELEGRAM_ENABLED", True),
+            "TELEGRAM_BOT_TOKEN_MASKED": tg_token_masked,
+            "TELEGRAM_HAS_TOKEN": bool(tg_token),
+            "TELEGRAM_CHAT_ID": getattr(cfg, "TELEGRAM_CHAT_ID", "") or _nested_get(yaml_data, "telegram", "chat_id", default=""),
         }
     }
 
@@ -455,11 +472,35 @@ async def update_configuration(req: ConfigUpdateRequest):
     if req.watermark_font_size is not None:
         yaml_data["watermark"]["font_size"] = req.watermark_font_size
 
+    # Telegram configuration updates
+    if "telegram" not in yaml_data:
+        yaml_data["telegram"] = {}
+    if req.telegram_enabled is not None:
+        yaml_data["telegram"]["enabled"] = req.telegram_enabled
+    if req.telegram_bot_token is not None and not req.telegram_bot_token.startswith("****"):
+        yaml_data["telegram"]["bot_token"] = req.telegram_bot_token.strip()
+    if req.telegram_chat_id is not None:
+        yaml_data["telegram"]["chat_id"] = req.telegram_chat_id.strip()
+
     with open(yaml_path, "w", encoding="utf-8") as f:
         yaml.dump(yaml_data, f, default_flow_style=False)
 
     # Update .env if deepseek key, headless, or platform toggles changed
     env_updates = {}
+    if req.telegram_enabled is not None:
+        env_updates["TELEGRAM_ENABLED"] = "true" if req.telegram_enabled else "false"
+        os.environ["TELEGRAM_ENABLED"] = "true" if req.telegram_enabled else "false"
+        cfg.TELEGRAM_ENABLED = req.telegram_enabled
+    if req.telegram_bot_token is not None and not req.telegram_bot_token.startswith("****"):
+        clean_token = req.telegram_bot_token.strip()
+        env_updates["TELEGRAM_BOT_TOKEN"] = clean_token
+        os.environ["TELEGRAM_BOT_TOKEN"] = clean_token
+        cfg.TELEGRAM_BOT_TOKEN = clean_token
+    if req.telegram_chat_id is not None:
+        clean_chat_id = req.telegram_chat_id.strip()
+        env_updates["TELEGRAM_CHAT_ID"] = clean_chat_id
+        os.environ["TELEGRAM_CHAT_ID"] = clean_chat_id
+        cfg.TELEGRAM_CHAT_ID = clean_chat_id
     if req.watermark_enabled is not None:
         env_updates["WATERMARK_ENABLED"] = "true" if req.watermark_enabled else "false"
         os.environ["WATERMARK_ENABLED"] = "true" if req.watermark_enabled else "false"
@@ -526,6 +567,30 @@ async def update_configuration(req: ConfigUpdateRequest):
 
     logger.info("Configuration updated via Web Dashboard")
     return {"success": True, "message": "Configuration saved successfully"}
+
+
+@app.post("/api/telegram/test")
+async def test_telegram_endpoint(req: TelegramTestRequest):
+    """Test Telegram Bot connection with provided or saved token and chat ID."""
+    cfg = get_config()
+    yaml_path = PROJECT_ROOT / "config.yaml"
+    yaml_data = {}
+    if yaml_path.exists():
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            yaml_data = yaml.safe_load(f) or {}
+
+    token = req.bot_token.strip() if req.bot_token and not req.bot_token.startswith("****") else (
+        getattr(cfg, "TELEGRAM_BOT_TOKEN", None) or _nested_get(yaml_data, "telegram", "bot_token", default="")
+    )
+    chat_id = req.chat_id.strip() if req.chat_id else (
+        getattr(cfg, "TELEGRAM_CHAT_ID", None) or _nested_get(yaml_data, "telegram", "chat_id", default="")
+    )
+
+    from osap.modules.telegram_notifier import test_telegram_connection
+    success, msg = test_telegram_connection(token, str(chat_id))
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"success": True, "message": msg}
 
 
 @app.get("/api/accounts")

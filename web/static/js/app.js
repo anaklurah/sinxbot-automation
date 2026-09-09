@@ -430,6 +430,20 @@ async function loadConfigData() {
 
         document.getElementById('cfg-deepseek-key').value = env.DEEPSEEK_API_KEY_MASKED || '';
         document.getElementById('cfg-deepseek-model').value = env.DEEPSEEK_MODEL || 'deepseek-chat';
+
+        // Telegram settings
+        const isTgEnabled = env.TELEGRAM_ENABLED !== undefined
+            ? (env.TELEGRAM_ENABLED === true || env.TELEGRAM_ENABLED === 'true')
+            : (yaml.telegram?.enabled ?? true);
+        if (document.getElementById('cfg-telegram-enabled')) {
+            document.getElementById('cfg-telegram-enabled').value = isTgEnabled ? 'true' : 'false';
+        }
+        if (document.getElementById('cfg-telegram-token')) {
+            document.getElementById('cfg-telegram-token').value = env.TELEGRAM_BOT_TOKEN_MASKED || '';
+        }
+        if (document.getElementById('cfg-telegram-chat-id')) {
+            document.getElementById('cfg-telegram-chat-id').value = env.TELEGRAM_CHAT_ID || '';
+        }
     } catch (err) {
         console.error("Error loading config:", err);
     }
@@ -456,7 +470,10 @@ async function saveConfiguration() {
         watermark_text: document.getElementById('cfg-watermark-text').value,
         watermark_font_size: parseInt(document.getElementById('cfg-watermark-size').value) || 32,
         deepseek_api_key: document.getElementById('cfg-deepseek-key').value,
-        deepseek_model: document.getElementById('cfg-deepseek-model').value
+        deepseek_model: document.getElementById('cfg-deepseek-model').value,
+        telegram_enabled: document.getElementById('cfg-telegram-enabled') ? document.getElementById('cfg-telegram-enabled').value === 'true' : true,
+        telegram_bot_token: document.getElementById('cfg-telegram-token')?.value || '',
+        telegram_chat_id: document.getElementById('cfg-telegram-chat-id')?.value || '',
     };
 
     try {
@@ -475,6 +492,58 @@ async function saveConfiguration() {
     } catch (err) {
         showToast('Network error saving configuration', 'error');
     }
+}
+
+async function testTelegramConnection() {
+    const token = document.getElementById('cfg-telegram-token')?.value?.trim() || '';
+    const chatId = document.getElementById('cfg-telegram-chat-id')?.value?.trim() || '';
+    const statusEl = document.getElementById('telegram-test-result');
+    if (statusEl) {
+        statusEl.style.color = 'var(--accent-amber)';
+        statusEl.innerHTML = '<i data-lucide="loader-2" class="spin" style="width:14px;height:14px;vertical-align:middle;"></i> Menguji koneksi Telegram...';
+        if (window.lucide) lucide.createIcons();
+    }
+
+    try {
+        const res = await fetch('/api/telegram/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bot_token: token, chat_id: chatId })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(data.message || 'Koneksi Telegram sukses!', 'success');
+            if (statusEl) {
+                statusEl.style.color = 'var(--accent-emerald)';
+                statusEl.innerText = '✓ ' + (data.message || 'Koneksi sukses!');
+            }
+        } else {
+            showToast(data.detail || 'Gagal menguji Telegram', 'error');
+            if (statusEl) {
+                statusEl.style.color = 'var(--accent-rose)';
+                statusEl.innerText = '✗ ' + (data.detail || 'Gagal terhubung.');
+            }
+        }
+    } catch (err) {
+        showToast('Terjadi kesalahan jaringan saat tes Telegram', 'error');
+        if (statusEl) {
+            statusEl.style.color = 'var(--accent-rose)';
+            statusEl.innerText = '✗ Error jaringan';
+        }
+    }
+}
+
+function togglePasswordVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.type === 'password') {
+        input.type = 'text';
+        btn.innerHTML = '<i data-lucide="eye-off"></i>';
+    } else {
+        input.type = 'password';
+        btn.innerHTML = '<i data-lucide="eye"></i>';
+    }
+    if (window.lucide) lucide.createIcons();
 }
 
 /**

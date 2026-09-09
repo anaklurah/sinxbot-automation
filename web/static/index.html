@@ -427,6 +427,53 @@
                         <input type="text" id="cfg-deepseek-model" class="clay-input" value="deepseek-chat">
                     </div>
                 </div>
+
+                <!-- 5. Telegram Bot Notifications -->
+                <div class="clay-card">
+                    <div class="clay-card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3 class="clay-card-title">
+                            <i data-lucide="send"></i>
+                            <span>Notifikasi Bot Telegram</span>
+                        </h3>
+                        <span class="badge-clay badge-done" style="font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px;">
+                            <i data-lucide="bell" style="width: 12px; height: 12px;"></i> Auto Link Post
+                        </span>
+                    </div>
+
+                    <div class="clay-form-group">
+                        <label>Status Notifikasi Telegram</label>
+                        <select id="cfg-telegram-enabled" class="clay-select">
+                            <option value="true">Enabled (Kirim Notifikasi & Link Postingan)</option>
+                            <option value="false">Disabled (Nonaktifkan)</option>
+                        </select>
+                        <span class="help-text">Kirim laporan otomatis dan link postingan terbaru ke Telegram setelah posting selesai.</span>
+                    </div>
+
+                    <div class="clay-form-group">
+                        <label>Telegram Bot Token</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="password" id="cfg-telegram-token" class="clay-input" placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ">
+                            <button type="button" class="btn-clay btn-clay-secondary btn-clay-sm" onclick="togglePasswordVisibility('cfg-telegram-token', this)" title="Show/Hide Token" style="padding: 0 12px;">
+                                <i data-lucide="eye"></i>
+                            </button>
+                        </div>
+                        <span class="help-text">Dapatkan token bot dari <b>@BotFather</b> di Telegram.</span>
+                    </div>
+
+                    <div class="clay-form-group">
+                        <label>Telegram Chat ID</label>
+                        <input type="text" id="cfg-telegram-chat-id" class="clay-input" placeholder="Contoh: 123456789 atau -1001234567890">
+                        <span class="help-text">User ID atau Group Chat ID tujuan (cek ID Anda via <b>@userinfobot</b>).</span>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap;">
+                        <button type="button" class="btn-clay btn-clay-secondary btn-clay-sm" onclick="testTelegramConnection()">
+                            <i data-lucide="send"></i>
+                            <span>Test Kirim Pesan Telegram</span>
+                        </button>
+                        <span id="telegram-test-result" style="font-size: 0.82rem; font-weight: 500;"></span>
+                    </div>
+                </div>
             </div>
 
             <div style="margin-top: 1rem;">
