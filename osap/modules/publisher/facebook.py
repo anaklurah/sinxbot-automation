@@ -151,12 +151,27 @@ class FacebookPublisher(BasePublisher):
                 log.info('[facebook] Waiting for video upload to finish and Posting button to turn BLUE...')
 
                 check_blue_js = """() => {
-                    // Check if warning tooltip or uploading indicator is present
-                    const textWarning = Array.from(document.querySelectorAll('*')).some(el => {
-                        const t = (el.innerText || '').toLowerCase();
-                        return (t.includes('sedang diunggah') || t.includes('media is uploading')) && el.offsetHeight > 0;
-                    });
-                    if (textWarning) return { ready: false, reason: 'uploading_warning_active' };
+                    // Check if warning tooltip or uploading indicator is present in body text
+                    const bodyText = (document.body.innerText || '').toLowerCase();
+                    if (bodyText.includes('sedang diunggah') || bodyText.includes('media is uploading') || bodyText.includes('video is uploading')) {
+                        return { ready: false, reason: 'uploading_indicator_present' };
+                    }
+
+                    function isBlueRgb(colorStr) {
+                        if (!colorStr) return false;
+                        const m = colorStr.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+                        if (!m) return false;
+                        const r = parseInt(m[1]), g = parseInt(m[2]), b = parseInt(m[3]);
+                        return b > 140 && b > r + 30 && b > g + 15;
+                    }
+
+                    function isWhiteRgb(colorStr) {
+                        if (!colorStr) return false;
+                        const m = colorStr.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+                        if (!m) return false;
+                        const r = parseInt(m[1]), g = parseInt(m[2]), b = parseInt(m[3]);
+                        return r > 220 && g > 220 && b > 220;
+                    }
 
                     const candidates = Array.from(document.querySelectorAll(
                         'div[role="dialog"] div[role="button"], div[role="dialog"] button, div[role="button"], button'
@@ -172,35 +187,66 @@ class FacebookPublisher(BasePublisher):
                     // Check candidates from bottom up (wizard submit button is at the bottom)
                     for (let i = candidates.length - 1; i >= 0; i--) {
                         const btn = candidates[i];
-                        if (btn.offsetHeight === 0) continue;
-                        if (btn.getAttribute('aria-disabled') === 'true' || btn.closest('[aria-disabled="true"]') || btn.disabled) {
+                        if (btn.offsetWidth === 0 || btn.offsetHeight === 0) continue;
+                        // ONLY check aria-disabled directly on the button itself, NEVER on ancestors!
+                        if (btn.getAttribute('aria-disabled') === 'true' || btn.disabled || btn.hasAttribute('disabled')) {
                             continue;
                         }
 
-                        // Inspect computed background color (walk up parents if on wrapper)
-                        let curr = btn;
                         let isBlue = false;
-                        let colorStr = '';
-                        while (curr && curr !== document.body) {
-                            const style = window.getComputedStyle(curr);
-                            const bg = style.backgroundColor || '';
-                            const match = bg.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
-                            if (match) {
-                                const r = parseInt(match[1]);
-                                const g = parseInt(match[2]);
-                                const b = parseInt(match[3]);
-                                // Facebook blue has high blue value, significantly higher than red & green
-                                if (b > 150 && b > r + 40 && b > g + 20) {
+                        let colorFound = '';
+
+                        // 1. Check self background
+                        const selfStyle = window.getComputedStyle(btn);
+                        if (isBlueRgb(selfStyle.backgroundColor)) {
+                            isBlue = true;
+                            colorFound = selfStyle.backgroundColor;
+                        }
+
+                        // 2. Check child elements background
+                        if (!isBlue) {
+                            for (const child of btn.querySelectorAll('*')) {
+                                const cs = window.getComputedStyle(child);
+                                if (isBlueRgb(cs.backgroundColor)) {
                                     isBlue = true;
-                                    colorStr = bg;
+                                    colorFound = cs.backgroundColor;
                                     break;
                                 }
                             }
-                            curr = curr.parentElement;
                         }
 
-                        if (isBlue) {
-                            return { ready: true, index: i, color: colorStr };
+                        // 3. Check parent wrappers background (up to 3 levels)
+                        if (!isBlue) {
+                            let p = btn.parentElement;
+                            for (let d = 0; d < 3 && p && p !== document.body; d++) {
+                                const ps = window.getComputedStyle(p);
+                                if (isBlueRgb(ps.backgroundColor)) {
+                                    isBlue = true;
+                                    colorFound = ps.backgroundColor;
+                                    break;
+                                }
+                                p = p.parentElement;
+                            }
+                        }
+
+                        // 4. Check text color: when active, FB primary Posting button text is bright white (rgb(255, 255, 255))
+                        let hasWhiteText = false;
+                        if (isWhiteRgb(selfStyle.color)) {
+                            hasWhiteText = true;
+                        } else {
+                            for (const child of btn.querySelectorAll('*')) {
+                                const cs = window.getComputedStyle(child);
+                                if (isWhiteRgb(cs.color)) {
+                                    hasWhiteText = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (isBlue || hasWhiteText) {
+                            // Mark element for reliable clicking
+                            btn.setAttribute('data-target-post-ready', 'true');
+                            return { ready: true, index: i, color: colorFound || 'white_text_active' };
                         }
                     }
                     return { ready: false, reason: 'button_still_grey' };
@@ -228,6 +274,7 @@ class FacebookPublisher(BasePublisher):
                 # Click the blue Posting button
                 clicked = False
                 publish_btn_sel = (
+                    '[data-target-post-ready="true"], '
                     'div[role="dialog"] div[aria-label="Posting"][role="button"], '
                     'div[role="dialog"] div[role="button"]:has-text("Posting"), '
                     'div[role="dialog"] button:has-text("Posting"), '
@@ -243,11 +290,16 @@ class FacebookPublisher(BasePublisher):
                         await btn.click(timeout=10_000)
                         clicked = True
                         log.info('[facebook] Clicked blue Posting button via locator click')
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug('[facebook] Locator click error: %s', e)
 
                 if not clicked:
                     click_blue_js = """() => {
+                        const marked = document.querySelector('[data-target-post-ready="true"]');
+                        if (marked) {
+                            marked.click();
+                            return true;
+                        }
                         const candidates = Array.from(document.querySelectorAll(
                             'div[role="dialog"] div[role="button"], div[role="dialog"] button, div[role="button"], button'
                         )).filter(el => {
@@ -258,8 +310,8 @@ class FacebookPublisher(BasePublisher):
                         });
                         for (let i = candidates.length - 1; i >= 0; i--) {
                             const btn = candidates[i];
-                            if (btn.offsetHeight === 0) continue;
-                            if (btn.getAttribute('aria-disabled') === 'true' || btn.closest('[aria-disabled="true"]') || btn.disabled) continue;
+                            if (btn.offsetWidth === 0 || btn.offsetHeight === 0) continue;
+                            if (btn.getAttribute('aria-disabled') === 'true' || btn.disabled || btn.hasAttribute('disabled')) continue;
                             btn.click();
                             return true;
                         }
