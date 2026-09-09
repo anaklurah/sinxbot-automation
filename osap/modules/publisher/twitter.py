@@ -126,35 +126,43 @@ class TwitterPublisher(BasePublisher):
                 await self._jitter(2000, 3500)
 
                 # ── Step 3: Wait for video upload & processing ────────────────
-                log.info('[twitter] Waiting for video to upload and process...')
+                # Twitter shows a "Ready" label under the video thumbnail ONLY when the upload
+                # to Twitter's server is fully complete and the video has been processed.
+                # The video player/preview element appears immediately (local preview), so
+                # we MUST wait for the "Ready" status text, not the preview element.
+                log.info('[twitter] Waiting for video to finish uploading to Twitter server (watching for "Ready" status)...')
 
-                # Wait for upload progress spinner to disappear and video preview to appear
-                try:
-                    # First: wait for video preview element (thumbnail/player)
-                    video_preview_sel = (
-                        '[data-testid="videoPlayer"], '
-                        '[data-testid="videoComponent"], '
-                        '[data-testid="attachments"] video, '
-                        '[data-testid="attachments"] [role="img"]'
-                    )
-                    await page.wait_for_selector(video_preview_sel, timeout=120_000)
-                    log.info('[twitter] Video preview confirmed — upload complete')
-                except Exception:
-                    log.warning('[twitter] Video preview wait timed out — proceeding cautiously')
-                    await asyncio.sleep(10)
+                ready_confirmed = False
+                for upload_elapsed in range(0, 180, 3):
+                    try:
+                        # Primary signal: "Ready" text next to the video in attachments bar
+                        ready_el = page.locator(':text("Ready"), [data-testid="attachments"] :text("Ready")').first
+                        if await ready_el.is_visible():
+                            log.info('[twitter] ✓ Video upload "Ready" confirmed after %ds!', upload_elapsed)
+                            ready_confirmed = True
+                            break
 
-                # Extra buffer for Twitter to finish processing on their server
-                await self._jitter(3000, 5000)
+                        # Check for upload error
+                        err_el = page.locator(':text("Something went wrong"), :text("supported video or audio"), :text("Upload failed"), :text("unsupported")').first
+                        if await err_el.is_visible():
+                            err_text = await err_el.inner_text()
+                            log.error('[twitter] Video upload error: %s', err_text.strip())
+                            return False
 
-                # Check for upload error message
-                try:
-                    err_el = page.locator(':text("Something went wrong"), :text("supported video or audio"), :text("Upload failed")').first
-                    if await err_el.is_visible():
-                        err_text = await err_el.inner_text()
-                        log.error('[twitter] Video upload error detected: %s', err_text.strip())
-                        return False
-                except Exception:
-                    pass
+                        if upload_elapsed % 15 == 0 and upload_elapsed > 0:
+                            log.info('[twitter] Still uploading video... (%ds elapsed)', upload_elapsed)
+                    except Exception:
+                        pass
+
+                    await asyncio.sleep(3)
+
+                if not ready_confirmed:
+                    log.warning('[twitter] "Ready" status not detected after 180s — proceeding anyway')
+                    await asyncio.sleep(5)
+                else:
+                    # Small buffer after Ready appears before typing
+                    await self._jitter(1500, 2500)
+
 
                 # ── Step 4: Type tweet caption ────────────────────────────────
                 log.info('[twitter] Clicking compose text area and typing caption')
@@ -181,96 +189,67 @@ class TwitterPublisher(BasePublisher):
                 if getattr(self, 'NSFW', False):
                     await self._mark_sensitive(page)
 
-                # ── Step 6: Wait for Post button to become ACTIVE ─────────────
-                # On Twitter/X:
-                # - Disabled state: button is grey (background-color has low RGB values all similar, or light grey)
-                # - Active state: button is BLACK (background-color: rgb(15,20,25) or similar near-black)
-                # - Also: aria-disabled="true" when disabled; when active the attr is absent or "false"
-                # - Also: "Ready" text appears in the attachment area when video is processed
+                # ── Step 6: Wait for Post button to become ACTIVE then click ──
+                # If video is "Ready" and caption is typed, the Post button should
+                # already be active (black). We poll briefly then click.
                 log.info('[twitter] Waiting for Post button to become active...')
                 post_btn_sel = '[data-testid="tweetButton"], [data-testid="tweetButtonInline"]'
                 post_btn = page.locator(post_btn_sel).last
 
-                check_active_js = """el => {
-                    if (!el) return false;
-                    // aria-disabled check (most reliable when present)
-                    if (el.getAttribute('aria-disabled') === 'true') return false;
-                    if (el.disabled || el.hasAttribute('disabled')) return false;
-
-                    // Background color check:
-                    // Active X Post button → near-black rgb(15,20,25) or rgb(0,0,0)
-                    // Disabled Post button → grey rgb(196,207,214) or similar
-                    function isDarkBackground(el) {
-                        const style = window.getComputedStyle(el);
-                        const bg = style.backgroundColor;
-                        const m = bg.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
-                        if (m) {
-                            const r = parseInt(m[1]), g = parseInt(m[2]), b = parseInt(m[3]);
-                            // Active button is near-black: all channels < 80
-                            if (r < 80 && g < 80 && b < 80) return true;
-                        }
-                        // Walk into children (button may wrap a span)
-                        for (const child of el.querySelectorAll('*')) {
-                            const cs = window.getComputedStyle(child);
-                            const cbg = cs.backgroundColor;
-                            const cm = cbg.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
-                            if (cm) {
-                                const r = parseInt(cm[1]), g = parseInt(cm[2]), b = parseInt(cm[3]);
-                                if (r < 80 && g < 80 && b < 80) return true;
-                            }
-                        }
-                        return false;
-                    }
-                    return isDarkBackground(el);
-                }"""
+                # Give the button a moment to update its state after caption is typed
+                await self._jitter(1000, 2000)
 
                 button_active = False
-                for elapsed in range(0, 120, 2):
+                for elapsed in range(0, 30, 2):
                     try:
                         btn_count = await post_btn.count()
                         if btn_count == 0:
                             await asyncio.sleep(2)
                             continue
 
-                        # Method 1: Playwright is_enabled()
-                        is_enabled = await post_btn.is_enabled()
-                        # Method 2: aria-disabled + background color JS check
-                        is_dark = await post_btn.evaluate(check_active_js)
-
-                        if is_enabled and is_dark:
-                            log.info('[twitter] ✓ Post button is ACTIVE (enabled + dark background) after %ds', elapsed)
-                            button_active = True
-                            break
-                        elif is_enabled:
-                            # Button reports enabled but we still check color
-                            log.info('[twitter] ✓ Post button is_enabled() = True after %ds — proceeding', elapsed)
+                        # Use Playwright is_enabled() — most reliable cross-browser check
+                        is_en = await post_btn.is_enabled()
+                        if is_en:
+                            log.info('[twitter] ✓ Post button is active after %ds', elapsed)
                             button_active = True
                             break
                         else:
                             if elapsed % 10 == 0 and elapsed > 0:
-                                log.info('[twitter] Post button still disabled (%ds elapsed)...', elapsed)
+                                log.info('[twitter] Post button not yet active (%ds)...', elapsed)
                     except Exception as e:
-                        log.debug('[twitter] Button check error: %s', e)
-
+                        log.debug('[twitter] Button check: %s', e)
                     await asyncio.sleep(2)
 
                 if not button_active:
-                    log.warning('[twitter] Post button did not become active within 120s, attempting click anyway')
-
+                    log.warning('[twitter] Post button check timed out after 30s — clicking anyway')
 
                 # ── Step 7: Click Post ────────────────────────────────────────
                 log.info('[twitter] Clicking Post button')
-                try:
-                    await post_btn.click(force=True)
-                    log.info('[twitter] Post button clicked')
-                except Exception:
+                clicked = False
+                for click_attempt in range(3):
                     try:
-                        await post_btn.evaluate('el => el.click()')
-                        log.info('[twitter] Post button clicked via evaluate()')
+                        await post_btn.scroll_into_view_if_needed()
+                        await post_btn.click(force=True)
+                        log.info('[twitter] Post button clicked (attempt %d)', click_attempt + 1)
+                        clicked = True
+                        break
                     except Exception as e:
-                        log.warning('[twitter] Post button click failed: %s', e)
+                        log.warning('[twitter] Click attempt %d failed: %s', click_attempt + 1, e)
+                        try:
+                            await post_btn.evaluate('el => el.click()')
+                            log.info('[twitter] Post button clicked via evaluate() (attempt %d)', click_attempt + 1)
+                            clicked = True
+                            break
+                        except Exception:
+                            pass
+                        await asyncio.sleep(1)
+
+                if not clicked:
+                    log.error('[twitter] All Post button click attempts failed')
+                    return False
 
                 await self._jitter(3000, 5000)
+
 
                 # ── Step 8: Wait for success ──────────────────────────────────
                 log.info('[twitter] Waiting for success confirmation')
