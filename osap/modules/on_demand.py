@@ -308,6 +308,16 @@ async def run_jit_video_pipeline(
     failed_target_names = [t.get("name") or t.get("target_key") for t in targets_to_run if platform_results.get(t.get("target_key")) is not True]
 
     if successful_targets:
+        fetch_delay_sec = int(os.environ.get("POST_FETCH_DELAY_SEC") or getattr(cfg, "POST_FETCH_DELAY_SEC", 180))
+        if fetch_delay_sec > 0:
+            delay_min = fetch_delay_sec // 60
+            delay_remainder = fetch_delay_sec % 60
+            time_str = f"{delay_min} menit" if delay_remainder == 0 else f"{delay_min} menit {delay_remainder} detik"
+            logger.info(
+                f"[JIT Pipeline] ⏳ Menunggu jeda {time_str} ({fetch_delay_sec} detik) agar semua platform selesai memproses & memunculkan postingan terbaru di profil..."
+            )
+            await asyncio.sleep(fetch_delay_sec)
+
         logger.info(f"[JIT Pipeline] 📲 Mengambil link postingan terbaru dari profil {len(successful_targets)} target sukses...")
         try:
             from osap.modules.post_fetcher import fetch_all_latest_posts

@@ -163,12 +163,13 @@ class VideoProcessor:
             # ── Video chain ─────────────────────────────────────────── #
             video_stream = input_node.video
 
-            # 1. Scale up by zoom factor (keeps full frame).
+            # 1. Scale up by zoom factor (keeps full frame with sharp lanczos scaling).
             video_stream = ffmpeg.filter(
                 video_stream,
                 "scale",
                 w=f"iw*{zoom}",
                 h=f"ih*{zoom}",
+                flags="lanczos",
             )
 
             # 2. Centre-crop back to original dimensions.
@@ -258,7 +259,7 @@ class VideoProcessor:
             encoder = self._encoder
             output_kwargs: dict = {
                 "acodec": "aac",
-                "audio_bitrate": "128k",
+                "audio_bitrate": "192k",
             }
 
             if encoder == "h264_nvenc":
@@ -266,14 +267,14 @@ class VideoProcessor:
                     {
                         "vcodec": "h264_nvenc",
                         "preset": "p4",
-                        "cq": "20",
+                        "cq": "18",
                     }
                 )
             else:
                 output_kwargs.update(
                     {
                         "vcodec": "libx264",
-                        "crf": 20,
+                        "crf": 18,
                         "preset": "fast",
                     }
                 )

@@ -399,9 +399,8 @@ class DownloadWorker:
 
         ydl_opts: dict[str, Any] = {
             "format": (
-                "bv*[height<=1080][ext=mp4]+ba[ext=m4a]"
-                "/bv*[height<=1080]+ba"
-                "/b[height<=1080]"
+                "bv*[height<=2160]+ba/b[height<=2160]"
+                "/bv*+ba/best"
             ),
             "outtmpl": str(cfg.raw_dir / "%(id)s.%(ext)s"),
             "quiet": True,
