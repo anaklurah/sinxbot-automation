@@ -297,29 +297,91 @@ class InstagramPublisher(BasePublisher):
                 except Exception:
                     await share_btn.evaluate("el => el.click()")
                 log.info('[instagram] Clicked Share button')
-                await self._jitter(3000, 6000)
+                await self._jitter(2000, 4000)
 
-                # ── Step 8: Wait for success ───────────────────────────────────
-                log.info('[instagram] Waiting for upload and sharing confirmation')
+                # Check for any post-share confirmation dialogs (e.g. "Share as Reel", "Continue")
                 try:
-                    success_sel = (
-                        ':text("Your reel has been shared"), '
-                        ':text("Your post has been shared"), '
-                        ':text("Reel shared"), '
-                        ':text("Reel dibagikan"), '
-                        ':text("Postingan dibagikan"), '
-                        '[aria-label*="shared" i]'
-                    )
-                    await page.wait_for_selector(success_sel, timeout=60_000)
-                    log.info('[instagram] ✓ Post shared successfully')
+                    confirm_btn = page.locator(
+                        'div[role="dialog"] button:has-text("Share as Reel"), '
+                        'div[role="dialog"] button:has-text("Bagikan sebagai Reel"), '
+                        'div[role="dialog"] button:has-text("Continue"), '
+                        'div[role="dialog"] button:has-text("Lanjutkan")'
+                    ).first
+                    if await confirm_btn.is_visible():
+                        log.info('[instagram] Clicking post-share confirmation modal')
+                        await confirm_btn.click(force=True)
+                        await self._jitter(1000, 2000)
                 except Exception:
-                    # Check if dialog closed as indication of success
-                    dialog = page.locator('div[role="dialog"]').first
-                    if not await dialog.is_visible():
-                        log.info('[instagram] Dialog closed — assuming upload completed successfully')
-                    else:
-                        log.info('[instagram] Timeout waiting for confirmation text — proceeding')
+                    pass
 
+                # ── Step 8: Strict wait for upload and sharing confirmation ────
+                log.info('[instagram] Waiting for upload and sharing confirmation (strict wait up to 180s)...')
+
+                max_wait_sec = 180
+                poll_interval = 2.0
+                elapsed = 0.0
+                upload_confirmed = False
+
+                while elapsed < max_wait_sec:
+                    # 1. Check for explicit success confirmation text
+                    for s_pattern in [
+                        "Your reel has been shared", "Your post has been shared",
+                        "Reel shared", "Post shared", "Reel Anda telah dibagikan",
+                        "Reel Anda sudah dibagikan", "Postingan Anda telah dibagikan",
+                        "Reel dibagikan", "Postingan dibagikan", "Telah dibagikan"
+                    ]:
+                        succ_el = page.locator(f':text("{s_pattern}")').first
+                        if await succ_el.is_visible():
+                            log.info('[instagram] ✓ Success confirmed: "%s" detected!', s_pattern)
+                            upload_confirmed = True
+                            break
+
+                    if not upload_confirmed:
+                        alt_succ = page.locator('img[alt*="shared" i], img[alt*="dibagikan" i], [aria-label*="shared" i], [aria-label*="dibagikan" i]').first
+                        if await alt_succ.is_visible():
+                            log.info('[instagram] ✓ Success confirmed via graphic/aria indicator!')
+                            upload_confirmed = True
+
+                    if upload_confirmed:
+                        break
+
+                    # 2. Check for explicit error prompt
+                    for err_pattern in ["Something went wrong", "Couldn't post", "Tidak dapat membagikan", "Gagal membagikan", "Try again", "Coba lagi"]:
+                        err_el = page.locator(f':text("{err_pattern}")').first
+                        if await err_el.is_visible():
+                            log.error('[instagram] ✗ Error detected during sharing: "%s"', err_pattern)
+                            return False
+
+                    # 3. Check if upload dialog closed completely (indicating sharing completed)
+                    dialog = page.locator('div[role="dialog"]').first
+                    dialog_visible = await dialog.is_visible()
+
+                    # 4. Check if actively sharing
+                    is_sharing = False
+                    for sh_pattern in ["Sharing", "Membagikan", "Uploading", "Mengunggah"]:
+                        sh_el = page.locator(f':text("{sh_pattern}")').first
+                        if await sh_el.is_visible():
+                            is_sharing = True
+                            break
+
+                    if is_sharing:
+                        if int(elapsed) % 10 == 0:
+                            log.info('[instagram] Upload in progress... (%ds elapsed, please wait)', int(elapsed))
+                    elif not dialog_visible and elapsed > 10:
+                        log.info('[instagram] ✓ Upload dialog closed after %ds — upload completed successfully', int(elapsed))
+                        upload_confirmed = True
+                        break
+
+                    await asyncio.sleep(poll_interval)
+                    elapsed += poll_interval
+
+                if not upload_confirmed:
+                    log.error('[instagram] ✗ Timeout waiting for upload confirmation after %ds. Browser will not assume success.', max_wait_sec)
+                    return False
+
+                # Hold browser open for 6 seconds so Instagram finishes all network transactions
+                log.info('[instagram] Video published! Holding browser open for 6s to finalize network session...')
+                await asyncio.sleep(6)
                 return True
 
             except Exception as exc:
