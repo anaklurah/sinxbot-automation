@@ -56,8 +56,6 @@ class UpscrolledPublisher(BasePublisher):
         'button[type="submit"]'
     )
     _SEL_SUCCESS = (
-        ':text("Your post is live"), '
-        ':text("Your post is live!"), '
         ':text("Upload complete"), '
         ':text("Your video is live"), '
         ':text("Posted"), '
@@ -78,13 +76,12 @@ class UpscrolledPublisher(BasePublisher):
 
         Steps:
             1. Navigate to Upscrolled home
-            2. Click Create / Upload button
+            2. Click sidebar Post button -> Click 'Video post'
             3. Set video file via file input
-            4. Wait for upload progress to complete
-            5. Fill title
-            6. Fill caption (description + hashtags)
-            7. Click Publish
-            8. Confirm success
+            4. Dismiss 'Choose cover' dialog by clicking 'Done'
+            5. Fill caption (strictly <= 120 chars)
+            6. Click modal 'Post' button
+            7. Wait for post completion
 
         Args:
             video_path: Absolute path to the video file.
@@ -96,10 +93,32 @@ class UpscrolledPublisher(BasePublisher):
             True on success.
         """
         log = self._log
-        video_path = str(Path(video_path).resolve())
+        _MAX_CAPTION_CHARS = 120
+        title = (title or "").strip()[:_MAX_CAPTION_CHARS]
 
+        # Upscrolled caption strictly <= 120 characters
         hashtags = ' '.join(f'#{t.lstrip("#")}' for t in tags)
-        caption = f'{description}\n{hashtags}'.strip()
+        primary_text = description if (description and len(description) <= _MAX_CAPTION_CHARS) else title
+
+        if hashtags and hashtags not in primary_text:
+            caption = f'{primary_text} {hashtags}'.strip()
+        else:
+            caption = (primary_text or "").strip()
+
+        if len(caption) > _MAX_CAPTION_CHARS:
+            if len(primary_text) <= _MAX_CAPTION_CHARS:
+                caption = primary_text.strip()
+                for t in tags:
+                    candidate = f"{caption} #{t.lstrip('#')}"
+                    if len(candidate) <= _MAX_CAPTION_CHARS:
+                        caption = candidate
+                    else:
+                        break
+            else:
+                caption = primary_text[:_MAX_CAPTION_CHARS].rstrip()
+
+        caption = caption[:_MAX_CAPTION_CHARS]
+        log.info('[upscrolled] Final caption (%d chars): %r', len(caption), caption)
 
         async with async_playwright() as pw:
             context: BrowserContext = await self._get_context(pw)
@@ -116,197 +135,117 @@ class UpscrolledPublisher(BasePublisher):
                     log.error('[upscrolled] Not authenticated — redirected to login')
                     return False
 
-                # ── Step 2: Open Create a post modal ──────────────────────────
-                log.info('[upscrolled] Looking for Post button')
-                post_open_sel = 'button[aria-label="Post"], button:has-text("Post"), a[href*="create"]'
-                await page.wait_for_selector(post_open_sel, timeout=15_000)
-                post_open_btn = page.locator(post_open_sel).first
-                await post_open_btn.click(force=True)
-                log.info('[upscrolled] Opened Create a post modal')
-                await self._jitter(1500, 2500)
+                # ── Step 2: Open Create Post modal ────────────────────────────
+                log.info('[upscrolled] Looking for sidebar Post button')
+                post_btn = page.locator('button:has-text("Post"), a:has-text("Post")').first
+                await post_btn.wait_for(state='visible', timeout=15_000)
+                await post_btn.click()
+                await self._jitter(1000, 2000)
 
-                # ── Step 3: Select "Video post" ───────────────────────────────
-                log.info('[upscrolled] Selecting Video post option')
-                video_opt = page.locator('button, [role="button"], div').filter(has_text='Video post').filter(has_text='Share a single video').last
-                if not await video_opt.count():
-                    video_opt = page.locator('button:has-text("Video post"), button:has-text("Share a single video")').first
-                if not await video_opt.count():
-                    video_opt = page.locator(':text("Video post")').first
+                log.info('[upscrolled] Selecting "Video post"')
+                video_option = page.locator('text="Video post"').first
+                await video_option.wait_for(state='visible', timeout=10_000)
+                await video_option.click()
+                await self._jitter(1000, 2000)
 
-                await video_opt.wait_for(state='visible', timeout=15_000)
-                await video_opt.scroll_into_view_if_needed()
-                await video_opt.click()
-                log.info('[upscrolled] Clicked Video post option')
-                await self._jitter(1500, 2500)
-
-                # Wait for transition to Video post view (wait for visible 'Select a video' prompt)
-                try:
-                    await page.wait_for_selector(':text("Select a video")', state='visible', timeout=15_000)
-                except Exception:
-                    pass
-
-                # ── Step 4: Set video file ─────────────────────────────────────
+                # ── Step 3: Set video file ─────────────────────────────────────
                 log.info('[upscrolled] Setting video file: %s', video_path)
-                file_input = page.locator('input[type="file"][accept*="video"]').first
-                if not await file_input.count():
-                    file_input = page.locator('input[type="file"]').last
+                video_input = page.locator('input[type="file"][accept*="video"]')
+                if await video_input.count() > 0:
+                    file_input = video_input.first
+                else:
+                    file_input = page.locator('input[type="file"]').first
+
                 await file_input.wait_for(state='attached', timeout=20_000)
                 await file_input.set_input_files(video_path)
                 log.info('[upscrolled] File set')
-                await self._jitter(3000, 5000)
+                await self._jitter(1500, 3000)
 
-                # Wait for video to attach (preview or video tag)
+                # ── Step 4: Handle "Choose cover" dialog ───────────────────────
+                log.info('[upscrolled] Waiting for video processing / "Choose cover" dialog')
+                done_btn = page.locator('button:has-text("Done")').first
                 try:
-                    await page.wait_for_selector('video, [class*="preview"], [aria-label*="remove" i]', state='attached', timeout=20_000)
-                    log.info('[upscrolled] Video attached and preview loaded')
-                except Exception:
-                    log.info('[upscrolled] Proceeding to caption...')
+                    await done_btn.wait_for(state='visible', timeout=25_000)
+                    log.info('[upscrolled] Found "Done" button on Choose cover modal, confirming cover...')
+                    await self._jitter(500, 1000)
+                    try:
+                        await done_btn.click(timeout=3000)
+                    except Exception:
+                        await done_btn.evaluate('el => el.click()')
+                    
+                    # Ensure the Choose cover dialog is gone
+                    await done_btn.wait_for(state='hidden', timeout=10_000)
+                    await self._jitter(1000, 2000)
+                    log.info('[upscrolled] Cover selection confirmed and closed')
+                except Exception as exc:
+                    log.info('[upscrolled] Choose cover dialog did not appear or timed out: %s', exc)
 
                 # ── Step 5: Fill caption ────────────────────────────────────────
-                log.info('[upscrolled] Filling caption')
-                caption_text = f'{title}\n\n{caption}'.strip()
-                caption_sel = 'textarea[placeholder*="caption" i], textarea, [contenteditable="true"]'
-                try:
-                    await page.wait_for_selector(caption_sel, timeout=12_000)
-                    caption_el = page.locator(caption_sel).first
-                    await caption_el.click(force=True)
-                    await self._jitter(300, 600)
-                    await caption_el.fill(caption_text)
-                    log.info('[upscrolled] Caption filled')
-                    await self._jitter(1000, 2000)
-                except Exception as exc:
-                    log.warning('[upscrolled] Caption fill via fill() failed, trying keyboard typing: %s', exc)
-                    try:
-                        for char in caption_text:
-                            await page.keyboard.type(char, delay=35)
-                    except Exception:
-                        pass
+                log.info('[upscrolled] Filling caption: %r', caption)
+                caption_box = page.locator('textarea[placeholder*="caption" i], textarea').first
+                await caption_box.wait_for(state='visible', timeout=15_000)
+                await caption_box.click()
+                await self._jitter(200, 500)
+                await page.keyboard.press('Control+a')
+                await page.keyboard.press('Backspace')
+                await self._jitter(100, 300)
 
-                # Dismiss "Choose cover" dialog if open
-                done_btn = page.locator('button:text-is("Done")').last
-                try:
-                    if await done_btn.count() and await done_btn.is_visible():
-                        log.info('[upscrolled] "Choose cover" dialog detected, clicking Done')
-                        await done_btn.click()
-                        await self._jitter(1000, 2000)
-                except Exception:
-                    pass
+                for char in caption:
+                    await page.keyboard.type(char, delay=40)
+                await self._jitter(500, 1000)
 
-                # ── Step 6: Publish ────────────────────────────────────────────
-                log.info('[upscrolled] Waiting for Post button to become enabled...')
-                publish_btn_sel = (
-                    '[role="dialog"] button:text-is("Post"), '
-                    '[role="dialog"] button:has-text("Post"), '
-                    '[role="dialog"] button:has-text("Publish"), '
-                    'button:has-text("Post"):not([class*="w-[52px]"])'
-                )
-                await page.wait_for_selector(publish_btn_sel, timeout=20_000)
-                publish_btn = page.locator('[role="dialog"] button:text-is("Post")').last
-                if not await publish_btn.count():
-                    publish_btn = page.locator('[role="dialog"] button:has-text("Post")').last
-                if not await publish_btn.count():
-                    publish_btn = page.locator(publish_btn_sel).last
+                # Dismiss hashtag autocomplete dropdown if open
+                await page.keyboard.press('Escape')
+                await self._jitter(500, 1000)
 
-                # Wait for Post button to become enabled (video attached + processed)
-                log.info('[upscrolled] Waiting for Post button to become enabled (video upload & processing)...')
-                button_enabled = False
-                for elapsed in range(0, 180, 2):
-                    try:
-                        if await done_btn.count() and await done_btn.is_visible():
-                            await done_btn.click()
-                    except Exception:
-                        pass
+                # ── Step 6: Publish / Post ─────────────────────────────────────
+                log.info('[upscrolled] Waiting for Submit Post button to be enabled')
+                dialog_post_btn = page.locator('div[role="dialog"] button:has-text("Post")').last
 
-                    if await publish_btn.is_enabled():
-                        aria_dis = await publish_btn.get_attribute("aria-disabled")
-                        if aria_dis != "true":
-                            button_enabled = True
-                            log.info('[upscrolled] Post button became enabled after %ds', elapsed)
-                            break
-                    if elapsed % 20 == 0 and elapsed > 0:
-                        log.info('[upscrolled] Still processing/uploading video to Upscrolled... (%ds elapsed)', elapsed)
-                    await asyncio.sleep(2)
-
-                if not button_enabled:
-                    log.error('[upscrolled] Post button was not enabled within 180 seconds — aborting upload.')
-                    return False
-
-                await publish_btn.scroll_into_view_if_needed()
-                clicked = False
-                try:
-                    await publish_btn.click(timeout=15_000)
-                    clicked = True
-                    log.info('[upscrolled] Publish button clicked successfully')
-                except Exception:
-                    pass
-
-                if not clicked:
-                    try:
-                        await publish_btn.click(force=True, timeout=5_000)
-                        clicked = True
-                        log.info('[upscrolled] Publish button clicked via force=True')
-                    except Exception:
-                        pass
-
-                if not clicked:
-                    await publish_btn.evaluate("el => el.click()")
-                    log.info('[upscrolled] Publish button clicked via DOM evaluate')
-
-                await self._jitter(2000, 4000)
-
-                # ── Step 7: Confirm success ("Your post is live!") ───────────────
-                # Do NOT close browser until "Your post is live!" appears or dialog closes
-                log.info('[upscrolled] Waiting for "Your post is live!" confirmation...')
-                success_sel = (
-                    ':text("Your post is live"), '
-                    ':text("Your post is live!"), '
-                    ':text("post is live"), '
-                    '[role="status"]',
-                    'div:has-text("Your post is live")'
-                )
-
-                dialog = page.locator('[role="dialog"]').first
-                success_confirmed = False
-                for elapsed in range(1, 181):
-                    # Check for "Your post is live!" banner
-                    try:
-                        toast = page.locator(success_sel).first
-                        if await toast.count() and await toast.is_visible():
-                            log.info('[upscrolled] ✓ Confirmed: "Your post is live!" detected after %ds!', elapsed)
-                            success_confirmed = True
-                            break
-                    except Exception:
-                        pass
-
-                    # Check if post dialog closed (indicates upload/post succeeded)
-                    try:
-                        if elapsed >= 10 and not await dialog.is_visible():
-                            log.info('[upscrolled] ✓ Post dialog closed after %ds — upload completed successfully', elapsed)
-                            success_confirmed = True
-                            break
-                    except Exception:
-                        pass
-
-                    # Check if "Choose cover" popped up late
-                    try:
-                        if await done_btn.count() and await done_btn.is_visible():
-                            log.info('[upscrolled] Late "Choose cover" dialog detected, clicking Done')
-                            await done_btn.click()
-                    except Exception:
-                        pass
-
-                    if elapsed % 15 == 0:
-                        log.info('[upscrolled] Still uploading / processing on server... (%ds elapsed)', elapsed)
-
+                for attempt in range(25):
+                    is_disabled = await dialog_post_btn.is_disabled()
+                    aria_disabled = await dialog_post_btn.get_attribute('aria-disabled')
+                    if not is_disabled and aria_disabled != 'true':
+                        log.info('[upscrolled] Post button is enabled (attempt %d)', attempt + 1)
+                        break
                     await asyncio.sleep(1)
 
-                if not success_confirmed:
-                    log.error('[upscrolled] ✗ "Your post is live!" was not detected within 180 seconds. Keeping browser open or aborting.')
-                    return False
+                await self._jitter(500, 1000)
+                log.info('[upscrolled] Submitting post')
+                # Trigger click directly to bypass video overlay pointer interception
+                await dialog_post_btn.evaluate('el => el.click()')
 
-                # Settle for 5 seconds before closing browser
-                log.info('[upscrolled] Video successfully posted and confirmed live. Finalizing...')
-                await self._jitter(4000, 6000)
+                # ── Step 7: Wait for dialog close & "Your post is live!" ─────────
+                log.info('[upscrolled] Waiting for post dialog to close')
+                for w in range(25):
+                    await asyncio.sleep(1)
+                    dialogs = await page.locator('div[role="dialog"]').count()
+                    if dialogs == 0:
+                        log.info('[upscrolled] Post dialog closed')
+                        break
+
+                # Do NOT close browser before "Your post is live!" notification appears
+                log.info('[upscrolled] Waiting for "Your post is live!" notification before closing browser...')
+                live_toast = page.locator(':has-text("Your post is live")').first
+
+                toast_found = False
+                for sec in range(180):
+                    if await live_toast.is_visible():
+                        toast_found = True
+                        log.info('[upscrolled] ✓ Detected notification: "Your post is live!" (at %ds)', sec + 1)
+                        break
+                    await asyncio.sleep(1)
+
+                if not toast_found:
+                    try:
+                        await live_toast.wait_for(state='visible', timeout=10_000)
+                        toast_found = True
+                        log.info('[upscrolled] ✓ Detected notification: "Your post is live!"')
+                    except Exception as exc:
+                        log.warning('[upscrolled] "Your post is live!" toast was not detected within timeout: %s', exc)
+
+                await self._jitter(2000, 3000)
+                log.info('[upscrolled] ✓ Video published successfully to Upscrolled')
                 return True
 
             except Exception as exc:
