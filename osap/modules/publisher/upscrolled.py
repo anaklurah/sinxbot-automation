@@ -137,16 +137,28 @@ class UpscrolledPublisher(BasePublisher):
                 log.info('[upscrolled] Clicked Video post option')
                 await self._jitter(1500, 2500)
 
-                # Wait for transition to Video post view
-                await page.wait_for_selector('input[type="file"][accept*="video"], :text("Select a video")', timeout=15_000)
+                # Wait for transition to Video post view (wait for visible 'Select a video' prompt)
+                try:
+                    await page.wait_for_selector(':text("Select a video")', state='visible', timeout=15_000)
+                except Exception:
+                    pass
 
                 # ── Step 4: Set video file ─────────────────────────────────────
                 log.info('[upscrolled] Setting video file: %s', video_path)
-                file_input = page.locator('input[type="file"][accept*="video"], input[type="file"]').last
+                file_input = page.locator('input[type="file"][accept*="video"]').first
+                if not await file_input.count():
+                    file_input = page.locator('input[type="file"]').last
                 await file_input.wait_for(state='attached', timeout=20_000)
                 await file_input.set_input_files(video_path)
                 log.info('[upscrolled] File set')
                 await self._jitter(3000, 5000)
+
+                # Wait for video to attach (preview or video tag)
+                try:
+                    await page.wait_for_selector('video, [class*="preview"], [aria-label*="remove" i]', state='attached', timeout=20_000)
+                    log.info('[upscrolled] Video attached and preview loaded')
+                except Exception:
+                    log.info('[upscrolled] Proceeding to caption...')
 
                 # ── Step 5: Fill caption ────────────────────────────────────────
                 log.info('[upscrolled] Filling caption')
