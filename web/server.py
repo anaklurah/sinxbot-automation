@@ -1127,3 +1127,10 @@ async def stream_logs(request: Request):
     }
     return StreamingResponse(log_generator(), media_type="text/event-stream", headers=headers)
 
+
+if __name__ == "__main__":
+    import os
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("web.server:app", host="0.0.0.0", port=port, reload=False)
+
