@@ -168,7 +168,7 @@ class Config:
     WATERMARK_COLOR: str = "white"
 
     #: Watermark opacity (0.0 to 1.0).
-    WATERMARK_OPACITY: float = 0.85
+    WATERMARK_OPACITY: float = 0.30
 
     #: Watermark X position expression in FFmpeg (e.g. 40 for left-side margin).
     WATERMARK_X: str = "40"
@@ -491,7 +491,7 @@ def get_config(*, reload: bool = False) -> Config:
         WATERMARK_OPACITY=float(
             os.environ.get(
                 "WATERMARK_OPACITY",
-                _nested_get(yaml_data, "watermark", "opacity", default=0.85),
+                _nested_get(yaml_data, "watermark", "opacity", default=0.30),
             )
         ),
         WATERMARK_X=os.environ.get(

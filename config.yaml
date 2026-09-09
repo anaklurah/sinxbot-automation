@@ -88,7 +88,7 @@ watermark:
   enabled: true
   font_path: font/KOMIKAX_.ttf
   font_size: 32
-  opacity: 0.85
+  opacity: 0.30
   text: SINXBOT
   x: '40'
   y: (h-text_h)/2
