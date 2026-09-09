@@ -399,7 +399,8 @@ class DownloadWorker:
 
         ydl_opts: dict[str, Any] = {
             "format": (
-                "bv*[height<=2160]+ba/b[height<=2160]"
+                "bv*[height<=1920][height>=720]+ba/b[height<=1920][height>=720]"
+                "/bv*[height<=1920]+ba/b[height<=1920]"
                 "/bv*+ba/best"
             ),
             "outtmpl": str(cfg.raw_dir / "%(id)s.%(ext)s"),

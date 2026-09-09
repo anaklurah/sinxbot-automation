@@ -182,6 +182,15 @@ class VideoProcessor:
                 y=f"(ih-ih/{zoom})/2",
             )
 
+            # 2b. Cap max resolution to 1080p (preserves 720p/1080p, scales down 4K to 1080x1920 vertical or 1920x1080 horizontal).
+            video_stream = ffmpeg.filter(
+                video_stream,
+                "scale",
+                w="if(gt(iw,ih),min(1920,iw),min(1080,iw))",
+                h="-2",
+                flags="lanczos",
+            )
+
             # 3. Speed-up via PTS manipulation.
             video_stream = ffmpeg.filter(
                 video_stream,
@@ -198,13 +207,15 @@ class VideoProcessor:
                 brightness=0.02,
             )
 
-            # 5. Micro noise injection (anti-duplicate fingerprint).
-            video_stream = ffmpeg.filter(
-                video_stream,
-                "noise",
-                alls=noise,
-                allf="t+u",
-            )
+            # 5. Micro noise injection (anti-duplicate fingerprint, subtle to avoid bitrate ballooning).
+            effective_noise = min(int(noise), 2)
+            if effective_noise > 0:
+                video_stream = ffmpeg.filter(
+                    video_stream,
+                    "noise",
+                    alls=effective_noise,
+                    allf="t",
+                )
 
             # 6. Watermark text overlay (middle-left position).
             if is_wm_active and active_wm_text:
@@ -256,10 +267,12 @@ class VideoProcessor:
             audio_stream = ffmpeg.filter(audio_stream, "atempo", speed)
 
             # ── Encoder settings ─────────────────────────────────────── #
+            # Enforce 2500k-3500k bitrate ceiling to guarantee crisp 720p/1080p under 50MB (typically 15-30MB)
             encoder = self._encoder
             output_kwargs: dict = {
                 "acodec": "aac",
-                "audio_bitrate": "192k",
+                "audio_bitrate": "128k",
+                "movflags": "+faststart",
             }
 
             if encoder == "h264_nvenc":
@@ -267,15 +280,21 @@ class VideoProcessor:
                     {
                         "vcodec": "h264_nvenc",
                         "preset": "p4",
-                        "cq": "18",
+                        "rc": "vbr",
+                        "cq": "23",
+                        "b:v": "2500k",
+                        "maxrate": "3500k",
+                        "bufsize": "6000k",
                     }
                 )
             else:
                 output_kwargs.update(
                     {
                         "vcodec": "libx264",
-                        "crf": 18,
                         "preset": "fast",
+                        "crf": 23,
+                        "maxrate": "3500k",
+                        "bufsize": "6000k",
                     }
                 )
 
