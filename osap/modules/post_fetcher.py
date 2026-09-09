@@ -52,27 +52,58 @@ async def _fetch_twitter_latest(page: Page) -> Optional[str]:
 async def _fetch_instagram_latest(page: Page) -> Optional[str]:
     logger.info("[fetcher-instagram] Navigating to Instagram...")
     await page.goto("https://www.instagram.com/", wait_until="domcontentloaded", timeout=45_000)
-    await asyncio.sleep(2)
+    await asyncio.sleep(3)
 
     # Dismiss any popups
-    for btn_text in ["Not Now", "Lain Kali", "Cancel"]:
+    for btn_text in ["Not Now", "Lain Kali", "Cancel", "Batal"]:
         btn = page.locator(f'button:text-is("{btn_text}")').first
         if await btn.count() and await btn.is_visible():
             await btn.click()
             await asyncio.sleep(1)
 
-    # Click profile link in sidebar
-    prof_btn = page.locator('a[role="link"]:has-text("Profile"), a[href*="/"]:has(img[alt*="profile" i])').first
-    if await prof_btn.count():
-        await prof_btn.click()
-    await asyncio.sleep(3)
+    # Locate user profile link from sidebar:
+    prof_href = None
+    try:
+        prof_links = await page.eval_on_selector_all(
+            'a[role="link"]',
+            """els => els.map(e => ({
+                href: e.getAttribute('href'),
+                imgAlt: e.querySelector('img') ? e.querySelector('img').getAttribute('alt') : ''
+            })).filter(e => e.href && e.imgAlt && (
+                e.imgAlt.toLowerCase().includes('profile') || 
+                e.imgAlt.toLowerCase().includes('profil')
+            ))"""
+        )
+        if prof_links and prof_links[0].get('href'):
+            prof_href = prof_links[0]['href']
+    except Exception:
+        pass
 
-    # First post / reel in grid
-    post_link = page.locator('main a[href^="/p/"], main a[href^="/reel/"], article a[href^="/p/"], article a[href^="/reel/"]').first
-    await post_link.wait_for(state="visible", timeout=15_000)
-    href = await post_link.get_attribute("href")
-    if href:
-        return f"https://www.instagram.com{href}" if href.startswith("/") else href
+    if not prof_href:
+        prof_btn = page.locator('a[role="link"]:has-text("Profile"), a[role="link"]:has-text("Profil")').first
+        if await prof_btn.count():
+            prof_href = await prof_btn.get_attribute("href")
+
+    if prof_href:
+        clean_user = prof_href.strip("/")
+        logger.info("[fetcher-instagram] Found user profile: %s", clean_user)
+        await page.goto(f"https://www.instagram.com/{clean_user}/", wait_until="domcontentloaded", timeout=45_000)
+        await asyncio.sleep(3)
+    else:
+        logger.warning("[fetcher-instagram] Could not identify profile link, staying on current page")
+
+    # Locate latest post or reel on profile grid
+    # Notice: Instagram profile grid links have hrefs like "/{username}/reel/{id}/" or "/{username}/p/{id}/" or "/reel/{id}/" or "/p/{id}/"
+    post_link = page.locator('main a[href*="/reel/"], main a[href*="/p/"], article a[href*="/reel/"], article a[href*="/p/"]').first
+    try:
+        await post_link.wait_for(state="attached", timeout=15_000)
+        href = await post_link.get_attribute("href")
+        if href:
+            clean_href = href.split("?")[0]
+            return f"https://www.instagram.com{clean_href}" if clean_href.startswith("/") else clean_href
+    except Exception as exc:
+        logger.warning("[fetcher-instagram] Error locating latest post: %s", exc)
+
     return None
 
 

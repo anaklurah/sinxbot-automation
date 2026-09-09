@@ -208,7 +208,9 @@ class UpscrolledPublisher(BasePublisher):
                     publish_btn = page.locator(publish_btn_sel).last
 
                 # Wait for Post button to become enabled (video attached + processed)
-                for _ in range(45):
+                log.info('[upscrolled] Waiting for Post button to become enabled (video upload & processing)...')
+                button_enabled = False
+                for elapsed in range(0, 180, 2):
                     try:
                         if await done_btn.count() and await done_btn.is_visible():
                             await done_btn.click()
@@ -216,27 +218,54 @@ class UpscrolledPublisher(BasePublisher):
                         pass
 
                     if await publish_btn.is_enabled():
-                        break
-                    await asyncio.sleep(1)
+                        aria_dis = await publish_btn.get_attribute("aria-disabled")
+                        if aria_dis != "true":
+                            button_enabled = True
+                            log.info('[upscrolled] Post button became enabled after %ds', elapsed)
+                            break
+                    if elapsed % 20 == 0 and elapsed > 0:
+                        log.info('[upscrolled] Still processing/uploading video to Upscrolled... (%ds elapsed)', elapsed)
+                    await asyncio.sleep(2)
+
+                if not button_enabled:
+                    log.error('[upscrolled] Post button was not enabled within 180 seconds — aborting upload.')
+                    return False
 
                 await publish_btn.scroll_into_view_if_needed()
+                clicked = False
                 try:
-                    await publish_btn.click()
+                    await publish_btn.click(timeout=15_000)
+                    clicked = True
+                    log.info('[upscrolled] Publish button clicked successfully')
                 except Exception:
-                    await publish_btn.click(force=True)
-                log.info('[upscrolled] Publish button clicked. Waiting for upload to complete...')
+                    pass
+
+                if not clicked:
+                    try:
+                        await publish_btn.click(force=True, timeout=5_000)
+                        clicked = True
+                        log.info('[upscrolled] Publish button clicked via force=True')
+                    except Exception:
+                        pass
+
+                if not clicked:
+                    await publish_btn.evaluate("el => el.click()")
+                    log.info('[upscrolled] Publish button clicked via DOM evaluate')
+
                 await self._jitter(2000, 4000)
 
                 # ── Step 7: Confirm success ("Your post is live!") ───────────────
-                # Do NOT close browser until "Your post is live!" appears
+                # Do NOT close browser until "Your post is live!" appears or dialog closes
                 log.info('[upscrolled] Waiting for "Your post is live!" confirmation...')
                 success_sel = (
                     ':text("Your post is live"), '
                     ':text("Your post is live!"), '
                     ':text("post is live"), '
+                    '[role="status"]',
                     'div:has-text("Your post is live")'
                 )
 
+                dialog = page.locator('[role="dialog"]').first
                 success_confirmed = False
                 for elapsed in range(1, 181):
                     # Check for "Your post is live!" banner
@@ -244,6 +273,15 @@ class UpscrolledPublisher(BasePublisher):
                         toast = page.locator(success_sel).first
                         if await toast.count() and await toast.is_visible():
                             log.info('[upscrolled] ✓ Confirmed: "Your post is live!" detected after %ds!', elapsed)
+                            success_confirmed = True
+                            break
+                    except Exception:
+                        pass
+
+                    # Check if post dialog closed (indicates upload/post succeeded)
+                    try:
+                        if elapsed >= 10 and not await dialog.is_visible():
+                            log.info('[upscrolled] ✓ Post dialog closed after %ds — upload completed successfully', elapsed)
                             success_confirmed = True
                             break
                     except Exception:

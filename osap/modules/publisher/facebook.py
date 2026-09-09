@@ -123,21 +123,72 @@ class FacebookPublisher(BasePublisher):
                     log.warning('[facebook] Could not fill description: %s', exc)
 
                 # ── Step 5: Click Publish / Posting / Share ────────────────────
-                log.info('[facebook] Clicking Publish/Posting button')
+                log.info('[facebook] Looking for Publish/Posting button')
                 publish_btn_sel = (
+                    'div[aria-label="Posting"][role="button"], '
+                    'div[aria-label="Publish"][role="button"], '
+                    'div[aria-label="Publikasikan"][role="button"], '
+                    'div[aria-label="Bagikan"][role="button"], '
                     'button:has-text("Posting"), '
                     'button:has-text("Publish"), '
+                    'button:has-text("Publikasikan"), '
+                    'button:has-text("Bagikan"), '
                     'button:has-text("Share"), '
                     'button:has-text("Post"), '
+                    'div[role="button"]:has-text("Posting"), '
+                    'div[role="button"]:has-text("Publish"), '
+                    'div[role="button"]:has-text("Publikasikan"), '
+                    'div[role="button"]:has-text("Bagikan"), '
                     '[aria-label="Posting"], '
                     '[aria-label="Publish"], '
                     '[aria-label="Share"], '
                     '[data-testid="reels-publish-button"]'
                 )
-                await page.wait_for_selector(publish_btn_sel, timeout=20_000)
+                await page.wait_for_selector(publish_btn_sel, timeout=30_000)
                 publish_btn = page.locator(publish_btn_sel).first
-                await publish_btn.click()
-                log.info('[facebook] Publish button clicked')
+
+                # Wait for publish button to become enabled (video upload & processing)
+                log.info('[facebook] Waiting for video upload/processing to complete and Publish button to become enabled...')
+                for elapsed in range(0, 180, 2):
+                    is_disabled = False
+                    try:
+                        aria_dis = await publish_btn.get_attribute("aria-disabled")
+                        dis = await publish_btn.get_attribute("disabled")
+                        if aria_dis == "true" or dis is not None:
+                            is_disabled = True
+                        elif not await publish_btn.is_enabled():
+                            is_disabled = True
+                    except Exception:
+                        pass
+
+                    if not is_disabled:
+                        log.info('[facebook] Publish button is enabled after %ds', elapsed)
+                        break
+                    if elapsed % 20 == 0 and elapsed > 0:
+                        log.info('[facebook] Still waiting for video processing... (%ds elapsed)', elapsed)
+                    await asyncio.sleep(2)
+
+                await publish_btn.scroll_into_view_if_needed()
+                clicked = False
+                try:
+                    await publish_btn.click(timeout=15_000)
+                    clicked = True
+                    log.info('[facebook] Publish button clicked successfully')
+                except Exception:
+                    pass
+
+                if not clicked:
+                    try:
+                        await publish_btn.click(force=True, timeout=5_000)
+                        clicked = True
+                        log.info('[facebook] Publish button clicked via force=True')
+                    except Exception:
+                        pass
+
+                if not clicked:
+                    await publish_btn.evaluate("el => el.click()")
+                    log.info('[facebook] Publish button clicked via DOM evaluate')
+
                 await self._jitter(3000, 6000)
 
                 # ── Step 6: Wait for success confirmation ─────────────────────
@@ -152,10 +203,15 @@ class FacebookPublisher(BasePublisher):
                         ':text("Your reel is being processed"), '
                         ':text("sedang diproses")'
                     )
-                    await page.wait_for_selector(success_sel, timeout=30_000)
+                    await page.wait_for_selector(success_sel, timeout=45_000)
                     log.info('[facebook] ✓ Reel published successfully')
                 except Exception:
-                    log.info('[facebook] Flow completed without explicit success toast — assuming success')
+                    # Check if reels creation modal closed
+                    try:
+                        await page.locator('[role="dialog"]').first.wait_for(state="hidden", timeout=30_000)
+                        log.info('[facebook] Reels creation dialog closed — publication confirmed')
+                    except Exception:
+                        log.info('[facebook] Flow completed without explicit success toast — assuming success')
 
                 return True
 

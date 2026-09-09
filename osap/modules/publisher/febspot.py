@@ -46,6 +46,12 @@ class FebspotPublisher(BasePublisher):
         '[contenteditable="true"][aria-label*="description" i]'
     )
     _SEL_SUBMIT_BTN = (
+        'button:has-text("ADD VIDEO"), '
+        'button:has-text("Add Video"), '
+        'button:has-text("Add video"), '
+        ':text-is("ADD VIDEO"), '
+        ':text-is("Add Video"), '
+        ':text-is("Add video"), '
         'button[type="submit"], '
         'button:has-text("Publish"), '
         'button:has-text("Upload"), '
@@ -57,6 +63,8 @@ class FebspotPublisher(BasePublisher):
         ':text("Your video is live"), '
         ':text("Published"), '
         ':text("Success"), '
+        ':text("Video added"), '
+        ':text("Video uploaded"), '
         '[class*="success"]'
     )
 
@@ -168,18 +176,57 @@ class FebspotPublisher(BasePublisher):
                 await self._jitter(1000, 2000)
 
                 # ── Step 6: Submit / Publish ────────────────────────────────────
-                log.info('[febspot] Clicking Publish/Submit button')
-                await page.wait_for_selector(self._SEL_SUBMIT_BTN, timeout=20_000)
-                await self._move_click(page, self._SEL_SUBMIT_BTN)
+                log.info('[febspot] Looking for ADD VIDEO / Publish button')
+                submit_btn = page.locator(self._SEL_SUBMIT_BTN).first
+                await submit_btn.wait_for(state='attached', timeout=30_000)
+                await submit_btn.scroll_into_view_if_needed()
+
+                # Wait for button to be enabled (upload processing complete)
+                log.info('[febspot] Waiting for ADD VIDEO button to become enabled...')
+                for _ in range(60):
+                    if await submit_btn.is_enabled():
+                        aria_dis = await submit_btn.get_attribute("aria-disabled")
+                        dis = await submit_btn.get_attribute("disabled")
+                        if aria_dis != "true" and dis is None:
+                            break
+                    await asyncio.sleep(1)
+                    await submit_btn.scroll_into_view_if_needed()
+
+                await self._jitter(500, 1000)
+
+                clicked = False
+                try:
+                    await submit_btn.click(timeout=10_000)
+                    clicked = True
+                    log.info('[febspot] ADD VIDEO button clicked successfully')
+                except Exception:
+                    pass
+
+                if not clicked:
+                    try:
+                        await submit_btn.click(force=True, timeout=5_000)
+                        clicked = True
+                        log.info('[febspot] ADD VIDEO button clicked via force=True')
+                    except Exception:
+                        pass
+
+                if not clicked:
+                    await submit_btn.evaluate("el => el.click()")
+                    log.info('[febspot] ADD VIDEO button clicked via DOM evaluate')
+
                 await self._jitter(2000, 4000)
 
                 # ── Step 7: Wait for success ────────────────────────────────────
                 log.info('[febspot] Waiting for success confirmation')
                 try:
-                    await page.wait_for_selector(self._SEL_SUCCESS, timeout=30_000)
+                    await page.wait_for_selector(self._SEL_SUCCESS, timeout=45_000)
                     log.info('[febspot] ✓ Video published successfully')
                 except Exception:
-                    log.warning('[febspot] Success indicator not found — assuming success based on flow')
+                    # Check if navigated away from upload or URL changed
+                    if "/my/videos" in page.url or "/v/" in page.url or "/video/" in page.url:
+                        log.info('[febspot] ✓ URL indicates successful publish: %s', page.url)
+                    else:
+                        log.warning('[febspot] Success indicator not found — assuming success based on flow')
 
                 return True
 
