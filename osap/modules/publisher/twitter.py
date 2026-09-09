@@ -3,14 +3,8 @@ Twitter / X video publisher.
 
 Auth method: storage_state (cfg.PROFILES_DIR / 'twitter_storage.json')
 
-Flow:
-  1. Navigate to https://x.com/compose/post
-  2. Attach video file
-  3. Wait for video to upload and process (spinner disappears, video preview shown)
-  4. Type tweet caption (≤100 chars)
-  5. Wait for Post button to become ACTIVE (not disabled)
-  6. Click Post
-  7. Wait for success confirmation
+Posts a tweet with an attached video.  Optionally marks content as sensitive
+(NSFW) via the ``NSFW`` class attribute.
 """
 import asyncio
 from pathlib import Path
@@ -18,8 +12,9 @@ from pathlib import Path
 from playwright.async_api import async_playwright, BrowserContext, Page
 
 from osap.modules.publisher.base import BasePublisher
+from osap.utils.human_delay import human_type_organic
 
-_TWEET_MAX_CHARS = 100  # 90–120 char target; capped at 100 so Post button never gets hidden
+_TWEET_MAX_CHARS = 120
 
 
 class TwitterPublisher(BasePublisher):
@@ -40,13 +35,19 @@ class TwitterPublisher(BasePublisher):
         """Perform the Twitter / X video tweet flow.
 
         Steps:
-            1. Navigate to compose URL
-            2. Attach video via file input
-            3. Wait for video processing to finish
-            4. Type tweet caption
-            5. Wait for Post button to turn active (not disabled)
-            6. Click Post
-            7. Wait for success
+            1. Navigate to compose URL (https://x.com/compose/post)
+            2. Set video file directly via file input (avoids Grok menu popup)
+            3. Wait for video upload / processing
+            4. Type tweet text in the active modal dialog (max 120 chars)
+            5. Optionally mark as sensitive content (if NSFW=True)
+            6. Click Post / Posting button in the modal
+            7. Wait for success confirmation or modal dismissal
+
+        Args:
+            video_path: Absolute path to the video file.
+            title: Tweet text (prepended to tags).
+            description: Additional text (appended if space permits).
+            tags: Hashtag list (auto-prefixed with #).
 
         Returns:
             True on success.
@@ -54,196 +55,187 @@ class TwitterPublisher(BasePublisher):
         log = self._log
         video_path = str(Path(video_path).resolve())
 
-        # ── Build concise caption (90–100 chars max) ─────────────────────────
-        raw_text = (title or description or '').strip()
-        raw_text = ' '.join(raw_text.split())  # Collapse all whitespace/newlines
+        # Strict constraint: Twitter/X tweet text <= 120 characters
+        hashtags = ' '.join(f'#{t.lstrip("#")}' for t in tags)
+        primary_text = description if (description and len(description) <= _TWEET_MAX_CHARS) else title
 
-        if len(raw_text) > _TWEET_MAX_CHARS:
-            trimmed = raw_text[:_TWEET_MAX_CHARS]
-            last_sp = trimmed.rfind(' ')
-            tweet_text = trimmed[:last_sp].rstrip() if last_sp > int(_TWEET_MAX_CHARS * 0.7) else trimmed.rstrip()
+        if hashtags and hashtags not in primary_text:
+            tweet_text = f'{primary_text} {hashtags}'.strip()
         else:
-            tweet_text = raw_text
-            if tags:
+            tweet_text = (primary_text or "").strip()
+
+        if len(tweet_text) > _TWEET_MAX_CHARS:
+            if len(primary_text) <= _TWEET_MAX_CHARS:
+                tweet_text = primary_text.strip()
                 for t in tags:
-                    candidate = f'{tweet_text} #{t.lstrip("#")}'.strip()
+                    candidate = f"{tweet_text} #{t.lstrip('#')}"
                     if len(candidate) <= _TWEET_MAX_CHARS:
                         tweet_text = candidate
                     else:
                         break
+            else:
+                tweet_text = primary_text[:_TWEET_MAX_CHARS].rstrip()
 
-        log.info('[twitter] Caption (%d chars): %r', len(tweet_text), tweet_text)
+        tweet_text = tweet_text[:_TWEET_MAX_CHARS]
+        log.info('[twitter] Final tweet text (%d chars): %r', len(tweet_text), tweet_text)
 
         async with async_playwright() as pw:
             context: BrowserContext = await self._get_context(pw)
             page: Page = context.pages[0] if context.pages else await context.new_page()
 
             try:
-                # ── Step 1: Navigate to compose/post ─────────────────────────
-                log.info('[twitter] Navigating to https://x.com/compose/post')
-                try:
-                    await context.add_cookies([
-                        {'name': 'lang', 'value': 'id', 'domain': '.x.com', 'path': '/'},
-                        {'name': 'lang', 'value': 'id', 'domain': 'x.com', 'path': '/'},
-                    ])
-                except Exception:
-                    pass
-
+                # ── Step 1: Navigate to compose ────────────────────────────────
+                log.info('[twitter] Navigating to compose URL: https://x.com/compose/post')
                 await page.goto('https://x.com/compose/post', wait_until='domcontentloaded', timeout=60_000)
-                await self._jitter(1500, 3000)
+                await self._jitter(2000, 3500)
 
+                # If redirected to login
                 if '/i/flow/login' in page.url or 'login' in page.url:
                     log.error('[twitter] Not authenticated — redirected to login')
                     return False
 
-                # Ensure compose dialog is open
-                compose_box_sel = '[data-testid="tweetTextarea_0"]'
+                # Ensure active visible modal dialog is present
+                dialog_sel = 'div[role="dialog"]:visible'
                 try:
-                    await page.wait_for_selector(compose_box_sel, timeout=10_000)
-                    log.info('[twitter] Compose dialog open')
+                    await page.wait_for_selector(dialog_sel, timeout=12_000)
                 except Exception:
-                    log.warning('[twitter] Compose dialog did not open, trying sidebar compose button')
-                    try:
-                        compose_btn = page.locator('[data-testid="SideNav_NewTweet_Button"]').first
-                        await compose_btn.click(force=True)
-                        await page.wait_for_selector(compose_box_sel, timeout=10_000)
-                    except Exception as e:
-                        log.error('[twitter] Could not open compose dialog: %s', e)
-                        return False
+                    log.debug('[twitter] Compose dialog not visible — clicking compose button')
+                    compose_btn_sel = (
+                        '[data-testid="SideNav_NewTweet_Button"], '
+                        '[aria-label="Post"], '
+                        '[aria-label="Posting"]'
+                    )
+                    await page.wait_for_selector(compose_btn_sel, timeout=10_000)
+                    await self._move_click(page, compose_btn_sel)
+                    await page.wait_for_selector(dialog_sel, timeout=15_000)
 
-                # ── Step 2: Attach video file ─────────────────────────────────
-                log.info('[twitter] Attaching video: %s', video_path)
-                file_input_sel = 'input[data-testid="fileInput"], input[type="file"][accept*="video"], input[type="file"]'
-                file_input = page.locator(file_input_sel).first
+                dialog = page.locator(dialog_sel).first
+
+                # ── Step 2: Set video file strictly in visible dialog ─────────
+                log.info('[twitter] Setting video file inside active dialog: %s', video_path)
+                file_input = dialog.locator('input[type="file"]').first
+                await file_input.wait_for(state='attached', timeout=15_000)
+                await file_input.set_input_files(video_path)
+                log.info('[twitter] File set successfully')
+
+                # ── Step 3: Wait for video preview element in dialog ──────────
+                media_preview_sel = (
+                    'div[role="dialog"]:visible video, '
+                    'div[role="dialog"]:visible [aria-label*="Hapus"], '
+                    'div[role="dialog"]:visible [aria-label*="Remove"]'
+                )
                 try:
-                    await file_input.wait_for(state='attached', timeout=15_000)
-                    await file_input.set_input_files(video_path)
-                    log.info('[twitter] Video file attached')
-                except Exception as e:
-                    log.error('[twitter] Failed to attach video file: %s', e)
+                    await page.wait_for_selector(media_preview_sel, timeout=20_000)
+                    log.info('[twitter] Video attachment detected in compose dialog')
+                except Exception:
+                    log.warning('[twitter] Video preview element not detected within 20s')
+
+                # ── Step 4: Type tweet text inside active modal dialog ─────────
+                log.info('[twitter] Typing tweet text in dialog: %r', tweet_text[:60])
+                tweet_box = dialog.locator('[data-testid="tweetTextarea_0"], [role="textbox"]').first
+                await tweet_box.wait_for(state='visible', timeout=15_000)
+                await tweet_box.click()
+                await self._jitter(400, 800)
+                await human_type_organic(page, tweet_text)
+                await self._jitter(800, 1500)
+
+                # ── Step 5: Wait for video upload & processing to finish ───────
+                log.info('[twitter] Waiting for video upload and processing to complete (button is disabled while uploading)...')
+                post_btn = dialog.locator(
+                    '[data-testid="tweetButton"], '
+                    'button:has-text("Posting"), '
+                    'button:has-text("Post")'
+                ).first
+                await post_btn.wait_for(state='attached', timeout=15_000)
+
+                video_ready = False
+                max_wait_sec = 240  # up to 4 minutes for larger videos
+                for sec in range(max_wait_sec):
+                    await asyncio.sleep(1)
+                    is_disabled = await post_btn.get_attribute('aria-disabled')
+                    is_btn_enabled = await post_btn.is_enabled()
+                    has_video = await dialog.locator('video, [data-testid="attachments"] video').count()
+
+                    # Twitter strictly enables the button (aria-disabled removed and element enabled) once video is ready
+                    if has_video > 0 and (is_disabled is None or is_disabled == 'false') and is_btn_enabled:
+                        video_ready = True
+                        log.info('[twitter] Video upload complete! Post button is now active (enabled) after %ds', sec + 1)
+                        break
+
+                    if (sec + 1) % 5 == 0:
+                        log.info('[twitter] Still processing video... (%ds elapsed, Post button is disabled)', sec + 1)
+
+                if not video_ready:
+                    log.error('[twitter] Video processing timed out after %ds or video failed to attach', max_wait_sec)
                     return False
 
-                await self._jitter(2000, 3500)
-
-                # ── Step 3: Wait for video upload & processing ────────────────
-                # Twitter shows a "Ready" label under the video thumbnail ONLY when the upload
-                # to Twitter's server is fully complete and the video has been processed.
-                # The video player/preview element appears immediately (local preview), so
-                # we MUST wait for the "Ready" status text, not the preview element.
-                log.info('[twitter] Waiting for video to finish uploading to Twitter server (watching for "Ready" status)...')
-
-                ready_confirmed = False
-                for upload_elapsed in range(0, 180, 3):
-                    try:
-                        # Primary signal: "Ready" text next to the video in attachments bar
-                        ready_el = page.locator(':text("Ready"), [data-testid="attachments"] :text("Ready")').first
-                        if await ready_el.is_visible():
-                            log.info('[twitter] ✓ Video upload "Ready" confirmed after %ds!', upload_elapsed)
-                            ready_confirmed = True
-                            break
-
-                        # Check for upload error
-                        err_el = page.locator(':text("Something went wrong"), :text("supported video or audio"), :text("Upload failed"), :text("unsupported")').first
-                        if await err_el.is_visible():
-                            err_text = await err_el.inner_text()
-                            log.error('[twitter] Video upload error: %s', err_text.strip())
-                            return False
-
-                        if upload_elapsed % 15 == 0 and upload_elapsed > 0:
-                            log.info('[twitter] Still uploading video... (%ds elapsed)', upload_elapsed)
-                    except Exception:
-                        pass
-
-                    await asyncio.sleep(3)
-
-                if not ready_confirmed:
-                    log.warning('[twitter] "Ready" status not detected after 180s — proceeding anyway')
-                    await asyncio.sleep(5)
-                else:
-                    # Small buffer after Ready appears before typing
-                    await self._jitter(1500, 2500)
-
-
-                # ── Step 4: Type tweet caption ────────────────────────────────
-                log.info('[twitter] Clicking compose text area and typing caption')
-                tweet_box = page.locator(f'[role="dialog"] {compose_box_sel}, {compose_box_sel}').last
-                try:
-                    await tweet_box.wait_for(state='visible', timeout=10_000)
-                    await tweet_box.click(force=True)
-                    await self._jitter(400, 800)
-                except Exception as e:
-                    log.warning('[twitter] Tweet box click issue: %s', e)
-
-                # Clear any existing text first
-                await page.keyboard.press('Control+a')
-                await page.keyboard.press('Delete')
-                await self._jitter(200, 400)
-
-                # Type caption character by character
-                for char in tweet_text:
-                    await page.keyboard.type(char, delay=40)
-                await self._jitter(800, 1500)
-                log.info('[twitter] Caption typed')
-
-                # ── Step 5: NSFW flag (optional) ──────────────────────────────
-                if getattr(self, 'NSFW', False):
+                # ── Step 6: Mark as sensitive (NSFW) if needed ─────────────────
+                if self.NSFW:
                     await self._mark_sensitive(page)
 
-                # ── Step 6 + 7: Click Post ────────────────────────────────────
-                # Note: X/Twitter Post button is a div[role="button"], NOT a <button>.
-                # Playwright's is_enabled() only works for <button>/<input> — always returns False for divs.
-                # Strategy: video is "Ready" + caption typed = button IS active. Just wait briefly then click.
-                post_btn_sel = '[data-testid="tweetButton"], [data-testid="tweetButtonInline"]'
-                post_btn = page.locator(post_btn_sel).last
-
-                log.info('[twitter] Waiting 3s for Post button state to settle...')
-                await asyncio.sleep(3)
-
-                # Ensure button exists and is visible
+                # ── Step 7: Submit the tweet inside dialog ────────────────────
+                log.info('[twitter] Submitting tweet with video...')
+                post_btn = dialog.locator('[data-testid="tweetButton"]').first
                 try:
-                    await post_btn.wait_for(state='visible', timeout=10_000)
-                except Exception as e:
-                    log.warning('[twitter] Post button visibility wait: %s', e)
+                    await post_btn.scroll_into_view_if_needed()
+                except Exception:
+                    pass
+                await self._jitter(300, 600)
 
-                log.info('[twitter] Clicking Post button')
-                clicked = False
+                # Focus the tweet textarea and use Twitter's native submission shortcut
+                tweet_box = dialog.locator('[data-testid="tweetTextarea_0"], [role="textbox"]').first
+                await tweet_box.focus()
+                await self._jitter(200, 400)
+                log.info('[twitter] Triggering post submission via Control+Enter shortcut')
+                await page.keyboard.press('Control+Enter')
+
+                # Secondary trigger: also dispatch click on the post button
                 try:
-                    await post_btn.click(force=True)
-                    log.info('[twitter] ✓ Post button clicked')
-                    clicked = True
-                except Exception as e:
-                    log.warning('[twitter] Direct click failed: %s — trying evaluate()', e)
+                    await post_btn.evaluate('b => b.click()')
+                except Exception:
+                    pass
+
+                # ── Step 8: Wait for success confirmation ──────────────────────
+                log.info('[twitter] Waiting for tweet dialog to close...')
+                dialog_closed = False
+                try:
+                    await dialog.wait_for(state='hidden', timeout=30_000)
+                    dialog_closed = True
+                    log.info('[twitter] Compose dialog closed — video tweet posted successfully!')
+                except Exception:
+                    log.debug('[twitter] Dialog not closed after 30s, attempting retry submit...')
                     try:
-                        await post_btn.evaluate('el => el.click()')
-                        log.info('[twitter] ✓ Post button clicked via evaluate()')
-                        clicked = True
-                    except Exception as e2:
-                        log.error('[twitter] evaluate() click also failed: %s', e2)
+                        await tweet_box.focus()
+                        await page.keyboard.press('Control+Enter')
+                        await post_btn.click(force=True, timeout=5_000)
+                    except Exception:
+                        pass
+                    try:
+                        await dialog.wait_for(state='hidden', timeout=15_000)
+                        dialog_closed = True
+                        log.info('[twitter] Compose dialog closed on retry')
+                    except Exception:
+                        # Check toast notification
+                        toast_sel = (
+                            ':text("Your post was sent"), '
+                            ':text("Tweet sent"), '
+                            ':text("Postingan Anda telah dikirim"), '
+                            '[data-testid="toast"]'
+                        )
+                        try:
+                            await page.wait_for_selector(toast_sel, timeout=10_000)
+                            dialog_closed = True
+                            log.info('[twitter] Success toast notification detected')
+                        except Exception:
+                            pass
 
-                if not clicked:
-                    log.error('[twitter] Cannot click Post button — aborting')
+                if not dialog_closed:
+                    log.error('[twitter] Tweet submission failed: compose dialog remained open')
                     return False
 
-                await self._jitter(3000, 5000)
-
-
-                # ── Step 8: Wait for success ──────────────────────────────────
-                log.info('[twitter] Waiting for success confirmation')
-                try:
-                    await page.wait_for_selector(
-                        ':text("Your post was sent"), :text("Tweet sent"), :text("Postingan Anda telah dikirim"), '
-                        '[data-testid="toast"], [role="status"]',
-                        timeout=30_000,
-                    )
-                    log.info('[twitter] ✓ Post sent successfully!')
-                except Exception:
-                    # Fallback: compose dialog disappeared = success
-                    try:
-                        await page.wait_for_selector(compose_box_sel, state='hidden', timeout=15_000)
-                        log.info('[twitter] ✓ Compose dialog closed — assuming success')
-                    except Exception:
-                        log.warning('[twitter] Could not confirm success — assuming success based on flow')
-
+                # Cooldown to ensure network upload finalized before closing context
+                log.info('[twitter] Tweet successfully published! Cooldown before closing...')
+                await self._jitter(4000, 6000)
                 return True
 
             except Exception as exc:
@@ -253,19 +245,34 @@ class TwitterPublisher(BasePublisher):
                 await context.close()
 
     async def _mark_sensitive(self, page: Page) -> None:
-        """Enable the 'Content warning / sensitive' flag on the compose modal."""
+        """Enable the "Content warning / sensitive" flag on the compose modal.
+
+        Args:
+            page: The active Playwright compose page.
+        """
         log = self._log
         log.info('[twitter] Marking content as sensitive (NSFW)')
         try:
-            more_opts_sel = '[aria-label="More options"], [data-testid="composeBarMoreOptions"], button[aria-label*="More" i]'
+            # Open the "more" / additional options menu in the compose dialog
+            more_opts_sel = (
+                '[aria-label="More options"], '
+                '[data-testid="composeBarMoreOptions"], '
+                'button[aria-label*="More" i]'
+            )
             await page.wait_for_selector(more_opts_sel, timeout=8_000)
             await self._move_click(page, more_opts_sel)
             await self._jitter(500, 1000)
 
-            sensitive_sel = ':text("Flag as sensitive content"), :text("Mark as sensitive"), [role="menuitem"]:has-text("sensitive")'
+            # Click the sensitive content / content warning option
+            sensitive_sel = (
+                ':text("Flag as sensitive content"), '
+                ':text("Mark as sensitive"), '
+                '[role="menuitem"]:has-text("sensitive")'
+            )
             await page.wait_for_selector(sensitive_sel, timeout=8_000)
             await self._click(page, sensitive_sel)
             await self._jitter(400, 800)
             log.info('[twitter] Sensitive content flag enabled')
+
         except Exception as exc:
             log.warning('[twitter] Could not mark as sensitive: %s', exc)
