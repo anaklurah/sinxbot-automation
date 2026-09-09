@@ -189,63 +189,39 @@ class TwitterPublisher(BasePublisher):
                 if getattr(self, 'NSFW', False):
                     await self._mark_sensitive(page)
 
-                # ── Step 6: Wait for Post button to become ACTIVE then click ──
-                # If video is "Ready" and caption is typed, the Post button should
-                # already be active (black). We poll briefly then click.
-                log.info('[twitter] Waiting for Post button to become active...')
+                # ── Step 6 + 7: Click Post ────────────────────────────────────
+                # Note: X/Twitter Post button is a div[role="button"], NOT a <button>.
+                # Playwright's is_enabled() only works for <button>/<input> — always returns False for divs.
+                # Strategy: video is "Ready" + caption typed = button IS active. Just wait briefly then click.
                 post_btn_sel = '[data-testid="tweetButton"], [data-testid="tweetButtonInline"]'
                 post_btn = page.locator(post_btn_sel).last
 
-                # Give the button a moment to update its state after caption is typed
-                await self._jitter(1000, 2000)
+                log.info('[twitter] Waiting 3s for Post button state to settle...')
+                await asyncio.sleep(3)
 
-                button_active = False
-                for elapsed in range(0, 30, 2):
-                    try:
-                        btn_count = await post_btn.count()
-                        if btn_count == 0:
-                            await asyncio.sleep(2)
-                            continue
+                # Ensure button exists and is visible
+                try:
+                    await post_btn.wait_for(state='visible', timeout=10_000)
+                except Exception as e:
+                    log.warning('[twitter] Post button visibility wait: %s', e)
 
-                        # Use Playwright is_enabled() — most reliable cross-browser check
-                        is_en = await post_btn.is_enabled()
-                        if is_en:
-                            log.info('[twitter] ✓ Post button is active after %ds', elapsed)
-                            button_active = True
-                            break
-                        else:
-                            if elapsed % 10 == 0 and elapsed > 0:
-                                log.info('[twitter] Post button not yet active (%ds)...', elapsed)
-                    except Exception as e:
-                        log.debug('[twitter] Button check: %s', e)
-                    await asyncio.sleep(2)
-
-                if not button_active:
-                    log.warning('[twitter] Post button check timed out after 30s — clicking anyway')
-
-                # ── Step 7: Click Post ────────────────────────────────────────
                 log.info('[twitter] Clicking Post button')
                 clicked = False
-                for click_attempt in range(3):
+                try:
+                    await post_btn.click(force=True)
+                    log.info('[twitter] ✓ Post button clicked')
+                    clicked = True
+                except Exception as e:
+                    log.warning('[twitter] Direct click failed: %s — trying evaluate()', e)
                     try:
-                        await post_btn.scroll_into_view_if_needed()
-                        await post_btn.click(force=True)
-                        log.info('[twitter] Post button clicked (attempt %d)', click_attempt + 1)
+                        await post_btn.evaluate('el => el.click()')
+                        log.info('[twitter] ✓ Post button clicked via evaluate()')
                         clicked = True
-                        break
-                    except Exception as e:
-                        log.warning('[twitter] Click attempt %d failed: %s', click_attempt + 1, e)
-                        try:
-                            await post_btn.evaluate('el => el.click()')
-                            log.info('[twitter] Post button clicked via evaluate() (attempt %d)', click_attempt + 1)
-                            clicked = True
-                            break
-                        except Exception:
-                            pass
-                        await asyncio.sleep(1)
+                    except Exception as e2:
+                        log.error('[twitter] evaluate() click also failed: %s', e2)
 
                 if not clicked:
-                    log.error('[twitter] All Post button click attempts failed')
+                    log.error('[twitter] Cannot click Post button — aborting')
                     return False
 
                 await self._jitter(3000, 5000)
