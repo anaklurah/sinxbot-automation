@@ -183,34 +183,40 @@ class UpscrolledPublisher(BasePublisher):
                         pass
 
                 # Dismiss "Choose cover" dialog if open
-                done_btn = page.locator('button:has-text("Done")')
-                if await done_btn.is_visible():
-                    log.info('[upscrolled] "Choose cover" dialog detected, clicking Done')
-                    await done_btn.click()
-                    await self._jitter(1000, 2000)
+                done_btn = page.locator('button:text-is("Done")').last
+                try:
+                    if await done_btn.count() and await done_btn.is_visible():
+                        log.info('[upscrolled] "Choose cover" dialog detected, clicking Done')
+                        await done_btn.click()
+                        await self._jitter(1000, 2000)
+                except Exception:
+                    pass
 
                 # ── Step 6: Publish ────────────────────────────────────────────
                 log.info('[upscrolled] Waiting for Post button to become enabled...')
                 publish_btn_sel = (
+                    '[role="dialog"] button:text-is("Post"), '
                     '[role="dialog"] button:has-text("Post"), '
                     '[role="dialog"] button:has-text("Publish"), '
                     'button:has-text("Post"):not([class*="w-[52px]"])'
                 )
                 await page.wait_for_selector(publish_btn_sel, timeout=20_000)
-                publish_btn = page.locator('[role="dialog"] button:has-text("Post")').last
+                publish_btn = page.locator('[role="dialog"] button:text-is("Post")').last
+                if not await publish_btn.count():
+                    publish_btn = page.locator('[role="dialog"] button:has-text("Post")').last
                 if not await publish_btn.count():
                     publish_btn = page.locator(publish_btn_sel).last
 
-                # Wait for Post button to be active/clickable (not disabled or opacity-50)
+                # Wait for Post button to become enabled (video attached + processed)
                 for _ in range(45):
-                    is_disabled = await publish_btn.get_attribute('disabled')
-                    is_aria_disabled = await publish_btn.get_attribute('aria-disabled')
-                    btn_class = await publish_btn.evaluate('el => el.className') or ''
-                    if not is_disabled and is_aria_disabled != 'true' and 'disabled:opacity-50' not in btn_class.replace('hover:', ''):
+                    try:
+                        if await done_btn.count() and await done_btn.is_visible():
+                            await done_btn.click()
+                    except Exception:
+                        pass
+
+                    if await publish_btn.is_enabled():
                         break
-                    # Check if Choose cover needs Done
-                    if await done_btn.is_visible():
-                        await done_btn.click()
                     await asyncio.sleep(1)
 
                 await publish_btn.scroll_into_view_if_needed()
@@ -234,16 +240,22 @@ class UpscrolledPublisher(BasePublisher):
                 success_confirmed = False
                 for elapsed in range(1, 181):
                     # Check for "Your post is live!" banner
-                    toast = page.locator(success_sel).first
-                    if await toast.is_visible():
-                        log.info('[upscrolled] ✓ Confirmed: "Your post is live!" detected after %ds!', elapsed)
-                        success_confirmed = True
-                        break
+                    try:
+                        toast = page.locator(success_sel).first
+                        if await toast.count() and await toast.is_visible():
+                            log.info('[upscrolled] ✓ Confirmed: "Your post is live!" detected after %ds!', elapsed)
+                            success_confirmed = True
+                            break
+                    except Exception:
+                        pass
 
                     # Check if "Choose cover" popped up late
-                    if await done_btn.is_visible():
-                        log.info('[upscrolled] Late "Choose cover" dialog detected, clicking Done')
-                        await done_btn.click()
+                    try:
+                        if await done_btn.count() and await done_btn.is_visible():
+                            log.info('[upscrolled] Late "Choose cover" dialog detected, clicking Done')
+                            await done_btn.click()
+                    except Exception:
+                        pass
 
                     if elapsed % 15 == 0:
                         log.info('[upscrolled] Still uploading / processing on server... (%ds elapsed)', elapsed)
