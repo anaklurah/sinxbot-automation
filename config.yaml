@@ -83,12 +83,16 @@ scheduler:
   - '12:00'
   - '18:00'
   - '21:00'
+telegram:
+  bot_token: ''
+  chat_id: '1755321582'
+  enabled: true
 watermark:
   color: white
   enabled: true
   font_path: font/KOMIKAX_.ttf
   font_size: 32
-  opacity: 0.30
+  opacity: 0.3
   text: SINXBOT
   x: '40'
   y: (h-text_h)/2
@@ -96,7 +100,3 @@ workers:
   downloader: 2
   publisher: 1
   renderer: 1
-telegram:
-  enabled: true
-  bot_token: ''
-  chat_id: ''

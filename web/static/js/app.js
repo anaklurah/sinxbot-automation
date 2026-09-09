@@ -428,8 +428,17 @@ async function loadConfigData() {
         document.getElementById('cfg-watermark-text').value = env.WATERMARK_TEXT || yaml.watermark?.text || 'SINXBOT';
         document.getElementById('cfg-watermark-size').value = env.WATERMARK_FONT_SIZE || yaml.watermark?.font_size || 32;
 
-        document.getElementById('cfg-deepseek-key').value = env.DEEPSEEK_API_KEY_MASKED || '';
-        document.getElementById('cfg-deepseek-model').value = env.DEEPSEEK_MODEL || 'deepseek-chat';
+        const deepseekInput = document.getElementById('cfg-deepseek-key');
+        if (deepseekInput) {
+            deepseekInput.value = '';
+            if (env.DEEPSEEK_HAS_KEY) {
+                deepseekInput.placeholder = `(Tersimpan: ${env.DEEPSEEK_API_KEY_MASKED}) - Biarkan kosong jika tidak diubah`;
+            } else {
+                deepseekInput.placeholder = 'sk-... (masukkan API key baru)';
+            }
+        }
+        const deepseekModel = document.getElementById('cfg-deepseek-model');
+        if (deepseekModel) deepseekModel.value = env.DEEPSEEK_MODEL || 'deepseek-chat';
 
         // Telegram settings
         const isTgEnabled = env.TELEGRAM_ENABLED !== undefined
@@ -438,8 +447,14 @@ async function loadConfigData() {
         if (document.getElementById('cfg-telegram-enabled')) {
             document.getElementById('cfg-telegram-enabled').value = isTgEnabled ? 'true' : 'false';
         }
-        if (document.getElementById('cfg-telegram-token')) {
-            document.getElementById('cfg-telegram-token').value = env.TELEGRAM_BOT_TOKEN_MASKED || '';
+        const tgTokenInput = document.getElementById('cfg-telegram-token');
+        if (tgTokenInput) {
+            tgTokenInput.value = '';
+            if (env.TELEGRAM_HAS_TOKEN) {
+                tgTokenInput.placeholder = `(Tersimpan: ${env.TELEGRAM_BOT_TOKEN_MASKED}) - Biarkan kosong jika tidak diubah`;
+            } else {
+                tgTokenInput.placeholder = '123456789:ABCdef... (masukkan bot token)';
+            }
         }
         if (document.getElementById('cfg-telegram-chat-id')) {
             document.getElementById('cfg-telegram-chat-id').value = env.TELEGRAM_CHAT_ID || '';
@@ -469,11 +484,11 @@ async function saveConfiguration() {
         watermark_enabled: document.getElementById('cfg-watermark-enabled').value === 'true',
         watermark_text: document.getElementById('cfg-watermark-text').value,
         watermark_font_size: parseInt(document.getElementById('cfg-watermark-size').value) || 32,
-        deepseek_api_key: document.getElementById('cfg-deepseek-key').value,
-        deepseek_model: document.getElementById('cfg-deepseek-model').value,
+        deepseek_api_key: document.getElementById('cfg-deepseek-key')?.value?.trim() || null,
+        deepseek_model: document.getElementById('cfg-deepseek-model')?.value || null,
         telegram_enabled: document.getElementById('cfg-telegram-enabled') ? document.getElementById('cfg-telegram-enabled').value === 'true' : true,
-        telegram_bot_token: document.getElementById('cfg-telegram-token')?.value || '',
-        telegram_chat_id: document.getElementById('cfg-telegram-chat-id')?.value || '',
+        telegram_bot_token: document.getElementById('cfg-telegram-token')?.value?.trim() || null,
+        telegram_chat_id: document.getElementById('cfg-telegram-chat-id')?.value?.trim() || null,
     };
 
     try {
@@ -495,8 +510,8 @@ async function saveConfiguration() {
 }
 
 async function testTelegramConnection() {
-    const token = document.getElementById('cfg-telegram-token')?.value?.trim() || '';
-    const chatId = document.getElementById('cfg-telegram-chat-id')?.value?.trim() || '';
+    const token = document.getElementById('cfg-telegram-token')?.value?.trim() || null;
+    const chatId = document.getElementById('cfg-telegram-chat-id')?.value?.trim() || null;
     const statusEl = document.getElementById('telegram-test-result');
     if (statusEl) {
         statusEl.style.color = 'var(--accent-amber)';
