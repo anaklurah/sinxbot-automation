@@ -182,9 +182,47 @@ class TwitterPublisher(BasePublisher):
                     await self._mark_sensitive(page)
 
                 # ── Step 6: Wait for Post button to become ACTIVE ─────────────
-                log.info('[twitter] Waiting for Post button to become active (not disabled)...')
+                # On Twitter/X:
+                # - Disabled state: button is grey (background-color has low RGB values all similar, or light grey)
+                # - Active state: button is BLACK (background-color: rgb(15,20,25) or similar near-black)
+                # - Also: aria-disabled="true" when disabled; when active the attr is absent or "false"
+                # - Also: "Ready" text appears in the attachment area when video is processed
+                log.info('[twitter] Waiting for Post button to become active...')
                 post_btn_sel = '[data-testid="tweetButton"], [data-testid="tweetButtonInline"]'
                 post_btn = page.locator(post_btn_sel).last
+
+                check_active_js = """el => {
+                    if (!el) return false;
+                    // aria-disabled check (most reliable when present)
+                    if (el.getAttribute('aria-disabled') === 'true') return false;
+                    if (el.disabled || el.hasAttribute('disabled')) return false;
+
+                    // Background color check:
+                    // Active X Post button → near-black rgb(15,20,25) or rgb(0,0,0)
+                    // Disabled Post button → grey rgb(196,207,214) or similar
+                    function isDarkBackground(el) {
+                        const style = window.getComputedStyle(el);
+                        const bg = style.backgroundColor;
+                        const m = bg.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+                        if (m) {
+                            const r = parseInt(m[1]), g = parseInt(m[2]), b = parseInt(m[3]);
+                            // Active button is near-black: all channels < 80
+                            if (r < 80 && g < 80 && b < 80) return true;
+                        }
+                        // Walk into children (button may wrap a span)
+                        for (const child of el.querySelectorAll('*')) {
+                            const cs = window.getComputedStyle(child);
+                            const cbg = cs.backgroundColor;
+                            const cm = cbg.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+                            if (cm) {
+                                const r = parseInt(cm[1]), g = parseInt(cm[2]), b = parseInt(cm[3]);
+                                if (r < 80 && g < 80 && b < 80) return true;
+                            }
+                        }
+                        return false;
+                    }
+                    return isDarkBackground(el);
+                }"""
 
                 button_active = False
                 for elapsed in range(0, 120, 2):
@@ -194,11 +232,18 @@ class TwitterPublisher(BasePublisher):
                             await asyncio.sleep(2)
                             continue
 
-                        is_disabled = await post_btn.evaluate(
-                            'el => el.getAttribute("aria-disabled") === "true" || el.disabled || el.hasAttribute("disabled")'
-                        )
-                        if not is_disabled:
-                            log.info('[twitter] ✓ Post button is now ACTIVE after %ds', elapsed)
+                        # Method 1: Playwright is_enabled()
+                        is_enabled = await post_btn.is_enabled()
+                        # Method 2: aria-disabled + background color JS check
+                        is_dark = await post_btn.evaluate(check_active_js)
+
+                        if is_enabled and is_dark:
+                            log.info('[twitter] ✓ Post button is ACTIVE (enabled + dark background) after %ds', elapsed)
+                            button_active = True
+                            break
+                        elif is_enabled:
+                            # Button reports enabled but we still check color
+                            log.info('[twitter] ✓ Post button is_enabled() = True after %ds — proceeding', elapsed)
                             button_active = True
                             break
                         else:
@@ -211,6 +256,7 @@ class TwitterPublisher(BasePublisher):
 
                 if not button_active:
                     log.warning('[twitter] Post button did not become active within 120s, attempting click anyway')
+
 
                 # ── Step 7: Click Post ────────────────────────────────────────
                 log.info('[twitter] Clicking Post button')
