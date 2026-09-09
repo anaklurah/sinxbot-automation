@@ -247,6 +247,33 @@ def _get_youtube_cookiefile(cfg) -> Path | None:
         if c_path.exists() and c_path.stat().st_size > 0:
             return c_path
 
+    # Try converting from youtube storage json files if uploaded by user
+    storage_candidates = list(profiles_dir.glob("youtube*_storage.json"))
+    for sc in storage_candidates:
+        if sc.exists() and sc.stat().st_size > 0:
+            try:
+                from osap.modules.publisher.cookie_loader import load_cookies
+                parsed = load_cookies(sc)
+                if parsed:
+                    lines = ["# Netscape HTTP Cookie File\n# http://curl.haxx.se/rfc/cookie_spec.html\n\n"]
+                    for c in parsed:
+                        dom = c.get("domain", "")
+                        flg = "TRUE" if dom.startswith(".") else "FALSE"
+                        pth = c.get("path", "/")
+                        sec = "TRUE" if c.get("secure", False) else "FALSE"
+                        exp = int(c.get("expires", 0))
+                        if exp <= 0:
+                            exp = 2147483647
+                        n = c.get("name", "")
+                        v = c.get("value", "")
+                        lines.append(f"{dom}\t{flg}\t{pth}\t{sec}\t{exp}\t{n}\t{v}\n")
+                    target_file = profiles_dir / "youtube_cookies.txt"
+                    target_file.write_text("".join(lines), encoding="utf-8")
+                    logger.info("  [yt-dlp] Converted %d cookies from %s to %s", len(parsed), sc.name, target_file.name)
+                    return target_file
+            except Exception as exc:
+                logger.debug("  [yt-dlp] Could not convert %s to Netscape: %s", sc.name, exc)
+
     # Try auto-exporting from persistent YouTube profile if available
     yt_profile_dir = profiles_dir / "youtube"
     if yt_profile_dir.exists():

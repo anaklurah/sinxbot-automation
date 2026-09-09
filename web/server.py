@@ -888,6 +888,27 @@ async def upload_platform_cookies(target_key: str, file: UploadFile = File(...))
         except Exception as e:
             logger.warning(f"Could not write normalized storage state for {target_key}: {e}")
 
+        # Auto-export Netscape format for yt-dlp if this is a YouTube target
+        if "youtube" in target_key.lower():
+            yt_netscape = profiles_dir / "youtube_cookies.txt"
+            try:
+                lines = ["# Netscape HTTP Cookie File\n# http://curl.haxx.se/rfc/cookie_spec.html\n\n"]
+                for c in parsed:
+                    dom = c.get("domain", "")
+                    flg = "TRUE" if dom.startswith(".") else "FALSE"
+                    pth = c.get("path", "/")
+                    sec = "TRUE" if c.get("secure", False) else "FALSE"
+                    exp = int(c.get("expires", 0))
+                    if exp <= 0:
+                        exp = 2147483647
+                    n = c.get("name", "")
+                    v = c.get("value", "")
+                    lines.append(f"{dom}\t{flg}\t{pth}\t{sec}\t{exp}\t{n}\t{v}\n")
+                yt_netscape.write_text("".join(lines), encoding="utf-8")
+                logger.info("  [yt-dlp] Synchronized %d cookies to %s", len(parsed), yt_netscape.name)
+            except Exception as e:
+                logger.warning(f"Could not write yt-dlp cookiefile: {e}")
+
     if count == 0:
         return {
             "success": True,
