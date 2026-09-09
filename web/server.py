@@ -897,21 +897,31 @@ async def upload_platform_cookies(target_key: str, file: UploadFile = File(...))
 
 
 def _run_manual_publish_target(db_path: str, target_key: str):
-    """Top-level process target for on-demand single-target publishing."""
+    """Top-level process target for on-demand single-target publishing (no Telegram report)."""
     import asyncio
     from osap.modules.on_demand import run_jit_video_pipeline
     try:
-        asyncio.run(run_jit_video_pipeline(target_platforms=[target_key], db_path=db_path, auto_cleanup=True))
+        asyncio.run(run_jit_video_pipeline(
+            target_platforms=[target_key],
+            db_path=db_path,
+            auto_cleanup=True,
+            send_telegram=False,  # Manual card post → no Telegram notification
+        ))
     except (KeyboardInterrupt, SystemExit):
         pass
 
 
 def _run_publish_all_target(db_path: str):
-    """Top-level process target for distributing 1 video to ALL enabled targets."""
+    """Top-level process target for distributing 1 video to ALL enabled targets (sends Telegram report)."""
     import asyncio
     from osap.modules.on_demand import run_jit_video_pipeline
     try:
-        asyncio.run(run_jit_video_pipeline(target_platforms=None, db_path=db_path, auto_cleanup=True))
+        asyncio.run(run_jit_video_pipeline(
+            target_platforms=None,
+            db_path=db_path,
+            auto_cleanup=True,
+            send_telegram=True,  # Scheduled/publish-all → send Telegram notification
+        ))
     except (KeyboardInterrupt, SystemExit):
         pass
 

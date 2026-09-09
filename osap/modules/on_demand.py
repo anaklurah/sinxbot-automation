@@ -45,6 +45,7 @@ async def run_jit_video_pipeline(
     account_id: Optional[int] = None,
     db_path: Optional[str] = None,
     auto_cleanup: bool = True,
+    send_telegram: bool = True,
 ) -> Dict[str, Any]:
     """
     Execute a Just-In-Time video pipeline:
@@ -325,17 +326,20 @@ async def run_jit_video_pipeline(
         except Exception as fetch_err:
             logger.warning(f"[JIT Pipeline] Gagal mengekstrak link profil: {fetch_err}")
 
-        # Send Telegram notification
-        try:
-            from osap.modules.telegram_notifier import send_post_summary_to_telegram
-            upload_title = captions.get("title") or title
-            await send_post_summary_to_telegram(
-                video_title=upload_title,
-                post_links=post_links,
-                failed_platforms=failed_target_names if failed_target_names else None,
-            )
-        except Exception as tg_err:
-            logger.warning(f"[JIT Pipeline] Gagal mengirim notifikasi Telegram: {tg_err}")
+        # Send Telegram notification (only if send_telegram=True, e.g. NOT for manual card posts)
+        if send_telegram:
+            try:
+                from osap.modules.telegram_notifier import send_post_summary_to_telegram
+                upload_title = captions.get("title") or title
+                await send_post_summary_to_telegram(
+                    video_title=upload_title,
+                    post_links=post_links,
+                    failed_platforms=failed_target_names if failed_target_names else None,
+                )
+            except Exception as tg_err:
+                logger.warning(f"[JIT Pipeline] Gagal mengirim notifikasi Telegram: {tg_err}")
+        else:
+            logger.info("[JIT Pipeline] Telegram notification skipped (manual/card post).")
 
     # ─────────────────────────────────────────────────────────────
     # Step 5: Final Status & Auto-Cleanup of Local Storage
