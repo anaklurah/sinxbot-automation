@@ -149,22 +149,79 @@ class TikTokPublisher(BasePublisher):
 
                 await self._jitter(1500, 3000)
 
+                # Dismiss any tutorial overlays or guide tooltips ("Got it", "Mengerti")
+                for _ in range(3):
+                    try:
+                        overlay_btn = page.locator(
+                            'button:text-is("Got it"), '
+                            'button:text-is("Mengerti"), '
+                            'button:text-is("Skip"), '
+                            'button:text-is("Lewati"), '
+                            '.react-joyride__tooltip button'
+                        ).first
+                        if await overlay_btn.is_visible():
+                            await overlay_btn.click(force=True)
+                            log.info('[tiktok] Dismissed tutorial/tooltip overlay')
+                            await self._jitter(400, 800)
+                        else:
+                            break
+                    except Exception:
+                        break
+
                 # ── Step 6: Click Post ─────────────────────────────────────────
-                log.info('[tiktok] Clicking Post button')
+                log.info('[tiktok] Locating Post button')
+                # Primary: data-e2e="post_video_button".
+                # Crucial: NEVER use loose 'button:has-text("Post")' as first selector because it matches
+                # the sidebar navigation button ("Posts") which exits the upload page!
                 post_btn_sel = (
-                    'button:has-text("Post"), '
-                    'button:has-text("Posting"), '
+                    'button[data-e2e="post_video_button"], '
                     '[data-e2e="post_video_button"], '
-                    'button.btn-post'
+                    '.button-group button.Button__root--type-primary, '
+                    '.button-group button:has-text("Post"), '
+                    '.button-group button:has-text("Posting"), '
+                    'button.btn-post, '
+                    'button:text-is("Post"), '
+                    'button:text-is("Posting")'
                 )
-                await page.wait_for_selector(post_btn_sel, timeout=20_000)
-                post_btn = page.locator(post_btn_sel).first
+                await page.wait_for_selector(post_btn_sel, timeout=25_000)
+
+                # Wait until post button is enabled
                 try:
-                    await post_btn.click(force=True)
+                    await page.wait_for_selector(
+                        'button[data-e2e="post_video_button"]:not([disabled]):not([aria-disabled="true"])',
+                        timeout=15_000,
+                    )
                 except Exception:
-                    await post_btn.evaluate("el => el.click()")
+                    pass
+
+                post_btn = page.locator(post_btn_sel).filter(has_not=page.locator('[data-tt*="Sidebar"]')).first
+                await post_btn.scroll_into_view_if_needed()
+                await self._jitter(500, 1000)
+
+                try:
+                    await post_btn.click()
+                except Exception:
+                    try:
+                        await post_btn.click(force=True)
+                    except Exception:
+                        await post_btn.evaluate("el => el.click()")
                 log.info('[tiktok] Clicked Post button')
                 await self._jitter(2000, 4000)
+
+                # Handle optional confirmation modal if copyright check warning pops up
+                try:
+                    confirm_modal_btn = page.locator(
+                        'button:text-is("Post anyway"), '
+                        'button:text-is("Posting saja"), '
+                        'button:text-is("Lanjutkan posting"), '
+                        '[data-e2e="modal-post-button"]'
+                    ).first
+                    if await confirm_modal_btn.is_visible():
+                        await confirm_modal_btn.click(force=True)
+                        log.info('[tiktok] Clicked confirmation in modal')
+                        await self._jitter(1000, 2000)
+                except Exception:
+                    pass
 
                 # ── Step 7: Confirm success ────────────────────────────────────
                 log.info('[tiktok] Waiting for success confirmation')
@@ -173,15 +230,23 @@ class TikTokPublisher(BasePublisher):
                         lambda url: 'tiktok.com' in url and 'upload' not in url,
                         timeout=30_000,
                     )
-                    log.info('[tiktok] ✓ Redirected away from upload — assuming success')
+                    log.info('[tiktok] ✓ Redirected away from upload — post published successfully')
                 except Exception:
-                    # Check for a success toast/message
+                    # Check for a success modal/toast/message
                     try:
                         await page.wait_for_selector(
-                            ':text("Your video is being uploaded"), :text("Posted"), :text("Success")',
-                            timeout=15_000,
+                            ':text("Your video has been uploaded"), '
+                            ':text("Your video is being uploaded"), '
+                            ':text("Video Anda telah diunggah"), '
+                            ':text("Manage your posts"), '
+                            ':text("Kelola postingan"), '
+                            ':text("Upload another video"), '
+                            ':text("Unggah video lain"), '
+                            ':text("Posted"), '
+                            ':text("Success")',
+                            timeout=20_000,
                         )
-                        log.info('[tiktok] ✓ Success message detected')
+                        log.info('[tiktok] ✓ Success message/modal detected')
                     except Exception:
                         log.warning('[tiktok] Could not confirm success — assuming success based on flow')
 
