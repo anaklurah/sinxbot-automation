@@ -100,30 +100,34 @@ class FebspotPublisher(BasePublisher):
             try:
                 # ── Step 1: Navigate to Febspot ────────────────────────────────
                 log.info('[febspot] Navigating to %s', self.UPLOAD_URL)
-                await page.goto(self.UPLOAD_URL, wait_until='domcontentloaded', timeout=60_000)
+                resp = await page.goto(self.UPLOAD_URL, wait_until='domcontentloaded', timeout=60_000)
                 await self._jitter(1500, 3000)
+
+                # Check for Febspot server-side 504 / 502 outage
+                title = await page.title()
+                if "504 Gateway" in title or "502 Bad Gateway" in title or (resp and resp.status in (502, 504)):
+                    log.error('[febspot] Server Febspot sedang mengalami gangguan / down (%s). Menunggu server pulih...', title)
+                    return False
+
+                # Check if redirected to login
+                if '/login' in page.url:
+                    log.error('[febspot] Sesi belum login atau cookies kadaluarsa — diarahkan ke halaman login')
+                    return False
 
                 # ── Step 2: Click Upload nav link ──────────────────────────────
                 log.info('[febspot] Looking for Upload navigation link')
                 try:
-                    await page.wait_for_selector(self._SEL_UPLOAD_NAV_BTN, timeout=10_000)
+                    await page.wait_for_selector(self._SEL_UPLOAD_NAV_BTN, timeout=12_000)
                     await self._move_click(page, self._SEL_UPLOAD_NAV_BTN)
-                    await self._jitter(1000, 2000)
+                    await self._jitter(1500, 3000)
                     log.info('[febspot] Navigated to upload page via nav button')
                 except Exception:
-                    # Try navigating directly to common upload paths
-                    for upload_path in ('/upload', '/upload/video', '/videos/upload', '/create'):
-                        try:
-                            upload_url = f'{self.UPLOAD_URL.rstrip("/")}{upload_path}'
-                            log.debug('[febspot] Trying upload URL: %s', upload_url)
-                            await page.goto(upload_url, wait_until='domcontentloaded', timeout=30_000)
-                            await self._jitter(800, 1500)
-                            # Check if a file input is present
-                            await page.wait_for_selector(self._SEL_FILE_INPUT, timeout=5_000)
-                            log.info('[febspot] Found upload page at %s', upload_url)
-                            break
-                        except Exception:
-                            continue
+                    # Check title again in case nav click triggered 504
+                    cur_title = await page.title()
+                    if "504" in cur_title or "502" in cur_title:
+                        log.error('[febspot] Server Febspot upstream gateway timeout (504): %s', cur_title)
+                        return False
+                    log.warning('[febspot] Tombol Upload tidak ditemukan di halaman utama. Pastikan akun sudah login di profile Febspot.')
 
                 # ── Step 3: Set video file ─────────────────────────────────────
                 log.info('[febspot] Setting video file: %s', video_path)
