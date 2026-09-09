@@ -208,20 +208,36 @@ class TikTokPublisher(BasePublisher):
                 log.info('[tiktok] Clicked Post button')
                 await self._jitter(2000, 4000)
 
-                # Handle optional confirmation modal if copyright check warning pops up
+                # ── Step 6.1: Handle "Continue to post?" / "Post now" modal ───
+                log.info('[tiktok] Checking for "Continue to post?" / "Post now" modal')
+                confirm_modal_sel = (
+                    'button:has-text("Post now"), '
+                    'button:text-is("Post now"), '
+                    'button:text-is("Posting sekarang"), '
+                    'button:text-is("Post anyway"), '
+                    'button:text-is("Posting saja"), '
+                    'button:text-is("Lanjutkan posting"), '
+                    '[data-e2e="modal-post-button"], '
+                    'div[role="dialog"] button.Button__root--type-primary, '
+                    'div[role="dialog"] button:has-text("Post now"), '
+                    'div[role="dialog"] button:has-text("Post")'
+                )
                 try:
-                    confirm_modal_btn = page.locator(
-                        'button:text-is("Post anyway"), '
-                        'button:text-is("Posting saja"), '
-                        'button:text-is("Lanjutkan posting"), '
-                        '[data-e2e="modal-post-button"]'
-                    ).first
-                    if await confirm_modal_btn.is_visible():
-                        await confirm_modal_btn.click(force=True)
-                        log.info('[tiktok] Clicked confirmation in modal')
-                        await self._jitter(1000, 2000)
+                    modal_btn = page.locator(confirm_modal_sel).first
+                    await modal_btn.wait_for(state='visible', timeout=8_000)
+                    log.info('[tiktok] "Post now" popup detected — clicking confirmation button')
+                    await self._jitter(400, 800)
+                    try:
+                        await modal_btn.click()
+                    except Exception:
+                        try:
+                            await modal_btn.click(force=True)
+                        except Exception:
+                            await modal_btn.evaluate("el => el.click()")
+                    log.info('[tiktok] Clicked "Post now" button in modal')
+                    await self._jitter(1500, 3000)
                 except Exception:
-                    pass
+                    log.info('[tiktok] No "Post now" modal appeared (or check completed instantly) — proceeding')
 
                 # ── Step 7: Confirm success ────────────────────────────────────
                 log.info('[tiktok] Waiting for success confirmation')
