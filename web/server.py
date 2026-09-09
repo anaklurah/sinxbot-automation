@@ -375,6 +375,16 @@ def _is_valid_new_secret(val: Optional[str]) -> bool:
     return True
 
 
+def _nested_get(data: dict, *keys, default=None):
+    curr = data
+    for k in keys:
+        if isinstance(curr, dict) and k in curr:
+            curr = curr[k]
+        else:
+            return default
+    return curr if curr is not None else default
+
+
 @app.get("/api/config")
 async def read_configuration():
     """Read existing config.yaml and environment settings."""
