@@ -111,6 +111,39 @@ async def human_type(
             await jitter(300, 900)
 
 
+
+async def human_type_organic(
+    page: "Page",
+    text: str,
+    char_delay_min: float = 40,
+    char_delay_max: float = 120,
+) -> None:
+    """
+    Type *text* into the currently focused element character-by-character
+    using ``page.keyboard.type``, without needing a selector.
+
+    The caller must focus/click the target element first.
+    Suitable for contenteditable divs (e.g. Twitter/X compose box).
+
+    Parameters
+    ----------
+    page:
+        The Playwright :class:`~playwright.async_api.Page` instance.
+    text:
+        The full string to type into the focused element.
+    char_delay_min:
+        Minimum delay between keystrokes in milliseconds (default ``40``).
+    char_delay_max:
+        Maximum delay between keystrokes in milliseconds (default ``120``).
+    """
+    for char in text:
+        delay_ms = random.uniform(char_delay_min, char_delay_max)
+        await page.keyboard.type(char, delay=delay_ms)
+        # Occasional "thinking" pause (~5% of keystrokes)
+        if random.random() < 0.05:
+            await jitter(200, 600)
+
+
 # ---------------------------------------------------------------------------
 # Mouse click simulation
 # ---------------------------------------------------------------------------
