@@ -77,7 +77,17 @@ def fetch_po_token(cookie_file: Optional[Path] = None, timeout_ms: int = 20_000)
         return cached
 
     logger.info("[POT] Fetching fresh PO token via Playwright...")
+    import concurrent.futures
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            return executor.submit(_fetch_po_token_worker, cookie_file, timeout_ms).result()
+    except Exception as e:
+        logger.warning("[POT] Thread execution failed: %s", e)
+        return None
 
+
+def _fetch_po_token_worker(cookie_file: Optional[Path], timeout_ms: int) -> Optional[tuple[str, str]]:
+    """Worker executed in dedicated thread without asyncio loop."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -98,7 +108,6 @@ def fetch_po_token(cookie_file: Optional[Path] = None, timeout_ms: int = 20_000)
                     "--disable-extensions",
                 ],
             }
-
             browser = p.chromium.launch(**launch_kwargs)
             context = browser.new_context(
                 user_agent=(
