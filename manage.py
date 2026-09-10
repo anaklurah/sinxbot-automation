@@ -288,6 +288,52 @@ def cmd_setup_auth(args):
         if proxy_url and (os.environ.get('AUTH_PROXY', '').lower() in ('1', 'true', 'yes')):
             launch_kwargs['proxy'] = {'server': proxy_url}
 
+        # First check if native Google Chrome binary exists
+        native_chrome = next((p for p in chrome_paths if p and os.path.exists(p)), None)
+
+        if base_platform in PERSISTENT_PLATFORMS and native_chrome:
+            profile_dir = profiles_dir / target_key
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            url = PERSISTENT_PLATFORMS[base_platform]
+            console.print(
+                f"[cyan]Opening native browser for [bold]{target_key}[/bold] ({base_platform})[/cyan]\n"
+                f"Browser: [dim]{native_chrome}[/dim]\n"
+                f"Profile directory: [dim]{profile_dir}[/dim]\n"
+                f"Navigate to [link]{url}[/link] and log in.\n"
+                f"[yellow]Close the browser window when done.[/yellow]"
+            )
+            import subprocess
+            cmd = [
+                native_chrome,
+                f"--user-data-dir={profile_dir.resolve()}",
+                "--no-first-run",
+                "--no-default-browser-check",
+                url,
+            ]
+            subprocess.run(cmd)
+
+            # Once user closes native Chrome, extract session state and cookies via headless Playwright
+            async with async_playwright() as p:
+                try:
+                    export_ctx = await p.chromium.launch_persistent_context(
+                        str(profile_dir),
+                        headless=True,
+                    )
+                    storage_path = profiles_dir / f"{target_key}_storage.json"
+                    await export_ctx.storage_state(path=str(storage_path))
+                    console.print(f"[green]✓ Session saved to {storage_path}[/green]")
+
+                    cookies = await export_ctx.cookies()
+                    if cookies:
+                        from osap.modules.publisher.cookie_loader import export_netscape_cookies
+                        cookie_file = profiles_dir / f"{target_key}_cookies.txt"
+                        export_netscape_cookies(cookies, cookie_file)
+                        console.print(f"[green]✓ Exported {len(cookies)} cookies to {cookie_file.name} for yt-dlp[/green]")
+                    await export_ctx.close()
+                except Exception as exc:
+                    console.print(f"[yellow]Warning during cookie export: {exc}[/yellow]")
+            return
+
         async with async_playwright() as p:
             if base_platform in PERSISTENT_PLATFORMS:
                 profile_dir = profiles_dir / target_key
@@ -299,6 +345,7 @@ def cmd_setup_auth(args):
                     f"Navigate to [link]{url}[/link] and log in.\n"
                     f"[yellow]Close the browser window when done.[/yellow]"
                 )
+                launch_kwargs['ignore_default_args'] = ['--enable-automation']
                 context = await p.chromium.launch_persistent_context(
                     str(profile_dir),
                     **launch_kwargs,
@@ -320,20 +367,9 @@ def cmd_setup_auth(args):
                 try:
                     cookies = await context.cookies()
                     if cookies:
-                        lines = ["# Netscape HTTP Cookie File\n# http://curl.haxx.se/rfc/cookie_spec.html\n\n"]
-                        for c in cookies:
-                            domain = c.get("domain", "")
-                            flag = "TRUE" if domain.startswith(".") else "FALSE"
-                            path = c.get("path", "/")
-                            secure = "TRUE" if c.get("secure", False) else "FALSE"
-                            expires = int(c.get("expires", 0))
-                            if expires <= 0:
-                                expires = 2147483647
-                            name = c.get("name", "")
-                            value = c.get("value", "")
-                            lines.append(f"{domain}\t{flag}\t{path}\t{secure}\t{expires}\t{name}\t{value}\n")
+                        from osap.modules.publisher.cookie_loader import export_netscape_cookies
                         cookie_file = profiles_dir / f"{target_key}_cookies.txt"
-                        cookie_file.write_text("".join(lines), encoding="utf-8")
+                        export_netscape_cookies(cookies, cookie_file)
                         console.print(f"[green]✓ Exported {len(cookies)} cookies to {cookie_file.name} for yt-dlp[/green]")
                 except Exception:
                     pass
