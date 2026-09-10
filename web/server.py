@@ -860,54 +860,63 @@ async def upload_platform_cookies(target_key: str, file: UploadFile = File(...))
     filename = file.filename.lower() if file.filename else ""
     stripped = contents.strip()
 
-    # Determine filename format: storage_state.json vs cookies.txt
-    if filename.endswith(".json") or stripped.startswith(b"[") or stripped.startswith(b"{"):
+    is_json = filename.endswith(".json") or stripped.startswith(b"[") or stripped.startswith(b"{")
+
+    from osap.modules.publisher.cookie_loader import load_cookies, export_netscape_cookies
+
+    if is_json:
         save_path = profiles_dir / f"{target_key}_storage.json"
+        with open(save_path, "wb") as f:
+            f.write(contents)
+
+        try:
+            parsed = load_cookies(save_path)
+        except Exception:
+            parsed = []
+
+        if parsed:
+            try:
+                with open(save_path, "w", encoding="utf-8") as sf:
+                    json.dump({"cookies": parsed, "origins": []}, sf, indent=2)
+            except Exception as e:
+                logger.warning(f"Could not write normalized storage state for {target_key}: {e}")
+
+            # If YouTube target, export to Netscape format for yt-dlp
+            if "youtube" in target_key.lower():
+                yt_netscape = profiles_dir / "youtube_cookies.txt"
+                try:
+                    export_netscape_cookies(parsed, yt_netscape)
+                    logger.info("  [yt-dlp] Exported %d cookies from JSON to %s", len(parsed), yt_netscape.name)
+                except Exception as e:
+                    logger.warning(f"Could not export yt-dlp cookiefile: {e}")
     else:
         save_path = profiles_dir / f"{target_key}_cookies.txt"
+        with open(save_path, "wb") as f:
+            f.write(contents)
 
-    with open(save_path, "wb") as f:
-        f.write(contents)
+        # For YouTube target, save exact raw bytes as youtube_cookies.txt for yt-dlp
+        if "youtube" in target_key.lower():
+            yt_netscape = profiles_dir / "youtube_cookies.txt"
+            with open(yt_netscape, "wb") as f:
+                f.write(contents)
+            logger.info(f"  [yt-dlp] Saved raw Netscape cookies directly to {yt_netscape.name}")
 
-    # Validate cookie readability
-    from osap.modules.publisher.cookie_loader import load_cookies
-    try:
-        parsed = load_cookies(save_path)
-    except Exception:
-        parsed = []
+        try:
+            parsed = load_cookies(save_path)
+        except Exception:
+            parsed = []
+
+        # Also write storage_state.json for Playwright browser publishers
+        if parsed:
+            storage_path = profiles_dir / f"{target_key}_storage.json"
+            try:
+                with open(storage_path, "w", encoding="utf-8") as sf:
+                    json.dump({"cookies": parsed, "origins": []}, sf, indent=2)
+            except Exception as e:
+                logger.warning(f"Could not write storage state for {target_key}: {e}")
 
     count = len(parsed)
     logger.info(f"Uploaded cookie file for target {target_key}: {save_path.name} ({count} cookies parsed)")
-
-    if count > 0:
-        storage_path = profiles_dir / f"{target_key}_storage.json"
-        try:
-            with open(storage_path, "w", encoding="utf-8") as sf:
-                json.dump({"cookies": parsed, "origins": []}, sf, indent=2)
-            save_path = storage_path
-        except Exception as e:
-            logger.warning(f"Could not write normalized storage state for {target_key}: {e}")
-
-        # Auto-export Netscape format for yt-dlp if this is a YouTube target
-        if "youtube" in target_key.lower():
-            yt_netscape = profiles_dir / "youtube_cookies.txt"
-            try:
-                lines = ["# Netscape HTTP Cookie File\n# http://curl.haxx.se/rfc/cookie_spec.html\n\n"]
-                for c in parsed:
-                    dom = c.get("domain", "")
-                    flg = "TRUE" if dom.startswith(".") else "FALSE"
-                    pth = c.get("path", "/")
-                    sec = "TRUE" if c.get("secure", False) else "FALSE"
-                    exp = int(c.get("expires", 0))
-                    if exp <= 0:
-                        exp = 2147483647
-                    n = c.get("name", "")
-                    v = c.get("value", "")
-                    lines.append(f"{dom}\t{flg}\t{pth}\t{sec}\t{exp}\t{n}\t{v}\n")
-                yt_netscape.write_text("".join(lines), encoding="utf-8")
-                logger.info("  [yt-dlp] Synchronized %d cookies to %s", len(parsed), yt_netscape.name)
-            except Exception as e:
-                logger.warning(f"Could not write yt-dlp cookiefile: {e}")
 
     if count == 0:
         return {

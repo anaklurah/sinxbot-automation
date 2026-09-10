@@ -237,43 +237,39 @@ class IngestionWorker:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _get_youtube_cookiefile(cfg) -> Path | None:
-    """Find or auto-export YouTube cookies from browser profile to Netscape format."""
+    """Find or auto-export YouTube cookies from browser profile or storage json to Netscape format."""
     profiles_dir = getattr(cfg, "PROFILES_DIR", None) or (Path(__file__).resolve().parents[2] / "assets" / "profiles")
+    yt_netscape = profiles_dir / "youtube_cookies.txt"
+
+    from osap.modules.publisher.cookie_loader import export_netscape_cookies, load_cookies
+
+    # If youtube_storage.json exists and is newer than youtube_cookies.txt, update it
+    storage_candidates = sorted(
+        profiles_dir.glob("youtube*_storage.json"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if storage_candidates and (
+        not yt_netscape.exists()
+        or yt_netscape.stat().st_size == 0
+        or storage_candidates[0].stat().st_mtime > yt_netscape.stat().st_mtime
+    ):
+        try:
+            parsed = load_cookies(storage_candidates[0])
+            if parsed:
+                export_netscape_cookies(parsed, yt_netscape)
+                logger.info("  [yt-dlp] Updated %s from %s (%d cookies)", yt_netscape.name, storage_candidates[0].name, len(parsed))
+        except Exception as exc:
+            logger.debug("  [yt-dlp] Could not update from storage json: %s", exc)
+
     candidate_cookies = [
-        profiles_dir / "youtube_cookies.txt",
+        yt_netscape,
         profiles_dir / "youtube.txt",
         profiles_dir / "cookies.txt",
     ]
     for c_path in candidate_cookies:
         if c_path.exists() and c_path.stat().st_size > 0:
             return c_path
-
-    # Try converting from youtube storage json files if uploaded by user
-    storage_candidates = list(profiles_dir.glob("youtube*_storage.json"))
-    for sc in storage_candidates:
-        if sc.exists() and sc.stat().st_size > 0:
-            try:
-                from osap.modules.publisher.cookie_loader import load_cookies
-                parsed = load_cookies(sc)
-                if parsed:
-                    lines = ["# Netscape HTTP Cookie File\n# http://curl.haxx.se/rfc/cookie_spec.html\n\n"]
-                    for c in parsed:
-                        dom = c.get("domain", "")
-                        flg = "TRUE" if dom.startswith(".") else "FALSE"
-                        pth = c.get("path", "/")
-                        sec = "TRUE" if c.get("secure", False) else "FALSE"
-                        exp = int(c.get("expires", 0))
-                        if exp <= 0:
-                            exp = 2147483647
-                        n = c.get("name", "")
-                        v = c.get("value", "")
-                        lines.append(f"{dom}\t{flg}\t{pth}\t{sec}\t{exp}\t{n}\t{v}\n")
-                    target_file = profiles_dir / "youtube_cookies.txt"
-                    target_file.write_text("".join(lines), encoding="utf-8")
-                    logger.info("  [yt-dlp] Converted %d cookies from %s to %s", len(parsed), sc.name, target_file.name)
-                    return target_file
-            except Exception as exc:
-                logger.debug("  [yt-dlp] Could not convert %s to Netscape: %s", sc.name, exc)
 
     # Try auto-exporting from persistent YouTube profile if available
     yt_profile_dir = profiles_dir / "youtube"
@@ -285,22 +281,9 @@ def _get_youtube_cookiefile(cfg) -> Path | None:
                 cookies = ctx.cookies()
                 ctx.close()
                 if cookies:
-                    lines = ["# Netscape HTTP Cookie File\n# http://curl.haxx.se/rfc/cookie_spec.html\n\n"]
-                    for c in cookies:
-                        domain = c.get("domain", "")
-                        flag = "TRUE" if domain.startswith(".") else "FALSE"
-                        path = c.get("path", "/")
-                        secure = "TRUE" if c.get("secure", False) else "FALSE"
-                        expires = int(c.get("expires", 0))
-                        if expires <= 0:
-                            expires = 2147483647
-                        name = c.get("name", "")
-                        value = c.get("value", "")
-                        lines.append(f"{domain}\t{flag}\t{path}\t{secure}\t{expires}\t{name}\t{value}\n")
-                    target_file = profiles_dir / "youtube_cookies.txt"
-                    target_file.write_text("".join(lines), encoding="utf-8")
-                    logger.info("  [yt-dlp] Auto-exported %d YouTube cookies from profile to %s", len(cookies), target_file.name)
-                    return target_file
+                    export_netscape_cookies(cookies, yt_netscape)
+                    logger.info("  [yt-dlp] Auto-exported %d YouTube cookies from profile to %s", len(cookies), yt_netscape.name)
+                    return yt_netscape
         except Exception as exc:
             logger.debug("  [yt-dlp] Note: Could not auto-export cookies from profile: %s", exc)
 
@@ -444,44 +427,45 @@ class DownloadWorker:
         if proxy_url:
             ydl_opts["proxy"] = proxy_url
 
-        # Resolve YouTube cookies if available (saved for fallback if needed)
+        # Resolve YouTube cookies if available
         cookie_file = _get_youtube_cookiefile(cfg)
+        using_cookies = False
 
-        # First attempt: Clean direct download (bypasses cookie-based bot challenges on public videos)
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info: dict[str, Any] = ydl.extract_info(url, download=True)
-                if "entries" in info:
-                    info = info["entries"][0]
+        if cookie_file:
+            ydl_opts["cookiefile"] = str(cookie_file)
+            ydl_opts["extractor_args"] = {
+                "youtube": {
+                    "player_client": ["web", "mweb", "tv"],
+                }
+            }
+            using_cookies = True
+            logger.info("  [yt-dlp] Using YouTube cookies from: %s", cookie_file.name)
 
-            yt_id: str = info.get("id", f"vid_{vid_id}")
-            title: str = info.get("title") or ""
-            description: str = info.get("description") or ""
-            raw_tags: list = info.get("tags") or []
+        def _save_and_build_result(info_dict: dict) -> dict:
+            yt_id: str = info_dict.get("id", f"vid_{vid_id}")
+            title: str = info_dict.get("title") or ""
+            description: str = info_dict.get("description") or ""
+            raw_tags: list = info_dict.get("tags") or []
             tags_json: str = json.dumps(raw_tags)
-
             raw_path = cfg.raw_dir / f"{yt_id}.mp4"
-
-            # ── Persist metadata JSON ──────────────────────────────────── #
             meta_path = cfg.meta_dir / f"{yt_id}.json"
             meta_payload = {
                 "id": yt_id,
                 "title": title,
                 "description": description,
                 "tags": raw_tags,
-                "webpage_url": info.get("webpage_url", url),
-                "uploader": info.get("uploader"),
-                "upload_date": info.get("upload_date"),
-                "duration": info.get("duration"),
-                "view_count": info.get("view_count"),
-                "like_count": info.get("like_count"),
+                "webpage_url": info_dict.get("webpage_url", url),
+                "uploader": info_dict.get("uploader"),
+                "upload_date": info_dict.get("upload_date"),
+                "duration": info_dict.get("duration"),
+                "view_count": info_dict.get("view_count"),
+                "like_count": info_dict.get("like_count"),
             }
             meta_path.write_text(
                 json.dumps(meta_payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
             logger.debug("Metadata saved to %s", meta_path)
-
             return {
                 "video_id": yt_id,
                 "title": title,
@@ -491,103 +475,53 @@ class DownloadWorker:
                 "meta_path": str(meta_path),
             }
 
+        # Attempt download
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info: dict[str, Any] = ydl.extract_info(url, download=True)
+                if "entries" in info:
+                    info = info["entries"][0]
+            return _save_and_build_result(info)
+
         except yt_dlp.utils.DownloadError as exc:
             err_text = str(exc).lower()
-            logger.warning("  [yt-dlp] Direct download failed (%s), attempting fallback...", exc)
+            logger.warning("  [yt-dlp] Download attempt failed (%s), attempting fallback...", exc)
 
-            # Fallback 1: Try with cookies if available
-            if cookie_file:
+            # Fallback 1: If cookies were used and failed, retry without cookies (clean direct stream)
+            if using_cookies:
                 try:
-                    logger.info("  [yt-dlp] Retrying with YouTube cookies: %s", cookie_file.name)
-                    retry_cookie_opts = dict(ydl_opts)
-                    retry_cookie_opts["cookiefile"] = str(cookie_file)
-                    with yt_dlp.YoutubeDL(retry_cookie_opts) as ydl:
+                    logger.info("  [yt-dlp] Fallback 1: Retrying without cookies (clean direct stream)...")
+                    clean_opts = dict(ydl_opts)
+                    clean_opts.pop("cookiefile", None)
+                    clean_opts.pop("extractor_args", None)
+                    with yt_dlp.YoutubeDL(clean_opts) as ydl:
                         info = ydl.extract_info(url, download=True)
                         if "entries" in info:
                             info = info["entries"][0]
-                    yt_id = info.get("id", f"vid_{vid_id}")
-                    title = info.get("title") or ""
-                    description = info.get("description") or ""
-                    raw_tags = info.get("tags") or []
-                    tags_json = json.dumps(raw_tags)
-                    raw_path = cfg.raw_dir / f"{yt_id}.mp4"
-                    meta_path = cfg.meta_dir / f"{yt_id}.json"
-                    meta_payload = {
-                        "id": yt_id,
-                        "title": title,
-                        "description": description,
-                        "tags": raw_tags,
-                        "webpage_url": info.get("webpage_url", url),
-                        "uploader": info.get("uploader"),
-                        "upload_date": info.get("upload_date"),
-                        "duration": info.get("duration"),
-                        "view_count": info.get("view_count"),
-                        "like_count": info.get("like_count"),
-                    }
-                    meta_path.write_text(
-                        json.dumps(meta_payload, ensure_ascii=False, indent=2),
-                        encoding="utf-8",
-                    )
-                    logger.info("  [yt-dlp] Cookie fallback download succeeded for %s!", yt_id)
-                    return {
-                        "video_id": yt_id,
-                        "title": title,
-                        "description": description,
-                        "tags": tags_json,
-                        "raw_path": str(raw_path),
-                        "meta_path": str(meta_path),
-                    }
-                except Exception as cookie_exc:
-                    logger.warning("  [yt-dlp] Cookie fallback also failed: %s", cookie_exc)
+                    logger.info("  [yt-dlp] Clean direct fallback succeeded!")
+                    return _save_and_build_result(info)
+                except Exception as clean_exc:
+                    logger.warning("  [yt-dlp] Clean direct fallback failed: %s", clean_exc)
 
-            # Fallback 2: Try mobile client
+            # Fallback 2: Mobile client fallback (mweb, ios)
             try:
-                logger.info("  [yt-dlp] Retrying with mobile client fallback...")
-                retry_opts = dict(ydl_opts)
-                retry_opts["format"] = "bv*+ba/b/best"
-                retry_opts["extractor_args"] = {
+                logger.info("  [yt-dlp] Fallback 2: Retrying with mobile client (mweb/ios)...")
+                mobile_opts = dict(ydl_opts)
+                mobile_opts.pop("cookiefile", None)
+                mobile_opts["format"] = "bv*+ba/b/best"
+                mobile_opts["extractor_args"] = {
                     "youtube": {
-                        "player_client": ["android"],
+                        "player_client": ["mweb", "ios"],
                     }
                 }
-                with yt_dlp.YoutubeDL(retry_opts) as ydl:
+                with yt_dlp.YoutubeDL(mobile_opts) as ydl:
                     info = ydl.extract_info(url, download=True)
                     if "entries" in info:
                         info = info["entries"][0]
-                yt_id = info.get("id", f"vid_{vid_id}")
-                title = info.get("title") or ""
-                description = info.get("description") or ""
-                raw_tags = info.get("tags") or []
-                tags_json = json.dumps(raw_tags)
-                raw_path = cfg.raw_dir / f"{yt_id}.mp4"
-                meta_path = cfg.meta_dir / f"{yt_id}.json"
-                meta_payload = {
-                    "id": yt_id,
-                    "title": title,
-                    "description": description,
-                    "tags": raw_tags,
-                    "webpage_url": info.get("webpage_url", url),
-                    "uploader": info.get("uploader"),
-                    "upload_date": info.get("upload_date"),
-                    "duration": info.get("duration"),
-                    "view_count": info.get("view_count"),
-                    "like_count": info.get("like_count"),
-                }
-                meta_path.write_text(
-                    json.dumps(meta_payload, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-                logger.info("  [yt-dlp] Mobile fallback download succeeded for %s!", yt_id)
-                return {
-                    "video_id": yt_id,
-                    "title": title,
-                    "description": description,
-                    "tags": tags_json,
-                    "raw_path": str(raw_path),
-                    "meta_path": str(meta_path),
-                }
-            except Exception as retry_exc:
-                logger.error("  [yt-dlp] Mobile fallback also failed: %s", retry_exc)
+                logger.info("  [yt-dlp] Mobile fallback download succeeded!")
+                return _save_and_build_result(info)
+            except Exception as mobile_exc:
+                logger.error("  [yt-dlp] Mobile fallback also failed: %s", mobile_exc)
 
             msg = f"yt-dlp DownloadError: {exc}"
             logger.error("Video id=%d failed: %s", vid_id, msg)
