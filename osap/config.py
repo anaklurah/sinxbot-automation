@@ -91,6 +91,9 @@ class Config:
     #: Optional proxy URL (e.g. socks5://localhost:1080)
     PROXY_URL: Optional[str] = None
 
+    #: Browser engine for automation: "camoufox" (anti-detect Firefox) or "chromium"
+    BROWSER_ENGINE: str = "camoufox"
+
     #: Caption generation mode.  Currently always "ai" (DeepSeek).
     CAPTION_MODE: str = "ai"
 
@@ -385,6 +388,7 @@ def get_config(*, reload: bool = False) -> Config:
             _nested_get(yaml_data, "ai_caption", "model", default="deepseek-chat"),
         ),
         PROXY_URL=os.environ.get("PROXY_URL") or _nested_get(yaml_data, "proxy", "url", default=None),
+        BROWSER_ENGINE=os.environ.get("BROWSER_ENGINE", "camoufox").lower(),
         CAPTION_MODE="ai",
         CAPTION_SYSTEM_PROMPT=_nested_get(
             yaml_data, "ai", "caption_system_prompt",

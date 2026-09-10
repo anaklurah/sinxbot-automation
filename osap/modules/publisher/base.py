@@ -177,17 +177,41 @@ class BasePublisher(ABC):
 
         profiles_dir = self._get_profiles_dir()
         profile_key = getattr(self, "target_key", None) or self.PLATFORM_NAME
+        use_camoufox = getattr(cfg, 'BROWSER_ENGINE', 'camoufox') == 'camoufox'
 
         if self.AUTH_METHOD == 'persistent':
             profile_dir = profiles_dir / profile_key
             profile_dir.mkdir(parents=True, exist_ok=True)
-            self._log.debug(
-                '[%s] Launching persistent context from %s', profile_key, profile_dir
-            )
-            context: BrowserContext = await playwright.chromium.launch_persistent_context(
-                user_data_dir=str(profile_dir),
-                **{**launch_opts, **ctx_opts},
-            )
+            context: BrowserContext | None = None
+
+            if use_camoufox:
+                try:
+                    from camoufox.async_api import AsyncCamoufox
+                    cf_kwargs: dict[str, Any] = {
+                        'headless': getattr(cfg, 'HEADLESS', False),
+                        'humanize': True,
+                    }
+                    if proxy_url:
+                        cf_kwargs['proxy'] = {'server': proxy_url}
+                    self._log.info('[%s] Launching anti-detect Camoufox persistent context: %s', profile_key, profile_dir)
+                    cf = AsyncCamoufox(
+                        persistent_context=True,
+                        user_data_dir=str(profile_dir),
+                        **cf_kwargs,
+                    )
+                    context = await cf.start()
+                except Exception as cf_err:
+                    self._log.warning('[%s] Camoufox persistent context failed (%s), falling back to Chromium', profile_key, cf_err)
+                    context = None
+
+            if context is None:
+                self._log.debug(
+                    '[%s] Launching persistent Chromium context from %s', profile_key, profile_dir
+                )
+                context = await playwright.chromium.launch_persistent_context(
+                    user_data_dir=str(profile_dir),
+                    **{**launch_opts, **ctx_opts},
+                )
             await apply_stealth(context)
 
             # Inject uploaded cookies if available so persistent profile is authenticated
@@ -212,7 +236,25 @@ class BasePublisher(ABC):
             return context
 
         # --- storage_state path ---
-        browser: Browser = await playwright.chromium.launch(**launch_opts)
+        browser: Browser | None = None
+        if use_camoufox:
+            try:
+                from camoufox.async_api import AsyncCamoufox
+                cf_kwargs = {
+                    'headless': getattr(cfg, 'HEADLESS', False),
+                    'humanize': True,
+                }
+                if proxy_url:
+                    cf_kwargs['proxy'] = {'server': proxy_url}
+                self._log.info('[%s] Launching anti-detect Camoufox browser...', profile_key)
+                cf = AsyncCamoufox(**cf_kwargs)
+                browser = await cf.start()
+            except Exception as cf_err:
+                self._log.warning('[%s] Camoufox launch failed (%s), falling back to Chromium', profile_key, cf_err)
+                browser = None
+
+        if browser is None:
+            browser = await playwright.chromium.launch(**launch_opts)
 
         storage_state_path = profiles_dir / f'{profile_key}_storage.json'
         json_cookies_path = profiles_dir / f'{profile_key}_cookies.json'
