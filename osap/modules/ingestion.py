@@ -428,7 +428,7 @@ class DownloadWorker:
             "format": (
                 "bv*[height<=1920][height>=720]+ba/b[height<=1920][height>=720]"
                 "/bv*[height<=1920]+ba/b[height<=1920]"
-                "/bv*+ba/best"
+                "/bv*+ba/b/best"
             ),
             "outtmpl": str(cfg.raw_dir / "%(id)s.%(ext)s"),
             "quiet": True,
@@ -442,7 +442,7 @@ class DownloadWorker:
             "js_runtimes": {"node": {}},
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["android", "ios"],
+                    "player_client": ["android"],
                 }
             },
         }
@@ -503,9 +503,10 @@ class DownloadWorker:
             try:
                 retry_opts = dict(ydl_opts)
                 retry_opts.pop("cookiefile", None)
+                retry_opts["format"] = "bv*+ba/b/best"
                 retry_opts["extractor_args"] = {
                     "youtube": {
-                        "player_client": ["android", "ios"],
+                        "player_client": ["android"],
                     }
                 }
                 with yt_dlp.YoutubeDL(retry_opts) as ydl:
