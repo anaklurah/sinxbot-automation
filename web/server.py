@@ -118,6 +118,16 @@ class PipelineManager:
 pipeline_mgr = PipelineManager()
 
 
+def _run_scheduler_proc(db_path: str):
+    """Top-level process target for prime-time scheduler (must be picklable on Windows)."""
+    import asyncio
+    from osap.modules.scheduler import run_scheduler
+    try:
+        asyncio.run(run_scheduler(db_path=db_path))
+    except (KeyboardInterrupt, SystemExit):
+        pass
+
+
 class SchedulerManager:
     def __init__(self):
         self.process: Optional[multiprocessing.Process] = None
@@ -129,15 +139,12 @@ class SchedulerManager:
         if self.is_running():
             raise HTTPException(status_code=400, detail="Scheduler is already running")
 
-        def _run_target():
-            import asyncio
-            from osap.modules.scheduler import run_scheduler
-            try:
-                asyncio.run(run_scheduler(db_path=db_path))
-            except (KeyboardInterrupt, SystemExit):
-                pass
-
-        p = multiprocessing.Process(target=_run_target, name="osap_scheduler", daemon=True)
+        p = multiprocessing.Process(
+            target=_run_scheduler_proc,
+            args=(db_path,),
+            name="osap_scheduler",
+            daemon=True,
+        )
         p.start()
         self.process = p
         logger.info("Prime-Time Scheduler started via Web Dashboard")
