@@ -189,6 +189,26 @@ class BasePublisher(ABC):
                 **{**launch_opts, **ctx_opts},
             )
             await apply_stealth(context)
+
+            # Inject uploaded cookies if available so persistent profile is authenticated
+            candidate_files = [
+                profiles_dir / f'{profile_key}_storage.json',
+                profiles_dir / f'{profile_key}_cookies.json',
+                profiles_dir / f'{profile_key}_cookies.txt',
+                profiles_dir / f'{self.PLATFORM_NAME}_storage.json',
+                profiles_dir / f'{self.PLATFORM_NAME}_cookies.txt',
+            ]
+            for cf in candidate_files:
+                if cf.exists() and cf.stat().st_size > 0:
+                    try:
+                        cookies = load_cookies(cf)
+                        if cookies:
+                            self._log.info('[%s] Injected %d uploaded cookies into persistent context from %s', profile_key, len(cookies), cf.name)
+                            await context.add_cookies(cookies)
+                            break
+                    except Exception as e:
+                        self._log.warning('[%s] Failed injecting cookies into persistent context: %s', profile_key, e)
+
             return context
 
         # --- storage_state path ---
