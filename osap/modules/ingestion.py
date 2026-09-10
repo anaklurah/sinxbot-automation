@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -425,11 +426,7 @@ class DownloadWorker:
                 logger.error("  [yt-dlp] Error hook triggered for url=%s", url)
 
         ydl_opts: dict[str, Any] = {
-            "format": (
-                "bv*[height<=1920][height>=720]+ba/b[height<=1920][height>=720]"
-                "/bv*[height<=1920]+ba/b[height<=1920]"
-                "/bv*+ba/b/best"
-            ),
+            "format": "bestvideo*+bestaudio/best",
             "outtmpl": str(cfg.raw_dir / "%(id)s.%(ext)s"),
             "quiet": True,
             "no_warnings": True,
@@ -440,23 +437,20 @@ class DownloadWorker:
             "merge_output_format": "mp4",
             "progress_hooks": [_progress_hook],
             "js_runtimes": {"node": {}},
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android"],
-                }
-            },
         }
 
-        # Resolve YouTube cookies from profile if available
-        cookie_file = _get_youtube_cookiefile(cfg)
-        if cookie_file:
-            ydl_opts["cookiefile"] = str(cookie_file)
-            logger.info("  [yt-dlp] Using YouTube cookies from profile: %s", cookie_file.name)
+        # Inject proxy if configured
+        proxy_url = getattr(cfg, "PROXY_URL", None) or os.environ.get("PROXY_URL")
+        if proxy_url:
+            ydl_opts["proxy"] = proxy_url
 
+        # Resolve YouTube cookies if available (saved for fallback if needed)
+        cookie_file = _get_youtube_cookiefile(cfg)
+
+        # First attempt: Clean direct download (bypasses cookie-based bot challenges on public videos)
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info: dict[str, Any] = ydl.extract_info(url, download=True)
-                # Resolve the final merged dict (playlist-safe).
                 if "entries" in info:
                     info = info["entries"][0]
 
@@ -499,10 +493,57 @@ class DownloadWorker:
 
         except yt_dlp.utils.DownloadError as exc:
             err_text = str(exc).lower()
-            logger.warning("  [yt-dlp] Download error encountered (%s), retrying with pure mobile client...", exc)
+            logger.warning("  [yt-dlp] Direct download failed (%s), attempting fallback...", exc)
+
+            # Fallback 1: Try with cookies if available
+            if cookie_file:
+                try:
+                    logger.info("  [yt-dlp] Retrying with YouTube cookies: %s", cookie_file.name)
+                    retry_cookie_opts = dict(ydl_opts)
+                    retry_cookie_opts["cookiefile"] = str(cookie_file)
+                    with yt_dlp.YoutubeDL(retry_cookie_opts) as ydl:
+                        info = ydl.extract_info(url, download=True)
+                        if "entries" in info:
+                            info = info["entries"][0]
+                    yt_id = info.get("id", f"vid_{vid_id}")
+                    title = info.get("title") or ""
+                    description = info.get("description") or ""
+                    raw_tags = info.get("tags") or []
+                    tags_json = json.dumps(raw_tags)
+                    raw_path = cfg.raw_dir / f"{yt_id}.mp4"
+                    meta_path = cfg.meta_dir / f"{yt_id}.json"
+                    meta_payload = {
+                        "id": yt_id,
+                        "title": title,
+                        "description": description,
+                        "tags": raw_tags,
+                        "webpage_url": info.get("webpage_url", url),
+                        "uploader": info.get("uploader"),
+                        "upload_date": info.get("upload_date"),
+                        "duration": info.get("duration"),
+                        "view_count": info.get("view_count"),
+                        "like_count": info.get("like_count"),
+                    }
+                    meta_path.write_text(
+                        json.dumps(meta_payload, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                    logger.info("  [yt-dlp] Cookie fallback download succeeded for %s!", yt_id)
+                    return {
+                        "video_id": yt_id,
+                        "title": title,
+                        "description": description,
+                        "tags": tags_json,
+                        "raw_path": str(raw_path),
+                        "meta_path": str(meta_path),
+                    }
+                except Exception as cookie_exc:
+                    logger.warning("  [yt-dlp] Cookie fallback also failed: %s", cookie_exc)
+
+            # Fallback 2: Try mobile client
             try:
+                logger.info("  [yt-dlp] Retrying with mobile client fallback...")
                 retry_opts = dict(ydl_opts)
-                retry_opts.pop("cookiefile", None)
                 retry_opts["format"] = "bv*+ba/b/best"
                 retry_opts["extractor_args"] = {
                     "youtube": {
@@ -536,7 +577,7 @@ class DownloadWorker:
                     json.dumps(meta_payload, ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
-                logger.info("  [yt-dlp] Fallback download succeeded for %s!", yt_id)
+                logger.info("  [yt-dlp] Mobile fallback download succeeded for %s!", yt_id)
                 return {
                     "video_id": yt_id,
                     "title": title,
@@ -546,7 +587,7 @@ class DownloadWorker:
                     "meta_path": str(meta_path),
                 }
             except Exception as retry_exc:
-                logger.error("  [yt-dlp] Fallback download also failed: %s", retry_exc)
+                logger.error("  [yt-dlp] Mobile fallback also failed: %s", retry_exc)
 
             msg = f"yt-dlp DownloadError: {exc}"
             logger.error("Video id=%d failed: %s", vid_id, msg)
