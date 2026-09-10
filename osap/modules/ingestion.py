@@ -499,54 +499,53 @@ class DownloadWorker:
 
         except yt_dlp.utils.DownloadError as exc:
             err_text = str(exc).lower()
-            if "bot" in err_text or "sign in" in err_text or "cookies" in err_text:
-                logger.warning("  [yt-dlp] Bot detection triggered, retrying with pure mobile client...")
-                try:
-                    retry_opts = dict(ydl_opts)
-                    retry_opts.pop("cookiefile", None)
-                    retry_opts["extractor_args"] = {
-                        "youtube": {
-                            "player_client": ["android", "ios"],
-                        }
+            logger.warning("  [yt-dlp] Download error encountered (%s), retrying with pure mobile client...", exc)
+            try:
+                retry_opts = dict(ydl_opts)
+                retry_opts.pop("cookiefile", None)
+                retry_opts["extractor_args"] = {
+                    "youtube": {
+                        "player_client": ["android", "ios"],
                     }
-                    with yt_dlp.YoutubeDL(retry_opts) as ydl:
-                        info = ydl.extract_info(url, download=True)
-                        if "entries" in info:
-                            info = info["entries"][0]
-                    yt_id = info.get("id", f"vid_{vid_id}")
-                    title = info.get("title") or ""
-                    description = info.get("description") or ""
-                    raw_tags = info.get("tags") or []
-                    tags_json = json.dumps(raw_tags)
-                    raw_path = cfg.raw_dir / f"{yt_id}.mp4"
-                    meta_path = cfg.meta_dir / f"{yt_id}.json"
-                    meta_payload = {
-                        "id": yt_id,
-                        "title": title,
-                        "description": description,
-                        "tags": raw_tags,
-                        "webpage_url": info.get("webpage_url", url),
-                        "uploader": info.get("uploader"),
-                        "upload_date": info.get("upload_date"),
-                        "duration": info.get("duration"),
-                        "view_count": info.get("view_count"),
-                        "like_count": info.get("like_count"),
-                    }
-                    meta_path.write_text(
-                        json.dumps(meta_payload, ensure_ascii=False, indent=2),
-                        encoding="utf-8",
-                    )
-                    logger.info("  [yt-dlp] Fallback download succeeded for %s!", yt_id)
-                    return {
-                        "video_id": yt_id,
-                        "title": title,
-                        "description": description,
-                        "tags": tags_json,
-                        "raw_path": str(raw_path),
-                        "meta_path": str(meta_path),
-                    }
-                except Exception as retry_exc:
-                    logger.error("  [yt-dlp] Fallback download also failed: %s", retry_exc)
+                }
+                with yt_dlp.YoutubeDL(retry_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    if "entries" in info:
+                        info = info["entries"][0]
+                yt_id = info.get("id", f"vid_{vid_id}")
+                title = info.get("title") or ""
+                description = info.get("description") or ""
+                raw_tags = info.get("tags") or []
+                tags_json = json.dumps(raw_tags)
+                raw_path = cfg.raw_dir / f"{yt_id}.mp4"
+                meta_path = cfg.meta_dir / f"{yt_id}.json"
+                meta_payload = {
+                    "id": yt_id,
+                    "title": title,
+                    "description": description,
+                    "tags": raw_tags,
+                    "webpage_url": info.get("webpage_url", url),
+                    "uploader": info.get("uploader"),
+                    "upload_date": info.get("upload_date"),
+                    "duration": info.get("duration"),
+                    "view_count": info.get("view_count"),
+                    "like_count": info.get("like_count"),
+                }
+                meta_path.write_text(
+                    json.dumps(meta_payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                logger.info("  [yt-dlp] Fallback download succeeded for %s!", yt_id)
+                return {
+                    "video_id": yt_id,
+                    "title": title,
+                    "description": description,
+                    "tags": tags_json,
+                    "raw_path": str(raw_path),
+                    "meta_path": str(meta_path),
+                }
+            except Exception as retry_exc:
+                logger.error("  [yt-dlp] Fallback download also failed: %s", retry_exc)
 
             msg = f"yt-dlp DownloadError: {exc}"
             logger.error("Video id=%d failed: %s", vid_id, msg)
