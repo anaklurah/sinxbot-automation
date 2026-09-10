@@ -261,12 +261,31 @@ def cmd_setup_auth(args):
         from playwright.async_api import async_playwright
         from osap.modules.publisher.stealth import apply_stealth, get_launch_options
 
-        launch_args = ['--disable-blink-features=AutomationControlled']
+        launch_args = [
+            '--disable-blink-features=AutomationControlled',
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+        ]
         launch_kwargs = {
             'headless': False,
             'args': launch_args,
         }
-        if proxy_url:
+
+        # Use installed Google Chrome if available for genuine Google login compatibility
+        chrome_paths = [
+            r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+            r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+            os.path.expandvars(r'%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe'),
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+        ]
+        if any(os.path.exists(p) for p in chrome_paths):
+            launch_kwargs['channel'] = 'chrome'
+
+        # Don't force proxy onto manual setup-auth browser unless explicitly requested.
+        # SOCKS proxies inject --host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE localhost"
+        # and cause Google to block interactive login
+        if proxy_url and (os.environ.get('AUTH_PROXY', '').lower() in ('1', 'true', 'yes')):
             launch_kwargs['proxy'] = {'server': proxy_url}
 
         async with async_playwright() as p:
@@ -284,6 +303,7 @@ def cmd_setup_auth(args):
                     str(profile_dir),
                     **launch_kwargs,
                 )
+                await apply_stealth(context)
                 page = context.pages[0] if context.pages else await context.new_page()
                 await page.goto(url)
                 # Keep open until user closes
