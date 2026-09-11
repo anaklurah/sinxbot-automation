@@ -401,6 +401,13 @@ async def run_jit_video_pipeline(
             f"[JIT Cleanup] 🧹 Internal storage preserved: cleaned {len(cleaned_files)} files for video #{vid_id} ({', '.join(cleaned_files)})"
         )
 
+        # Automatically purge browser junk caches (IndexedDB blobs, Code Cache, cache2)
+        try:
+            from osap.modules.cleanup import clean_browser_caches
+            clean_browser_caches()
+        except Exception:
+            pass
+
 
     summary_msg = f"Video #{vid_id} selesai diproses ({'sukses' if any_success else 'gagal'})."
     return {

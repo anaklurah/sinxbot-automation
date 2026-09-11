@@ -277,4 +277,49 @@ def _fmt_bytes(n: int) -> str:
     return f"{n:.2f} PB"
 
 
-__all__ = ["CleanupWorker"]
+def clean_browser_caches(profiles_dir: Path | None = None) -> int:
+    """Sweep and purge browser junk caches (IndexedDB blobs, Code Cache, cache2, shader caches)
+    from all profile directories while preserving cookies, logins, and session storage."""
+    cfg = get_config()
+    target_dir = profiles_dir or Path(cfg.PROFILES_DIR)
+    if not target_dir.exists():
+        return 0
+
+    import shutil
+    total_freed = 0
+    EXCLUDE_DIR_NAMES = {
+        'cache', 'code cache', 'cache2', 'gpucache', 'dawnwebgpucache',
+        'dawngraphitecache', 'browsermetrics', 'crashpad', 'startupcache',
+        'optimization_guide_model_store', 'grshadercache', 'gpupersistentcache',
+        'shadercache', 'extensions_crx_cache', 'component_crx_cache'
+    }
+
+    for root, dirs, files in os.walk(target_dir, topdown=True):
+        # 1. Purge cache directories and indexeddb video blobs
+        for d in list(dirs):
+            if d.lower() in EXCLUDE_DIR_NAMES or d.endswith('.blob'):
+                dir_path = Path(root) / d
+                try:
+                    size = sum(f.stat().st_size for f in dir_path.rglob('*') if f.is_file())
+                    shutil.rmtree(dir_path, ignore_errors=True)
+                    total_freed += size
+                    dirs.remove(d)
+                except Exception:
+                    pass
+
+        # 2. Purge crash dumps and temporary metrics
+        for f in files:
+            if f.endswith('.pma') or f.endswith('.dmp'):
+                f_path = Path(root) / f
+                try:
+                    total_freed += f_path.stat().st_size
+                    f_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+    if total_freed > 0:
+        logger.info("[Cleanup] 🧹 Purged %s of browser junk cache across profiles.", _fmt_bytes(total_freed))
+    return total_freed
+
+
+__all__ = ["CleanupWorker", "clean_browser_caches"]
