@@ -637,8 +637,12 @@ async function loadPlatformsData() {
                             <i data-lucide="log-in"></i> Login Browser
                         </button>
                         <label class="btn-clay btn-clay-secondary btn-clay-sm" style="cursor: pointer; margin: 0;" title="Upload file cookie .json / .txt untuk akun ini">
-                            <i data-lucide="upload"></i> Upload Cookie
+                            <i data-lucide="upload"></i> Cookie
                             <input type="file" accept=".txt,.json" style="display: none;" onchange="uploadCookies('${p.target_key}', this)">
+                        </label>
+                        <label class="btn-clay btn-clay-secondary btn-clay-sm" style="cursor: pointer; margin: 0;" title="Upload arsip profil browser (.zip) dari Windows">
+                            <i data-lucide="archive"></i> Profile .zip
+                            <input type="file" accept=".zip" style="display: none;" onchange="uploadProfileZip('${p.target_key}', this)">
                         </label>
                     </div>
                     <button class="btn-clay btn-clay-primary btn-clay-sm" ${!p.enabled ? 'disabled title="Nyalakan switch kartu ini terlebih dahulu"' : ''} onclick="triggerManualPost('${p.target_key}', this)">
@@ -759,6 +763,34 @@ async function uploadCookies(targetKey, inputElement) {
         }
     } catch (err) {
         showToast(`Error uploading cookie: ${err.message}`, 'error');
+    }
+}
+
+async function uploadProfileZip(targetKey, inputElement) {
+    if (!inputElement.files || inputElement.files.length === 0) return;
+    const file = inputElement.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+    inputElement.value = '';
+
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    showToast(`Mengunggah profil '${file.name}' (${sizeMb} MB)... Mohon tunggu ekstraksi...`, 'info', 10000);
+
+    try {
+        const res = await fetch(`/api/upload-profile/${targetKey}`, {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(data.message || `Profil ${targetKey} berhasil dipasang di server!`, 'success', 6000);
+            if (typeof loadPlatformsData === 'function') await loadPlatformsData();
+            if (typeof loadYtdlpData === 'function') await loadYtdlpData();
+        } else {
+            showToast(data.detail || `Upload profile gagal untuk ${targetKey}`, 'error', 6000);
+        }
+    } catch (err) {
+        showToast(`Error uploading profile zip: ${err.message}`, 'error', 6000);
     }
 }
 

@@ -698,12 +698,17 @@
                             Terakhir Diupdate: <strong id="ytdlp-cookie-updated">-</strong>
                         </div>
                     </div>
-                    <div style="display: flex; gap: 10px; align-items: center;">
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                         <input type="file" id="ytdlp-cookie-file-input" style="display: none;" accept=".txt,.json" onchange="uploadYtdlpCookieFile(this)">
                         <button class="btn-clay btn-clay-primary" onclick="document.getElementById('ytdlp-cookie-file-input').click()">
                             <i data-lucide="upload-cloud"></i>
                             <span>Upload File .txt / .json</span>
                         </button>
+                        <label class="btn-clay btn-clay-secondary" style="cursor: pointer; margin: 0;" title="Upload seluruh folder profil browser YouTube (youtube.zip) yang sudah login di Windows">
+                            <i data-lucide="archive"></i>
+                            <span>Upload youtube.zip</span>
+                            <input type="file" accept=".zip" style="display: none;" onchange="uploadProfileZip('youtube', this)">
+                        </label>
                     </div>
                 </div>
 
@@ -774,7 +779,7 @@
 
 
     <!-- Application JavaScript Logic -->
-    <script src="/static/js/toast.js?v=1.0.4"></script>
-    <script src="/static/js/app.js?v=1.0.4"></script>
+    <script src="/static/js/toast.js?v=1.0.5"></script>
+    <script src="/static/js/app.js?v=1.0.5"></script>
 </body>
 </html>

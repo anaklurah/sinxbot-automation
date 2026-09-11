@@ -977,6 +977,61 @@ async def upload_platform_cookies(target_key: str, file: UploadFile = File(...))
     }
 
 
+@app.post("/api/upload-profile/{target_key}")
+async def upload_profile_zip(target_key: str, file: UploadFile = File(...)):
+    """Upload full persistent browser profile as a ZIP archive and extract directly into assets/profiles/{target_key}/."""
+    if not file.filename or not file.filename.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Hanya file berekstensi .zip yang diperbolehkan!")
+
+    cfg = get_config()
+    profiles_dir = Path(cfg.PROFILES_DIR)
+    target_dir = profiles_dir / target_key
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="File zip kosong!")
+
+    import zipfile
+    import io
+
+    extracted_files = 0
+    try:
+        with zipfile.ZipFile(io.BytesIO(contents)) as zf:
+            for member in zf.infolist():
+                if member.filename.startswith("/") or ".." in member.filename:
+                    continue
+
+                parts = Path(member.filename).parts
+                if len(parts) > 1 and parts[0].lower() == target_key.lower():
+                    rel_path = Path(*parts[1:])
+                else:
+                    rel_path = Path(*parts)
+
+                if not str(rel_path) or str(rel_path) == ".":
+                    continue
+
+                dest = target_dir / rel_path
+                if member.is_dir():
+                    dest.mkdir(parents=True, exist_ok=True)
+                else:
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    with zf.open(member) as src, open(dest, "wb") as dst:
+                        dst.write(src.read())
+                    extracted_files += 1
+
+        logger.info(f"Successfully extracted {extracted_files} files into profile directory: {target_dir}")
+        return {
+            "success": True,
+            "target_key": target_key,
+            "extracted_files": extracted_files,
+            "message": f"Berhasil mengunggah & mengekstrak profil '{target_key}' ({extracted_files} file tersimpan di server)!"
+        }
+    except Exception as exc:
+        logger.error(f"Failed extracting profile zip for {target_key}: {exc}")
+        raise HTTPException(status_code=500, detail=f"Gagal mengekstrak file zip: {exc}")
+
+
 def _run_manual_publish_target(db_path: str, target_key: str):
     """Top-level process target for on-demand single-target publishing (no Telegram report)."""
     import asyncio
