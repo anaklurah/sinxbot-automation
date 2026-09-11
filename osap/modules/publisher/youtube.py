@@ -93,12 +93,29 @@ class YouTubePublisher(BasePublisher):
                 except Exception:
                     pass
 
+                # Strategy 1: Direct upload deep link if on channel URL
                 if not file_input_ready:
-                    # Wait for Studio UI to hydrate
+                    curr_url = page.url
+                    if '/channel/' in curr_url and 'd=ud' not in curr_url:
+                        channel_base = curr_url.split('?')[0].rstrip('/')
+                        upload_deep_link = f"{channel_base}/videos/upload?d=ud"
+                        log.info('[youtube] Trying direct upload deep link: %s', upload_deep_link)
+                        try:
+                            await page.goto(upload_deep_link, wait_until='domcontentloaded', timeout=25_000)
+                            await self._jitter(2000, 3000)
+                            if await page.locator(file_input_sel).count() > 0:
+                                file_input_ready = True
+                                log.info('[youtube] Direct deep link opened upload dialog successfully!')
+                        except Exception as dl_err:
+                            log.debug('[youtube] Direct deep link failed: %s', dl_err)
+
+                if not file_input_ready:
+                    # Wait for Studio UI elements to hydrate
                     studio_ready_sel = (
-                        '#create-icon, ytcp-button#create-icon, ytcp-icon-button#create-icon, '
-                        'button#create-icon, #upload-icon, ytcp-button#upload-icon, '
-                        '[aria-label*="Create" i], [aria-label*="Buat" i], input[type="file"]'
+                        'ytcp-button:has-text("Create"), button:has-text("Create"), '
+                        'ytcp-button:has-text("Buat"), button:has-text("Buat"), '
+                        '#create-icon, #create-button, [aria-label*="Create" i], '
+                        '[aria-label*="Upload" i], input[type="file"]'
                     )
                     try:
                         await page.wait_for_selector(studio_ready_sel, timeout=25_000, state='attached')
@@ -113,62 +130,84 @@ class YouTubePublisher(BasePublisher):
                     # Dismiss any popups that appeared after hydration
                     await self._dismiss_popups(page)
 
-                    # Trigger upload dialog
                     upload_clicked = False
 
-                    # Option A: Direct upload button on channel dashboard
-                    for direct_sel in [
-                        'ytcp-button#upload-icon',
-                        '#upload-icon',
-                        'ytcp-icon-button#upload-icon',
-                        'ytcp-upload-video-widget ytcp-button',
-                        'button[aria-label*="Upload" i]',
-                        'button[aria-label*="Unggah" i]',
-                    ]:
+                    # Strategy 2: Click "+ Create" button in header (Visible on every YouTube Studio page)
+                    create_selectors = [
+                        'ytcp-button:has-text("Create")',
+                        'button:has-text("Create")',
+                        'ytcp-button:has-text("Buat")',
+                        'button:has-text("Buat")',
+                        '#create-icon',
+                        '#create-button',
+                        'ytcp-button#create-icon',
+                        'ytcp-icon-button#create-icon',
+                        '[aria-label*="Create" i]',
+                        '[aria-label*="Buat" i]',
+                        'ytcp-header ytcp-button',
+                    ]
+                    for create_sel in create_selectors:
                         try:
-                            el = page.locator(direct_sel).first
-                            if await el.count() and await el.is_visible():
-                                log.info('[youtube] Clicking direct upload button: %s', direct_sel)
-                                await el.click()
-                                upload_clicked = True
-                                await self._jitter(1000, 2000)
-                                break
-                        except Exception:
-                            pass
+                            create_btn = page.locator(create_sel).first
+                            if await create_btn.count() and await create_btn.is_visible():
+                                log.info('[youtube] Clicking Create button: %s', create_sel)
+                                await create_btn.click()
+                                await self._jitter(800, 1500)
 
-                    # Option B: Create button dropdown
+                                menu_selectors = [
+                                    'tp-yt-paper-item:has-text("Upload")',
+                                    'tp-yt-paper-item:has-text("Unggah")',
+                                    'ytcp-text-menu tp-yt-paper-item',
+                                    '#text-item-0',
+                                    '[test-id="upload-action"]',
+                                    '[role="menuitem"]:has-text("Upload")',
+                                    '[role="menuitem"]:has-text("Unggah")',
+                                ]
+                                for menu_sel in menu_selectors:
+                                    try:
+                                        menu_item = page.locator(menu_sel).first
+                                        await menu_item.wait_for(state='visible', timeout=4_000)
+                                        log.info('[youtube] Clicking "Upload videos" / "Unggah video" from menu: %s', menu_sel)
+                                        await menu_item.click()
+                                        upload_clicked = True
+                                        await self._jitter(1000, 2000)
+                                        break
+                                    except Exception:
+                                        pass
+
+                                if upload_clicked:
+                                    break
+                        except Exception as e:
+                            log.debug('[youtube] Create selector %s failed: %s', create_sel, e)
+
+                    # Strategy 3: Direct Upload icon on the dashboard (up-arrow circle button)
                     if not upload_clicked:
-                        log.info('[youtube] Trying Create button dropdown fallback')
-                        for create_sel in [
-                            'ytcp-button#create-icon',
-                            '#create-icon',
-                            'button#create-icon',
-                            'ytcp-icon-button#create-icon',
-                            '[aria-label*="Create" i]',
-                            '[aria-label*="Buat" i]',
-                        ]:
+                        log.info('[youtube] Trying direct upload icon button on dashboard...')
+                        direct_selectors = [
+                            'ytcp-icon-button[aria-label*="Upload" i]',
+                            'ytcp-icon-button[aria-label*="Unggah" i]',
+                            '[aria-label*="Upload videos" i]',
+                            '[aria-label*="Upload video" i]',
+                            '[aria-label*="Unggah video" i]',
+                            'ytcp-button:has-text("Upload")',
+                            'ytcp-button:has-text("Unggah")',
+                            'ytcp-button#upload-icon',
+                            '#upload-icon',
+                            'ytcp-icon-button#upload-icon',
+                            'ytcp-channel-dashboard-renderer ytcp-icon-button',
+                            '#channel-dashboard-header ytcp-icon-button',
+                        ]
+                        for direct_sel in direct_selectors:
                             try:
-                                create_btn = page.locator(create_sel).first
-                                if await create_btn.count() and await create_btn.is_visible():
-                                    log.info('[youtube] Clicking Create button: %s', create_sel)
-                                    await create_btn.click()
-                                    await self._jitter(800, 1500)
-
-                                    menu_sel = (
-                                        '#text-item-0, [test-id="upload-action"], '
-                                        'tp-yt-paper-item:has-text("Upload"), '
-                                        'tp-yt-paper-item:has-text("Unggah"), '
-                                        'ytcp-text-menu tp-yt-paper-item'
-                                    )
-                                    menu_item = page.locator(menu_sel).first
-                                    await menu_item.wait_for(state='visible', timeout=8_000)
-                                    log.info('[youtube] Clicking "Upload videos" / "Unggah video" from menu')
-                                    await menu_item.click()
+                                el = page.locator(direct_sel).first
+                                if await el.count() and await el.is_visible():
+                                    log.info('[youtube] Clicking direct upload button: %s', direct_sel)
+                                    await el.click()
                                     upload_clicked = True
                                     await self._jitter(1000, 2000)
                                     break
-                            except Exception as e:
-                                log.debug('[youtube] Create selector %s failed: %s', create_sel, e)
+                            except Exception:
+                                pass
 
                 # ── Step 3: Set file via input ────────────────────────────────
                 log.info('[youtube] Setting input file: %s', video_path)
