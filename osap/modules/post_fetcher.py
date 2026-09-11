@@ -108,134 +108,108 @@ async def _fetch_instagram_latest(page: Page) -> Optional[str]:
 
 
 async def _fetch_tiktok_latest(page: Page) -> Optional[str]:
-    logger.info("[fetcher-tiktok] Navigating to TikTok...")
-    await page.goto("https://www.tiktok.com/", wait_until="domcontentloaded", timeout=45_000)
-    await asyncio.sleep(2)
+    logger.info("[fetcher-tiktok] Checking TikTok for latest post...")
 
-    # 1. Navigate to user's own profile via sidebar link or header
-    prof_btn = page.locator('a[data-e2e="nav-profile"], a[href*="/@"]:has-text("Profile"), a[href*="/@"]:has-text("Profil")').first
-    try:
-        await prof_btn.wait_for(state="attached", timeout=12_000)
-        prof_href = await prof_btn.get_attribute("href")
-        if prof_href and prof_href.startswith("/@"):
-            clean_prof = prof_href.split("?")[0]
-            logger.info("[fetcher-tiktok] Opening user profile directly: %s", clean_prof)
-            await page.goto(f"https://www.tiktok.com{clean_prof}", wait_until="domcontentloaded", timeout=45_000)
-        else:
-            await prof_btn.click()
-    except Exception:
-        # Fallback: Header avatar dropdown
-        avatar = page.locator('div[data-e2e="profile-icon"], img[class*="Avatar"]').first
-        if await avatar.count():
-            await avatar.click()
-            await asyncio.sleep(1.5)
-            view_prof = page.locator('a[data-e2e="profile-item"], a:has-text("View profile"), a:has-text("Lihat profil")').first
-            if await view_prof.count():
-                await view_prof.click()
-
-    await asyncio.sleep(4)
-
-    # If "Something went wrong" / "Refresh" appears, click refresh
-    refresh_btn = page.locator('button:text-is("Refresh"), button:text-is("Coba lagi")').first
-    if await refresh_btn.count() and await refresh_btn.is_visible():
-        await refresh_btn.click()
-        await asyncio.sleep(3)
-
-    # 2. Locate first video card on profile
-    # Use state="attached" because TikTok video cover anchors use accessibility focus overlays
-    video_card = page.locator('div[data-e2e="user-post-item"] a[href*="/video/"], a[class*="StyledLinkVideoCover"][href*="/video/"], a[href*="/video/"]').first
-    try:
-        await video_card.wait_for(state="attached", timeout=15_000)
-        href = await video_card.get_attribute("href")
-        if href and "/video/" in href:
-            clean_href = href.split("?")[0]
-            return clean_href if clean_href.startswith("http") else f"https://www.tiktok.com{clean_href}"
-    except Exception as exc:
-        logger.warning("[fetcher-tiktok] Video card wait failed: %s", exc)
-
-    # 3. Fallback: Check TikTok Studio content manager
+    # Priority 1: Check TikTok Studio content manager directly
     try:
         logger.info("[fetcher-tiktok] Checking TikTok Studio content list...")
-        await page.goto("https://www.tiktok.com/tiktokstudio/content", wait_until="domcontentloaded", timeout=45_000)
+        await page.goto("https://www.tiktok.com/tiktokstudio/content", wait_until="domcontentloaded", timeout=35_000)
         await asyncio.sleep(4)
-        studio_video = page.locator('a[href*="/video/"]').first
-        if await studio_video.count():
-            s_href = await studio_video.get_attribute("href")
-            if s_href and "/video/" in s_href:
-                clean_s = s_href.split("?")[0]
-                return clean_s if clean_s.startswith("http") else f"https://www.tiktok.com{clean_s}"
-    except Exception:
-        pass
+        studio_href = await page.evaluate(r'''() => {
+            const links = Array.from(document.querySelectorAll('a[href*="/video/"]'));
+            for (const a of links) {
+                const href = a.getAttribute('href') || '';
+                const m = href.match(/\/video\/(\d+)/);
+                if (m) return href.startsWith('http') ? href.split('?')[0] : `https://www.tiktok.com${href.split('?')[0]}`;
+            }
+            return null;
+        }''')
+        if studio_href:
+            return studio_href
+    except Exception as e:
+        logger.debug("[fetcher-tiktok] TikTok Studio check error: %s", e)
+
+    # Priority 2: Navigate to profile
+    try:
+        await page.goto("https://www.tiktok.com/", wait_until="domcontentloaded", timeout=35_000)
+        await asyncio.sleep(2)
+
+        prof_btn = page.locator('a[data-e2e="nav-profile"], a[href*="/@"]:has-text("Profile"), a[href*="/@"]:has-text("Profil")').first
+        if await prof_btn.count():
+            prof_href = await prof_btn.get_attribute("href")
+            if prof_href and prof_href.startswith("/@"):
+                clean_prof = prof_href.split("?")[0]
+                logger.info("[fetcher-tiktok] Opening user profile: %s", clean_prof)
+                await page.goto(f"https://www.tiktok.com{clean_prof}", wait_until="domcontentloaded", timeout=35_000)
+                await asyncio.sleep(3)
+
+        # Extract video from profile grid
+        video_url = await page.evaluate(r'''() => {
+            const anchors = Array.from(document.querySelectorAll('a[href*="/video/"]'));
+            for (const a of anchors) {
+                const href = a.getAttribute('href') || '';
+                const match = href.match(/\/video\/(\d+)/);
+                if (match) return href.startsWith('http') ? href.split('?')[0] : `https://www.tiktok.com${href.split('?')[0]}`;
+            }
+            return null;
+        }''')
+        if video_url:
+            return video_url
+    except Exception as e:
+        logger.warning("[fetcher-tiktok] Error extracting TikTok post: %s", e)
 
     return None
 
 
 async def _fetch_facebook_latest(page: Page) -> Optional[str]:
-    logger.info("[fetcher-facebook] Navigating to Facebook profile...")
-    await page.goto("https://www.facebook.com/me/", wait_until="domcontentloaded", timeout=45_000)
-    await asyncio.sleep(4)
-
-    # Scroll down to load profile timeline posts
-    await page.evaluate("window.scrollBy(0, 1000)")
-    await asyncio.sleep(3)
-
-    # Search for latest post link strictly from profile timeline/feed, ignoring the Reels menu/tabs
-    post_url = await page.evaluate('''() => {
-        const anchors = Array.from(document.querySelectorAll('a[href]'));
-        for (const a of anchors) {
-            const href = a.getAttribute('href') || '';
-            const aria = (a.getAttribute('aria-label') || '').toLowerCase();
-            const text = a.innerText.trim();
-
-            // Strictly ignore Reels navigation tabs or menus
-            if (href.includes('?s=tab') || href.includes('sk=reels') || href.includes('sk=') || aria === 'reels' || text === 'Reels') {
-                continue;
-            }
-
-            // 1. Notification link for processed reel
-            if (href.includes('/reel/') && href.includes('notification_fb_shorts')) {
-                const cleanId = href.split('/reel/')[1].split('?')[0].split('/')[0];
-                if (cleanId) return `https://www.facebook.com/reel/${cleanId}`;
-            }
-
-            // 2. Direct post or video permalinks on timeline
-            if (href.includes('/videos/') || href.includes('/posts/') || href.includes('story_fbid=') || href.includes('permalink.php')) {
-                const base = href.split('&__cft__')[0].split('?__cft__')[0];
-                return base.startsWith('http') ? base : `https://www.facebook.com${base}`;
-            }
-
-            // 3. Numeric reel post permalink on timeline
-            if (href.includes('/reel/')) {
-                const parts = href.split('/reel/');
-                if (parts.length > 1) {
-                    const candidateId = parts[1].split('?')[0].split('/')[0];
-                    if (/^\\d+$/.test(candidateId)) {
-                        return `https://www.facebook.com/reel/${candidateId}`;
-                    }
+    logger.info("[fetcher-facebook] Navigating to Facebook reels tab...")
+    # Priority 1: Check user's Reels tab directly (where newly published reels reside)
+    try:
+        await page.goto("https://www.facebook.com/me/reels/", wait_until="domcontentloaded", timeout=40_000)
+        await asyncio.sleep(4)
+        reel_url = await page.evaluate(r'''() => {
+            const anchors = Array.from(document.querySelectorAll('a[href*="/reel/"]'));
+            for (const a of anchors) {
+                const href = a.getAttribute('href') || '';
+                const match = href.match(/\/reel\/(\d+)/);
+                if (match && match[1]) {
+                    return `https://www.facebook.com/reel/${match[1]}`;
                 }
             }
-        }
-        return null;
-    }''')
+            return null;
+        }''')
+        if reel_url:
+            return reel_url
+    except Exception as e:
+        logger.debug("[fetcher-facebook] Reels tab check failed: %s", e)
 
-    if post_url:
-        return post_url
-
-    # Fallback: Click Share -> Copy link from first post in timeline
+    # Priority 2: Check timeline feed
     try:
-        share_btn = page.locator('div[role="button"]:has-text("Bagikan"), div[role="button"]:has-text("Share"), span:text-is("Bagikan"), span:text-is("Share")').first
-        if await share_btn.count():
-            await share_btn.click()
-            await asyncio.sleep(2)
-            copy_item = page.locator('div[role="menuitem"]:has-text("Salin tautan"), div[role="menuitem"]:has-text("Copy link")').first
-            if await copy_item.count():
-                await copy_item.click()
-                await asyncio.sleep(1)
-                clip = await page.evaluate("navigator.clipboard.readText().catch(() => '')")
-                if clip and clip.startswith("http") and not clip.endswith("sk=reels"):
-                    return clip.split("?")[0]
-    except Exception:
-        pass
+        await page.goto("https://www.facebook.com/me/", wait_until="domcontentloaded", timeout=40_000)
+        await asyncio.sleep(3)
+        await page.evaluate("window.scrollBy(0, 1000)")
+        await asyncio.sleep(2)
+
+        post_url = await page.evaluate(r'''() => {
+            const anchors = Array.from(document.querySelectorAll('a[href]'));
+            for (const a of anchors) {
+                const href = a.getAttribute('href') || '';
+                if (href.includes('?s=tab') || href.includes('sk=reels') || href.includes('sk=')) continue;
+                if (href.includes('/reel/')) {
+                    const m = href.match(/\/reel\/(\d+)/);
+                    if (m && m[1]) return `https://www.facebook.com/reel/${m[1]}`;
+                }
+                if (href.includes('/videos/') || href.includes('/posts/') || href.includes('story_fbid=')) {
+                    const base = href.split('&__cft__')[0].split('?__cft__')[0];
+                    return base.startsWith('http') ? base : `https://www.facebook.com${base}`;
+                }
+            }
+            return null;
+        }''')
+        if post_url:
+            return post_url
+    except Exception as e:
+        logger.debug("[fetcher-facebook] Timeline check failed: %s", e)
 
     return None
 
@@ -307,19 +281,50 @@ async def _fetch_febspot_latest(page: Page) -> Optional[str]:
 
 async def _fetch_youtube_latest(page: Page) -> Optional[str]:
     logger.info("[fetcher-youtube] Navigating to YouTube Studio...")
-    await page.goto("https://studio.youtube.com/", wait_until="domcontentloaded", timeout=45_000)
-    await asyncio.sleep(3)
+    try:
+        # Direct navigation to YouTube Studio content shorts view
+        await page.goto("https://studio.youtube.com/videos/shorts", wait_until="domcontentloaded", timeout=40_000)
+        await asyncio.sleep(4)
 
-    content_btn = page.locator('a[test-id="menu-item-content"], a[id="menu-item-content"], #menu-item-content').first
-    if await content_btn.count():
-        await content_btn.click()
-        await asyncio.sleep(3)
+        # Ensure Shorts tab is active
+        shorts_tab = page.locator('tp-yt-paper-tab:has-text("Shorts"), div[role="tab"]:has-text("Shorts")').first
+        if await shorts_tab.count():
+            try:
+                await shorts_tab.click(timeout=5000)
+                await asyncio.sleep(2)
+            except Exception:
+                pass
 
-    vid_link = page.locator('a#video-title, a[href*="/watch?v="], a[href*="/shorts/"]').first
-    if await vid_link.count():
-        href = await vid_link.get_attribute("href")
-        if href:
-            return href if href.startswith("http") else f"https://www.youtube.com{href}"
+        video_url = await page.evaluate(r'''() => {
+            // 1. Direct watch or shorts permalink
+            const anchors = Array.from(document.querySelectorAll('a[href*="/watch?v="], a[href*="/shorts/"], a#video-title'));
+            for (const a of anchors) {
+                const href = a.getAttribute('href') || '';
+                if (href.includes('/shorts/')) {
+                    return href.startsWith('http') ? href : `https://www.youtube.com${href}`;
+                }
+                if (href.includes('/watch?v=')) {
+                    const vId = href.split('/watch?v=')[1].split('&')[0];
+                    if (vId) return `https://www.youtube.com/shorts/${vId}`;
+                }
+            }
+            // 2. Video thumbnail/edit link: /video/<id>/edit
+            const editAnchors = Array.from(document.querySelectorAll('a[href*="/video/"][href*="/edit"]'));
+            for (const a of editAnchors) {
+                const href = a.getAttribute('href') || '';
+                const m = href.match(/\\/video\\/([^\\/]+)\\/edit/);
+                if (m && m[1]) {
+                    return `https://www.youtube.com/shorts/${m[1]}`;
+                }
+            }
+            return null;
+        }''')
+        if video_url:
+            return video_url
+
+    except Exception as e:
+        logger.debug("[fetcher-youtube] Error navigating to Studio shorts: %s", e)
+
     return None
 
 

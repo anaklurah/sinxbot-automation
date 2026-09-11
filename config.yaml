@@ -91,7 +91,7 @@ watermark:
   color: white
   enabled: true
   font_path: font/KOMIKAX_.ttf
-  font_size: 20
+  font_size: 15
   opacity: 0.3
   text: SINXBOT
   x: '40'

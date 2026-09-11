@@ -273,6 +273,17 @@ class YouTubePublisher(BasePublisher):
                 except Exception:
                     log.warning('[youtube] Could not detect explicit success dialog — assuming success')
 
+                # Extract direct video link from YouTube Studio upload/success dialog
+                try:
+                    link_loc = page.locator('a[href*="youtu.be"], a.ytcp-video-info, [class*="video-url-link"] a, a[href*="/shorts/"]').first
+                    if await link_loc.count():
+                        href = await link_loc.get_attribute("href")
+                        if href and ("youtu.be" in href or "/shorts/" in href or "/watch" in href):
+                            self.uploaded_url = href.strip()
+                            log.info('[youtube] ✓ Captured direct video URL: %s', self.uploaded_url)
+                except Exception as ex:
+                    log.debug('[youtube] Could not extract video URL from dialog: %s', ex)
+
                 # Hold context open 5 seconds to ensure backend persistence
                 await self._jitter(4000, 6000)
                 return True

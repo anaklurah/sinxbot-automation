@@ -62,6 +62,7 @@ class BasePublisher(ABC):
         self.target_key = target_key or self.PLATFORM_NAME
         self._log = get_logger(f'osap.publisher.{self.target_key}')
         self.account_id = account_id
+        self.uploaded_url: str | None = None
 
     def _get_profiles_dir(self) -> Path:
         base_dir = Path(self._cfg.PROFILES_DIR)

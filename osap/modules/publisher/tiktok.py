@@ -266,6 +266,21 @@ class TikTokPublisher(BasePublisher):
                     except Exception:
                         log.warning('[tiktok] Could not confirm success — assuming success based on flow')
 
+                # Extract direct video link if available
+                try:
+                    if "/video/" in page.url:
+                        self.uploaded_url = page.url.split("?")[0]
+                    else:
+                        v_link = page.locator('a[href*="/video/"]').first
+                        if await v_link.count():
+                            h = await v_link.get_attribute("href")
+                            if h and "/video/" in h:
+                                self.uploaded_url = h if h.startswith("http") else f"https://www.tiktok.com{h.split('?')[0]}"
+                    if self.uploaded_url:
+                        log.info('[tiktok] ✓ Captured published video URL: %s', self.uploaded_url)
+                except Exception:
+                    pass
+
                 return True
 
             except Exception as exc:

@@ -233,6 +233,7 @@ async def run_jit_video_pipeline(
     processor = VideoProcessor(db_path=db_path)
     rendered_cache: Dict[tuple, str] = {}  # (watermark_text, watermark_enabled) -> file_path
     platform_results: Dict[str, bool] = {}
+    captured_urls: Dict[str, str] = {}
     any_success = False
 
     for i, target in enumerate(targets_to_run):
@@ -287,7 +288,11 @@ async def run_jit_video_pipeline(
             )
 
             if pub_success:
-                mark_platform_done(vid_id, target_key, db_path=db_path)
+                direct_url = getattr(publisher, "uploaded_url", None)
+                if direct_url:
+                    captured_urls[target_key] = direct_url
+                    logger.info(f"[JIT Pipeline] ✓ Direct post link captured for {target_name}: {direct_url}")
+                mark_platform_done(vid_id, target_key, upload_url=direct_url, db_path=db_path)
                 platform_results[target_key] = True
                 any_success = True
                 logger.info(f"[JIT Pipeline] ✓ Berhasil publikasi ke {target_name}!")
@@ -309,22 +314,37 @@ async def run_jit_video_pipeline(
     failed_target_names = [t.get("name") or t.get("target_key") for t in targets_to_run if platform_results.get(t.get("target_key")) is not True]
 
     if successful_targets:
-        fetch_delay_sec = int(os.environ.get("POST_FETCH_DELAY_SEC") or getattr(cfg, "POST_FETCH_DELAY_SEC", 180))
-        if fetch_delay_sec > 0:
-            delay_min = fetch_delay_sec // 60
-            delay_remainder = fetch_delay_sec % 60
-            time_str = f"{delay_min} menit" if delay_remainder == 0 else f"{delay_min} menit {delay_remainder} detik"
-            logger.info(
-                f"[JIT Pipeline] ⏳ Menunggu jeda {time_str} ({fetch_delay_sec} detik) agar semua platform selesai memproses & memunculkan postingan terbaru di profil..."
-            )
-            await asyncio.sleep(fetch_delay_sec)
+        # Pre-fill post_links from directly captured URLs during upload
+        for t in successful_targets:
+            t_key = t.get("target_key")
+            t_name = t.get("name") or t_key
+            if t_key in captured_urls and captured_urls[t_key]:
+                post_links[t_name] = captured_urls[t_key]
 
-        logger.info(f"[JIT Pipeline] 📲 Mengambil link postingan terbaru dari profil {len(successful_targets)} target sukses...")
-        try:
-            from osap.modules.post_fetcher import fetch_all_latest_posts
-            post_links = await fetch_all_latest_posts(successful_targets, account_id=account_id)
-        except Exception as fetch_err:
-            logger.warning(f"[JIT Pipeline] Gagal mengekstrak link profil: {fetch_err}")
+        # Targets that still need profile post verification
+        targets_needing_fetch = [
+            t for t in successful_targets
+            if (t.get("name") or t.get("target_key")) not in post_links
+        ]
+
+        if targets_needing_fetch:
+            fetch_delay_sec = int(os.environ.get("POST_FETCH_DELAY_SEC") or getattr(cfg, "POST_FETCH_DELAY_SEC", 180))
+            if fetch_delay_sec > 0:
+                delay_min = fetch_delay_sec // 60
+                delay_remainder = fetch_delay_sec % 60
+                time_str = f"{delay_min} menit" if delay_remainder == 0 else f"{delay_min} menit {delay_remainder} detik"
+                logger.info(
+                    f"[JIT Pipeline] ⏳ Menunggu jeda {time_str} ({fetch_delay_sec} detik) agar {len(targets_needing_fetch)} platform selesai memproses & memunculkan postingan terbaru di profil..."
+                )
+                await asyncio.sleep(fetch_delay_sec)
+
+            logger.info(f"[JIT Pipeline] 📲 Mengambil link postingan terbaru dari profil {len(targets_needing_fetch)} target...")
+            try:
+                from osap.modules.post_fetcher import fetch_all_latest_posts
+                fetched = await fetch_all_latest_posts(targets_needing_fetch, account_id=account_id)
+                post_links.update(fetched)
+            except Exception as fetch_err:
+                logger.warning(f"[JIT Pipeline] Gagal mengekstrak link profil: {fetch_err}")
 
         # Send Telegram notification (only if send_telegram=True, e.g. NOT for manual card posts)
         if send_telegram:

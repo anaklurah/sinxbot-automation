@@ -218,7 +218,7 @@ class FebspotPublisher(BasePublisher):
                         log.info('[febspot] ✓ Successfully published! Redirected to: %s', page.url)
                         success = True
                         break
-                    toast = page.locator(':text("Video uploaded"), :text("Success"), :text("Published")')
+                    toast = page.locator(':text("Video uploaded"), :text("Success"), :text("Published")').first
                     if await toast.count() > 0 and await toast.is_visible():
                         log.info('[febspot] ✓ Success notification detected')
                         success = True
@@ -228,6 +228,21 @@ class FebspotPublisher(BasePublisher):
                     log.warning('[febspot] Redirect not confirmed within 30s, checking current URL: %s', page.url)
                     if "/upload" not in page.url:
                         success = True
+
+                # Extract direct video URL if available
+                try:
+                    if "/v/" in page.url or "/video/" in page.url:
+                        self.uploaded_url = page.url.split("?")[0]
+                    else:
+                        first_v = page.locator('a[href*="/v/"], a[href*="/video/"]').first
+                        if await first_v.count():
+                            h = await first_v.get_attribute("href")
+                            if h and ("/v/" in h or "/video/" in h):
+                                self.uploaded_url = h if h.startswith("http") else f"https://www.febspot.com{h.split('?')[0]}"
+                    if self.uploaded_url:
+                        log.info('[febspot] ✓ Captured published video URL: %s', self.uploaded_url)
+                except Exception:
+                    pass
 
                 await self._jitter(2000, 4000)
                 log.info('[febspot] Upload completed successfully.')
