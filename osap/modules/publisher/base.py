@@ -58,6 +58,31 @@ def is_proxy_reachable(proxy_url: str | None, timeout: float = 2.0) -> bool:
         return False
 
 
+def format_playwright_proxy(proxy_url: str | None) -> dict | None:
+    """Format proxy URL into Playwright-compatible dict separating server, username, and password."""
+    if not proxy_url:
+        return None
+    try:
+        import urllib.parse
+        parsed = urllib.parse.urlsplit(proxy_url)
+        scheme = parsed.scheme or "http"
+        host = parsed.hostname
+        if not host:
+            return None
+        port = parsed.port
+        server = f"{scheme}://{host}"
+        if port:
+            server += f":{port}"
+        p_dict = {"server": server}
+        if parsed.username:
+            p_dict["username"] = urllib.parse.unquote(parsed.username)
+        if parsed.password:
+            p_dict["password"] = urllib.parse.unquote(parsed.password)
+        return p_dict
+    except Exception:
+        return {"server": proxy_url}
+
+
 class BasePublisher(ABC):
     """Abstract base for all OSAP platform publishers.
 
@@ -187,11 +212,14 @@ class BasePublisher(ABC):
         # Inject proxy if configured and verified reachable
         proxy_url = getattr(cfg, 'PROXY_URL', None) or os.environ.get('PROXY_URL')
         use_proxy = False
+        pw_proxy = None
         if proxy_url:
             if is_proxy_reachable(proxy_url, timeout=2.0):
-                use_proxy = True
-                self._log.info('[%s] Routing browser traffic through verified proxy: %s', self.PLATFORM_NAME, proxy_url)
-                launch_opts['proxy'] = {'server': proxy_url}
+                pw_proxy = format_playwright_proxy(proxy_url)
+                if pw_proxy:
+                    use_proxy = True
+                    self._log.info('[%s] Routing browser traffic through verified proxy: %s', self.PLATFORM_NAME, pw_proxy.get('server'))
+                    launch_opts['proxy'] = pw_proxy
             else:
                 self._log.warning(
                     '[%s] Configured PROXY_URL (%s) is UNREACHABLE (Connection Refused/Timeout). '
@@ -220,8 +248,8 @@ class BasePublisher(ABC):
                         'headless': getattr(cfg, 'HEADLESS', False),
                         'humanize': True,
                     }
-                    if use_proxy and proxy_url:
-                        cf_kwargs['proxy'] = {'server': proxy_url}
+                    if use_proxy and pw_proxy:
+                        cf_kwargs['proxy'] = pw_proxy
                     self._log.info('[%s] Launching anti-detect Camoufox persistent context: %s', profile_key, profile_dir)
                     cf = AsyncCamoufox(
                         persistent_context=True,
@@ -273,8 +301,8 @@ class BasePublisher(ABC):
                     'headless': getattr(cfg, 'HEADLESS', False),
                     'humanize': True,
                 }
-                if use_proxy and proxy_url:
-                    cf_kwargs['proxy'] = {'server': proxy_url}
+                if use_proxy and pw_proxy:
+                    cf_kwargs['proxy'] = pw_proxy
                 self._log.info('[%s] Launching anti-detect Camoufox browser...', profile_key)
                 cf = AsyncCamoufox(**cf_kwargs)
                 browser = await cf.start()
