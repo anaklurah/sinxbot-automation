@@ -426,7 +426,7 @@ async function loadConfigData() {
             : (yaml.watermark?.enabled ?? true);
         document.getElementById('cfg-watermark-enabled').value = isWmEnabled ? 'true' : 'false';
         document.getElementById('cfg-watermark-text').value = env.WATERMARK_TEXT || yaml.watermark?.text || 'SINXBOT';
-        document.getElementById('cfg-watermark-size').value = env.WATERMARK_FONT_SIZE || yaml.watermark?.font_size || 32;
+        document.getElementById('cfg-watermark-size').value = env.WATERMARK_FONT_SIZE || yaml.watermark?.font_size || 20;
 
         const deepseekInput = document.getElementById('cfg-deepseek-key');
         if (deepseekInput) {
@@ -483,7 +483,7 @@ async function saveConfiguration() {
         ffmpeg_saturation: parseFloat(document.getElementById('cfg-ffmpeg-saturation').value),
         watermark_enabled: document.getElementById('cfg-watermark-enabled').value === 'true',
         watermark_text: document.getElementById('cfg-watermark-text').value,
-        watermark_font_size: parseInt(document.getElementById('cfg-watermark-size').value) || 32,
+        watermark_font_size: parseInt(document.getElementById('cfg-watermark-size').value) || 20,
         deepseek_api_key: document.getElementById('cfg-deepseek-key')?.value?.trim() || null,
         deepseek_model: document.getElementById('cfg-deepseek-model')?.value || null,
         telegram_enabled: document.getElementById('cfg-telegram-enabled') ? document.getElementById('cfg-telegram-enabled').value === 'true' : true,

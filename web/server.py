@@ -439,7 +439,7 @@ async def read_configuration():
             "HEADLESS": cfg.HEADLESS,
             "WATERMARK_ENABLED": getattr(cfg, "WATERMARK_ENABLED", True),
             "WATERMARK_TEXT": getattr(cfg, "WATERMARK_TEXT", "SINXBOT"),
-            "WATERMARK_FONT_SIZE": getattr(cfg, "WATERMARK_FONT_SIZE", 32),
+            "WATERMARK_FONT_SIZE": getattr(cfg, "WATERMARK_FONT_SIZE", 20),
             "enabled_platforms": {p: getattr(cfg, f"PLATFORM_{p.upper()}", True) for p in PLATFORMS},
             "TELEGRAM_ENABLED": getattr(cfg, "TELEGRAM_ENABLED", True),
             "TELEGRAM_BOT_TOKEN_MASKED": tg_token_masked,

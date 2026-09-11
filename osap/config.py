@@ -165,7 +165,7 @@ class Config:
     WATERMARK_FONT: str = "font/KOMIKAX_.ttf"
 
     #: Watermark font size in points.
-    WATERMARK_FONT_SIZE: int = 32
+    WATERMARK_FONT_SIZE: int = 20
 
     #: Watermark font color.
     WATERMARK_COLOR: str = "white"
@@ -498,7 +498,7 @@ def get_config(*, reload: bool = False) -> Config:
         WATERMARK_FONT_SIZE=int(
             os.environ.get(
                 "WATERMARK_FONT_SIZE",
-                _nested_get(yaml_data, "watermark", "font_size", default=32),
+                _nested_get(yaml_data, "watermark", "font_size", default=20),
             )
         ),
         WATERMARK_COLOR=os.environ.get(

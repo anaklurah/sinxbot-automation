@@ -230,7 +230,7 @@ class VideoProcessor:
 
                 drawtext_kwargs: dict = {
                     "text": str(active_wm_text),
-                    "fontsize": int(getattr(cfg, "WATERMARK_FONT_SIZE", 32)),
+                    "fontsize": int(getattr(cfg, "WATERMARK_FONT_SIZE", 20)),
                     "fontcolor": f"{getattr(cfg, 'WATERMARK_COLOR', 'white')}@{opacity}",
                     "shadowcolor": f"black@{shadow_opacity}",
                     "shadowx": 2,
