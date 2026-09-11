@@ -19,3 +19,7 @@ services:
       - ./assets:/app/assets
       - ./config.yaml:/app/config.yaml
       - ./.env:/app/.env
+      # Live code sync (so git pull takes effect on restart without rebuild)
+      - ./web:/app/web
+      - ./osap:/app/osap
+      - ./manage.py:/app/manage.py
