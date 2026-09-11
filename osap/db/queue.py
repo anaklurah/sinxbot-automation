@@ -448,17 +448,26 @@ def log_error(
         stack = ""
 
     with _session(db_path) as conn:
-        conn.execute(
-            """INSERT INTO error_log
-                   (video_id, platform, module, error_msg, stack_trace)
-               VALUES (?, ?, ?, ?, ?)""",
-            (video_id, platform, module, error_msg, stack or None),
-        )
-        # Also increment the error_count on the parent video row (if any)
-        if video_id is not None:
+        try:
             conn.execute(
-                "UPDATE videos SET error_count = error_count + 1 WHERE id = ?",
-                (video_id,),
+                """INSERT INTO error_log
+                       (video_id, platform, module, error_msg, stack_trace)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (video_id, platform, module, error_msg, stack or None),
+            )
+            # Also increment the error_count on the parent video row (if any)
+            if video_id is not None:
+                conn.execute(
+                    "UPDATE videos SET error_count = error_count + 1 WHERE id = ?",
+                    (video_id,),
+                )
+        except sqlite3.IntegrityError:
+            # Fallback if video_id does not exist in videos table to avoid crashing callers
+            conn.execute(
+                """INSERT INTO error_log
+                       (video_id, platform, module, error_msg, stack_trace)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (None, platform, module, f"[video_id={video_id}] {error_msg}", stack or None),
             )
 
 

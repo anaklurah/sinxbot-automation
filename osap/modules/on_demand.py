@@ -358,15 +358,22 @@ async def run_jit_video_pipeline(
         if video.get("rendered_path"):
             all_cleanup_paths.append(video.get("rendered_path"))
 
+        await asyncio.sleep(0.5)
         for file_path_str in all_cleanup_paths:
             if file_path_str:
                 fp = Path(file_path_str)
                 if fp.exists():
-                    try:
-                        fp.unlink()
-                        cleaned_files.append(fp.name)
-                    except Exception as clean_err:
-                        logger.warning(f"[JIT Cleanup] Could not delete {fp}: {clean_err}")
+                    deleted = False
+                    for _ in range(3):
+                        try:
+                            fp.unlink()
+                            cleaned_files.append(fp.name)
+                            deleted = True
+                            break
+                        except Exception:
+                            await asyncio.sleep(0.5)
+                    if not deleted and fp.exists():
+                        logger.warning(f"[JIT Cleanup] Could not delete {fp} (file locked by OS)")
 
         # Clear path pointers from DB
         update_video(vid_id, {"raw_path": None, "rendered_path": None, "meta_path": None}, db_path=db_path)

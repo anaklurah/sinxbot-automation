@@ -258,22 +258,36 @@ class VideoProcessor:
 
 
             # ── Audio chain ─────────────────────────────────────────── #
-            audio_stream = input_node.audio
+            # Probe input to verify if audio stream exists
+            has_audio = False
+            try:
+                probe = ffmpeg.probe(str(raw_path))
+                has_audio = any(s.get("codec_type") == "audio" for s in probe.get("streams", []))
+            except Exception as probe_err:
+                logger.warning("Failed to probe audio streams for %s (%s), assuming audio exists", raw_path.name, probe_err)
+                has_audio = True
 
-            # 1. Normalise sample rate.
-            audio_stream = ffmpeg.filter(audio_stream, "aresample", 44100)
-
-            # 2. Match video speed (atempo is safe between 0.5–2.0).
-            audio_stream = ffmpeg.filter(audio_stream, "atempo", speed)
-
-            # ── Encoder settings ─────────────────────────────────────── #
-            # Enforce 2500k-3500k bitrate ceiling to guarantee crisp 720p/1080p under 50MB (typically 15-30MB)
-            encoder = self._encoder
             output_kwargs: dict = {
                 "acodec": "aac",
                 "audio_bitrate": "128k",
                 "movflags": "+faststart",
             }
+
+            if has_audio:
+                audio_stream = input_node.audio
+                # 1. Normalise sample rate.
+                audio_stream = ffmpeg.filter(audio_stream, "aresample", 44100)
+                # 2. Match video speed (atempo is safe between 0.5–2.0).
+                audio_stream = ffmpeg.filter(audio_stream, "atempo", speed)
+            else:
+                logger.info("Video %s has no audio stream. Generating synchronized silent audio track.", raw_path.name)
+                silent_node = ffmpeg.input("anullsrc=channel_layout=stereo:sample_rate=44100", f="lavfi")
+                audio_stream = silent_node.audio
+                output_kwargs["shortest"] = None
+
+            # ── Encoder settings ─────────────────────────────────────── #
+            # Enforce 2500k-3500k bitrate ceiling to guarantee crisp 720p/1080p under 50MB (typically 15-30MB)
+            encoder = self._encoder
 
             if encoder == "h264_nvenc":
                 output_kwargs.update(

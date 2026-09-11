@@ -297,57 +297,66 @@ async def list_videos(
     cfg = get_config()
     offset = (page - 1) * limit
 
-    with db_session(cfg.DB_PATH) as conn:
-        cursor = conn.cursor()
-        where_conditions = []
-        params: List[Any] = []
+    def _fetch():
+        with db_session(cfg.DB_PATH) as conn:
+            cursor = conn.cursor()
+            where_conditions = []
+            params: List[Any] = []
 
-        if status:
-            where_conditions.append("v.status = ?")
-            params.append(status)
+            if status:
+                where_conditions.append("v.status = ?")
+                params.append(status)
 
-        if account_id:
-            where_conditions.append("v.account_id = ?")
-            params.append(account_id)
+            if account_id:
+                where_conditions.append("v.account_id = ?")
+                params.append(account_id)
 
-        where_clause = f"WHERE {' AND '.join(where_conditions)}" if where_conditions else ""
+            where_clause = f"WHERE {' AND '.join(where_conditions)}" if where_conditions else ""
 
-        # Count total
-        count_sql = f"SELECT COUNT(*) FROM videos v {where_clause}"
-        cursor.execute(count_sql, params)
-        total_count = cursor.fetchone()[0]
+            # Count total
+            count_sql = f"SELECT COUNT(*) FROM videos v {where_clause}"
+            cursor.execute(count_sql, params)
+            total_count = cursor.fetchone()[0]
 
-        # Fetch videos
-        query_sql = f"""
-            SELECT id, url, video_id, title, status, raw_path, rendered_path, ai_title, created_at, updated_at, error_count, account_id
-            FROM videos v
-            {where_clause}
-            ORDER BY id DESC
-            LIMIT ? OFFSET ?
-        """
-        cursor.execute(query_sql, params + [limit, offset])
-        rows = cursor.fetchall()
+            # Fetch videos
+            query_sql = f"""
+                SELECT id, url, video_id, title, status, raw_path, rendered_path, ai_title, created_at, updated_at, error_count, account_id
+                FROM videos v
+                {where_clause}
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+            """
+            cursor.execute(query_sql, params + [limit, offset])
+            rows = cursor.fetchall()
+            videos = [dict(r) for r in rows]
 
-        videos = []
-        for r in rows:
-            v_dict = dict(r)
+            if videos:
+                # Batch fetch all platform uploads in ONE single query instead of N+1
+                v_ids = [v["id"] for v in videos]
+                placeholders = ",".join("?" for _ in v_ids)
+                cursor.execute(
+                    f"SELECT video_id, platform, status, upload_url, error_msg, attempts FROM platform_uploads WHERE video_id IN ({placeholders})",
+                    v_ids
+                )
+                pu_rows = cursor.fetchall()
+                pu_by_vid: Dict[int, Dict[str, Any]] = {vid: {} for vid in v_ids}
+                for pu in pu_rows:
+                    pu_dict = dict(pu)
+                    p_vid = pu_dict.pop("video_id")
+                    pu_by_vid[p_vid][pu_dict["platform"]] = pu_dict
 
-            # Fetch platform upload statuses
-            cursor.execute(
-                "SELECT platform, status, upload_url, error_msg, attempts FROM platform_uploads WHERE video_id = ?",
-                (v_dict["id"],)
-            )
-            platform_rows = cursor.fetchall()
-            v_dict["platforms"] = {p["platform"]: dict(p) for p in platform_rows}
-            videos.append(v_dict)
+                for v in videos:
+                    v["platforms"] = pu_by_vid.get(v["id"], {})
 
-    return {
-        "total": total_count,
-        "page": page,
-        "limit": limit,
-        "pages": (total_count + limit - 1) // limit if total_count > 0 else 1,
-        "videos": videos
-    }
+            return {
+                "total": total_count,
+                "page": page,
+                "limit": limit,
+                "pages": (total_count + limit - 1) // limit if total_count > 0 else 1,
+                "videos": videos
+            }
+
+    return await asyncio.to_thread(_fetch)
 
 
 @app.post("/api/ingest")
@@ -832,6 +841,9 @@ def _run_setup_auth_target(target_key: str):
     cmd_setup_auth(SetupArgs(target_key))
 
 
+_active_setup_auth_procs: dict[str, multiprocessing.Process] = {}
+
+
 @app.post("/api/setup-auth/{target_key}")
 async def setup_platform_auth(target_key: str):
     """Run non-headless interactive login browser for a specific target card."""
@@ -840,12 +852,22 @@ async def setup_platform_auth(target_key: str):
     target = get_platform_target(target_key, cfg.DB_PATH)
     target_name = target["name"] if target else target_key
 
+    # Check if a setup-auth process is already running for this target
+    existing_p = _active_setup_auth_procs.get(target_key)
+    if existing_p and existing_p.is_alive():
+        return {
+            "success": True,
+            "message": f"Jendela browser login untuk '{target_name}' sudah terbuka di layar Anda. Silakan selesaikan login pada jendela tersebut."
+        }
+
     p = multiprocessing.Process(
         target=_run_setup_auth_target,
         args=(target_key,),
-        name=f"setup_auth_{target_key}"
+        name=f"setup_auth_{target_key}",
+        daemon=True,
     )
     p.start()
+    _active_setup_auth_procs[target_key] = p
 
     return {
         "success": True,
@@ -991,7 +1013,8 @@ async def trigger_publish_all():
     p = multiprocessing.Process(
         target=_run_publish_all_target,
         args=(cfg.DB_PATH,),
-        name="publish_all_targets"
+        name="publish_all_targets",
+        daemon=True,
     )
     p.start()
 

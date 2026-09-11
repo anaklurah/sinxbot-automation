@@ -313,6 +313,24 @@ class BasePublisher(ABC):
                 )
 
 
+        # Wrap context.close to ensure parent browser is also cleanly terminated (prevents Camoufox/Firefox zombies)
+        if browser is not None:
+            orig_close = context.close
+            browser_ref = browser
+
+            async def _safe_close() -> None:
+                try:
+                    await orig_close()
+                except Exception:
+                    pass
+                if browser_ref and browser_ref.is_connected():
+                    try:
+                        await browser_ref.close()
+                    except Exception:
+                        pass
+
+            context.close = _safe_close  # type: ignore[assignment]
+
         await apply_stealth(context)
         return context
 

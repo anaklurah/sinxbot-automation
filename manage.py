@@ -222,7 +222,7 @@ def cmd_setup_auth(args):
     from osap.config import get_config
 
     cfg = get_config()
-    target_key = getattr(args, "target_key", None) or platform
+    target_key = getattr(args, "target_key", None) or getattr(args, "platform", None)
     base_platform = getattr(args, "base_platform", None)
     if not base_platform:
         try:

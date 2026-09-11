@@ -94,21 +94,23 @@ async def run_scheduler(db_path: Optional[str] = None, slots: Optional[List[str]
             # Time reached!
             logger.info(f"[Scheduler] ⏰ Prime-time slot {slot_str} reached! Initiating automated post...")
             
-            enabled_platforms = cfg.enabled_platforms
-            if not enabled_platforms:
-                logger.warning("[Scheduler] No platforms enabled. Skipping this prime-time slot.")
+            from osap.db.queue import get_active_account, list_platform_targets
+            active_acc = get_active_account(db_path)
+            active_targets = [t for t in list_platform_targets(db_path) if t.get("enabled", 1) == 1]
+            if not active_targets:
+                logger.warning("[Scheduler] No active platform targets in database. Skipping this prime-time slot.")
             else:
-                from osap.db.queue import get_active_account
-                active_acc = get_active_account(db_path)
+                target_names = [t.get("name") or t.get("target_key") for t in active_targets]
                 logger.info(
-                    f"[Scheduler] 🚀 Running scheduled JIT 1-video post across {len(enabled_platforms)} platforms "
-                    f"({', '.join(enabled_platforms)}) for Account #{active_acc['id']} ({active_acc['name']})..."
+                    f"[Scheduler] 🚀 Running scheduled JIT 1-video post across {len(active_targets)} active target(s) "
+                    f"({', '.join(target_names)}) for Account #{active_acc['id']} ({active_acc['name']})..."
                 )
                 res = await run_jit_video_pipeline(
-                    target_platforms=enabled_platforms,
+                    target_platforms=None,  # Dynamically pull all enabled targets from DB
                     account_id=active_acc["id"],
                     db_path=db_path,
                     auto_cleanup=True,
+                    send_telegram=True,
                 )
                 if res.get("success"):
                     logger.info(f"[Scheduler] ✓ Successfully executed scheduled post for slot {slot_str}: {res.get('message')}")
