@@ -53,6 +53,7 @@ function switchTab(tabId, el) {
     if (tabId === 'dashboard') loadDashboardData();
     if (tabId === 'platforms') loadPlatformsData();
     if (tabId === 'config') loadConfigData();
+    if (tabId === 'ytdlp') loadYtdlpData();
 
     setTimeout(initLucide, 50);
 }
@@ -964,4 +965,208 @@ function escapeHtml(str) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+
+/**
+ * ─────────────────────────────────────────────
+ * yt-dlp & YouTube Cookies Management
+ * ─────────────────────────────────────────────
+ */
+
+async function loadYtdlpData() {
+    try {
+        const res = await fetch('/api/ytdlp/status');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // Update version
+        const verEl = document.getElementById('ytdlp-version-display');
+        if (verEl) verEl.innerText = `v${data.version || 'unknown'}`;
+
+        // Update proxy
+        const proxyEl = document.getElementById('ytdlp-proxy-display');
+        if (proxyEl) {
+            if (data.proxy && data.proxy.configured) {
+                proxyEl.innerText = data.proxy.url || 'Configured';
+                proxyEl.style.color = '#38bdf8';
+            } else {
+                proxyEl.innerText = 'Direct (No Proxy)';
+                proxyEl.style.color = 'var(--text-secondary)';
+            }
+        }
+
+        // Update cookies
+        const cStatusEl = document.getElementById('ytdlp-cookie-status-display');
+        const cBubbleEl = document.getElementById('ytdlp-cookie-bubble');
+        const cFileEl = document.getElementById('ytdlp-cookie-file-name');
+        const cSizeEl = document.getElementById('ytdlp-cookie-size');
+        const cCountEl = document.getElementById('ytdlp-cookie-count');
+        const cUpdatedEl = document.getElementById('ytdlp-cookie-updated');
+
+        if (data.cookies && data.cookies.exists) {
+            if (cStatusEl) {
+                cStatusEl.innerText = `Aktif (${data.cookies.cookie_count} cookies)`;
+                cStatusEl.style.color = '#10b981';
+            }
+            if (cBubbleEl) {
+                cBubbleEl.className = 'stat-icon-bubble stat-bubble-done';
+            }
+            if (cFileEl) cFileEl.innerText = data.cookies.filename;
+            if (cSizeEl) cSizeEl.innerText = `${(data.cookies.size_bytes / 1024).toFixed(1)} KB`;
+            if (cCountEl) cCountEl.innerText = data.cookies.cookie_count;
+            if (cUpdatedEl) cUpdatedEl.innerText = data.cookies.updated_at || '-';
+        } else {
+            if (cStatusEl) {
+                cStatusEl.innerText = 'Belum Ada Cookies';
+                cStatusEl.style.color = '#f43f5e';
+            }
+            if (cBubbleEl) {
+                cBubbleEl.className = 'stat-icon-bubble stat-bubble-failed';
+            }
+            if (cFileEl) cFileEl.innerText = 'Belum ada file';
+            if (cSizeEl) cSizeEl.innerText = '0 KB';
+            if (cCountEl) cCountEl.innerText = '0';
+            if (cUpdatedEl) cUpdatedEl.innerText = '-';
+        }
+    } catch (err) {
+        console.error('Error loading yt-dlp status:', err);
+    }
+}
+
+async function updateYtdlp(btn) {
+    if (btn) btn.disabled = true;
+    const consoleBox = document.getElementById('ytdlp-update-console');
+    if (consoleBox) {
+        consoleBox.style.display = 'block';
+        consoleBox.innerText = 'Menjalankan pip install -U yt-dlp... Mohon tunggu...';
+    }
+    showToast('Sedang memperbarui yt-dlp...', 'info', 5000);
+
+    try {
+        const res = await fetch('/api/ytdlp/update', { method: 'POST' });
+        const data = await res.json();
+        if (consoleBox) {
+            consoleBox.innerText = data.output || data.message || 'Selesai.';
+        }
+        if (data.success) {
+            showToast(data.message, 'success', 5000);
+            loadYtdlpData();
+        } else {
+            showToast(data.message || 'Gagal update yt-dlp', 'error', 5000);
+        }
+    } catch (err) {
+        if (consoleBox) consoleBox.innerText = `Error: ${err.message}`;
+        showToast(`Error: ${err.message}`, 'error', 5000);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function uploadYtdlpCookieFile(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+
+    showToast(`Mengunggah cookies: ${file.name}...`, 'info', 3000);
+    try {
+        const res = await fetch('/api/ytdlp/cookies/upload', {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message, 'success', 4000);
+            loadYtdlpData();
+            input.value = '';
+        } else {
+            showToast(data.detail || 'Gagal upload cookies', 'error', 4000);
+        }
+    } catch (err) {
+        showToast(`Error upload cookies: ${err.message}`, 'error', 4000);
+    }
+}
+
+async function saveYtdlpCookieText() {
+    const textEl = document.getElementById('ytdlp-cookie-text');
+    if (!textEl || !textEl.value.trim()) {
+        showToast('Tempel teks cookies Netscape terlebih dahulu!', 'warning', 3000);
+        return;
+    }
+    const content = textEl.value.trim();
+    showToast('Menyimpan cookies teks...', 'info', 3000);
+
+    try {
+        const res = await fetch('/api/ytdlp/cookies/save-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content }),
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message, 'success', 4000);
+            textEl.value = '';
+            loadYtdlpData();
+        } else {
+            showToast(data.detail || 'Gagal menyimpan cookies teks', 'error', 4000);
+        }
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error', 4000);
+    }
+}
+
+async function deleteYtdlpCookies() {
+    if (!confirm('Yakin ingin menghapus file cookies YouTube?')) return;
+    try {
+        const res = await fetch('/api/ytdlp/cookies', { method: 'DELETE' });
+        const data = await res.json();
+        showToast(data.message || 'Cookies berhasil dihapus', 'info', 3000);
+        loadYtdlpData();
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error', 4000);
+    }
+}
+
+async function testYtdlpUrl(btn) {
+    const urlInput = document.getElementById('ytdlp-test-url');
+    if (!urlInput || !urlInput.value.trim()) {
+        showToast('Masukkan URL YouTube/Shorts yang ingin dites!', 'warning', 3000);
+        return;
+    }
+    const url = urlInput.value.trim();
+    const resultBox = document.getElementById('ytdlp-test-result');
+    if (resultBox) {
+        resultBox.style.display = 'block';
+        resultBox.innerText = 'Menguji strategi ekstraksi yt-dlp... Mohon tunggu...';
+    }
+    if (btn) btn.disabled = true;
+    showToast('Menguji URL YouTube...', 'info', 3000);
+
+    try {
+        const res = await fetch('/api/ytdlp/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url }),
+        });
+        const data = await res.json();
+        if (resultBox) {
+            let output = `HASIL TES:\nStatus: ${data.success ? 'BERHASIL' : 'SEMUA STRATEGI GAGAL'}\n\n`;
+            if (data.video) {
+                output += `Judul: ${data.video.title}\nChannel: ${data.video.uploader}\nDurasi: ${data.video.duration} detik\nID: ${data.video.id}\n\n`;
+            }
+            output += `LOG STRATEGI:\n` + (data.logs || []).join('\n');
+            resultBox.innerText = output;
+        }
+        if (data.success) {
+            showToast(data.message, 'success', 5000);
+        } else {
+            showToast(data.message, 'error', 5000);
+        }
+    } catch (err) {
+        if (resultBox) resultBox.innerText = `Error: ${err.message}`;
+        showToast(`Error: ${err.message}`, 'error', 5000);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }

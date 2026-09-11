@@ -79,6 +79,10 @@
             <i data-lucide="share-2"></i>
             <span>Platforms</span>
         </button>
+        <button class="clay-tab-btn" data-tab="ytdlp" onclick="switchTab('ytdlp', this)">
+            <i data-lucide="download-cloud"></i>
+            <span>yt-dlp & Cookies</span>
+        </button>
         <button class="clay-tab-btn" data-tab="logs" onclick="switchTab('logs', this)">
             <i data-lucide="terminal"></i>
             <span>Live Logs</span>
@@ -554,6 +558,148 @@
                         <span class="term-level">INFO</span>
                         <span class="term-msg">Connected to OSAP Claymorphism log stream...</span>
                     </div>
+                </div>
+            </div>
+        <!-- ─────────────────────────────────────────────
+             TAB: YT-DLP & COOKIES
+        ───────────────────────────────────────────── -->
+        <section id="tab-ytdlp" class="tab-content">
+            <div class="clay-stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-bottom: 1.8rem;">
+                <!-- Card 1: Status yt-dlp -->
+                <div class="stat-clay-card">
+                    <div class="stat-icon-bubble stat-bubble-done">
+                        <i data-lucide="download"></i>
+                    </div>
+                    <div class="stat-details">
+                        <span class="stat-label">yt-dlp Core Engine</span>
+                        <span class="stat-value" id="ytdlp-version-display" style="font-size: 1.4rem;">Memuat...</span>
+                    </div>
+                </div>
+
+                <!-- Card 2: Status Cookies -->
+                <div class="stat-clay-card">
+                    <div class="stat-icon-bubble stat-bubble-pending" id="ytdlp-cookie-bubble">
+                        <i data-lucide="cookie"></i>
+                    </div>
+                    <div class="stat-details">
+                        <span class="stat-label">YouTube Cookies</span>
+                        <span class="stat-value" id="ytdlp-cookie-status-display" style="font-size: 1.4rem;">Cek...</span>
+                    </div>
+                </div>
+
+                <!-- Card 3: Status Proxy -->
+                <div class="stat-clay-card">
+                    <div class="stat-icon-bubble stat-bubble-total">
+                        <i data-lucide="shield-check"></i>
+                    </div>
+                    <div class="stat-details">
+                        <span class="stat-label">Proxy Downloader</span>
+                        <span class="stat-value" id="ytdlp-proxy-display" style="font-size: 1.1rem;">Direct / None</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Two-column layout for Management -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 1.8rem;">
+                <!-- Column 1: yt-dlp Engine & Update -->
+                <div class="clay-card">
+                    <div class="clay-card-header">
+                        <h3 class="clay-card-title">
+                            <i data-lucide="refresh-cw"></i>
+                            <span>Update & Core yt-dlp</span>
+                        </h3>
+                    </div>
+                    <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1.2rem;">
+                        YouTube rutin memperbarui algoritma bot detection mereka. Pastikan yt-dlp selalu memakai rilis terbaru untuk meminimalisir error <em>Sign in to confirm you're not a bot</em>.
+                    </p>
+                    <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 1.2rem;">
+                        <button class="btn-clay btn-clay-primary" id="btn-update-ytdlp" onclick="updateYtdlp(this)">
+                            <i data-lucide="arrow-up-circle"></i>
+                            <span>Update yt-dlp Sekarang</span>
+                        </button>
+                        <button class="btn-clay btn-clay-secondary" onclick="loadYtdlpData()" title="Refresh status">
+                            <i data-lucide="rotate-cw"></i>
+                            <span>Cek Status</span>
+                        </button>
+                    </div>
+                    <!-- Update Console Output -->
+                    <div id="ytdlp-update-console" style="display: none; background: #0f172a; border-radius: 12px; padding: 12px; font-family: monospace; font-size: 0.8rem; color: #38bdf8; max-height: 200px; overflow-y: auto; white-space: pre-wrap;"></div>
+                </div>
+
+                <!-- Column 2: Test URL Downloader -->
+                <div class="clay-card">
+                    <div class="clay-card-header">
+                        <h3 class="clay-card-title">
+                            <i data-lucide="play-circle"></i>
+                            <span>Tes Ekstraksi Video YouTube</span>
+                        </h3>
+                    </div>
+                    <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1.2rem;">
+                        Tes apakah cookies dan strategi bypass yt-dlp saat ini sudah berhasil menembus proteksi YouTube untuk URL video / Shorts tertentu.
+                    </p>
+                    <div style="display: flex; gap: 8px; margin-bottom: 1rem;">
+                        <input type="text" id="ytdlp-test-url" class="clay-input" placeholder="https://www.youtube.com/shorts/dam6S8IRtkU" style="flex: 1;">
+                        <button class="btn-clay btn-clay-primary" id="btn-test-ytdlp" onclick="testYtdlpUrl(this)">
+                            <i data-lucide="zap"></i>
+                            <span>Tes Ekstraksi</span>
+                        </button>
+                    </div>
+                    <div id="ytdlp-test-result" style="display: none; background: #0f172a; border-radius: 12px; padding: 12px; font-family: monospace; font-size: 0.82rem; color: #f8fafc; max-height: 220px; overflow-y: auto; white-space: pre-wrap;"></div>
+                </div>
+            </div>
+
+            <!-- YouTube Cookies Management Full Card -->
+            <div class="clay-card" style="margin-top: 1.8rem;">
+                <div class="clay-card-header">
+                    <h3 class="clay-card-title">
+                        <i data-lucide="cookie"></i>
+                        <span>Manajemen Cookies YouTube (Bypass Bot Guard)</span>
+                    </h3>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn-clay btn-clay-danger btn-clay-sm" onclick="deleteYtdlpCookies()" title="Hapus cookies yang ada">
+                            <i data-lucide="trash-2"></i>
+                            <span>Hapus Cookies</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Cookie Info Details Box -->
+                <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 14px; padding: 16px; margin-bottom: 1.5rem; display: flex; flex-wrap: wrap; gap: 20px; align-items: center; justify-content: space-between;">
+                    <div>
+                        <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-primary); margin-bottom: 4px;">
+                            Status File: <span id="ytdlp-cookie-file-name" style="color: #6366f1;">youtube_cookies.txt</span>
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                            Ukuran: <strong id="ytdlp-cookie-size">0 KB</strong> |
+                            Total Cookies: <strong id="ytdlp-cookie-count" style="color: #10b981;">0</strong> |
+                            Terakhir Diupdate: <strong id="ytdlp-cookie-updated">-</strong>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="file" id="ytdlp-cookie-file-input" style="display: none;" accept=".txt,.json" onchange="uploadYtdlpCookieFile(this)">
+                        <button class="btn-clay btn-clay-primary" onclick="document.getElementById('ytdlp-cookie-file-input').click()">
+                            <i data-lucide="upload-cloud"></i>
+                            <span>Upload File .txt / .json</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Textarea for Direct Paste -->
+                <div class="clay-form-group">
+                    <label style="font-weight: 600; font-size: 0.88rem; margin-bottom: 6px; display: flex; justify-content: space-between;">
+                        <span>Atau Paste / Tempel Teks Cookies Netscape Langsung:</span>
+                        <span style="font-size: 0.8rem; color: var(--text-secondary);">Format: # Netscape HTTP Cookie File (.txt)</span>
+                    </label>
+                    <textarea id="ytdlp-cookie-text" class="clay-textarea" rows="6" placeholder="# Netscape HTTP Cookie File&#10;.youtube.com&#9;TRUE&#9;/&#9;TRUE&#9;1780000000&#9;VISITOR_INFO1_LIVE&#9;...&#10;.youtube.com&#9;TRUE&#9;/&#9;TRUE&#9;1780000000&#9;LOGIN_INFO&#9;..." style="font-family: monospace; font-size: 0.82rem; width: 100%;"></textarea>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; flex-wrap: wrap; gap: 10px;">
+                    <div style="font-size: 0.82rem; color: var(--text-secondary);">
+                        💡 <em>Tip: Gunakan ekstensi browser <strong>Get cookies.txt LOCALLY</strong> di Chrome/Firefox saat membuka youtube.com, lalu klik Copy atau Export.</em>
+                    </div>
+                    <button class="btn-clay btn-clay-primary" onclick="saveYtdlpCookieText()">
+                        <i data-lucide="save"></i>
+                        <span>Simpan Cookies Teks</span>
+                    </button>
                 </div>
             </div>
         </section>

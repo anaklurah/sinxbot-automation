@@ -251,6 +251,14 @@ class TelegramTestRequest(BaseModel):
     chat_id: Optional[str] = None
 
 
+class YtdlpCookieTextRequest(BaseModel):
+    content: str
+
+
+class YtdlpTestRequest(BaseModel):
+    url: str
+
+
 # ─────────────────────────────────────────────
 # API Endpoints
 # ─────────────────────────────────────────────
@@ -1237,6 +1245,305 @@ async def stream_logs(request: Request):
         "Content-Type": "text/event-stream"
     }
     return StreamingResponse(log_generator(), media_type="text/event-stream", headers=headers)
+
+
+# ─────────────────────────────────────────────
+# yt-dlp & YouTube Cookies Management API
+# ─────────────────────────────────────────────
+
+def _get_ytdlp_version() -> str:
+    """Detect the currently installed yt-dlp version."""
+    try:
+        import yt_dlp.version
+        return str(getattr(yt_dlp.version, "__version__", "unknown"))
+    except Exception:
+        try:
+            import subprocess
+            res = subprocess.run([sys.executable, "-m", "yt_dlp", "--version"], capture_output=True, text=True, timeout=5)
+            return res.stdout.strip() or "unknown"
+        except Exception:
+            return "unknown"
+
+
+@app.get("/api/ytdlp/status")
+async def get_ytdlp_status():
+    """Return yt-dlp version, proxy config, and YouTube cookies status."""
+    cfg = get_config()
+    profiles_dir = Path(cfg.PROFILES_DIR)
+    cookie_file = profiles_dir / "youtube_cookies.txt"
+    storage_file = profiles_dir / "youtube_storage.json"
+
+    cookie_info = {
+        "exists": False,
+        "filename": "youtube_cookies.txt",
+        "size_bytes": 0,
+        "cookie_count": 0,
+        "updated_at": None,
+        "preview": "",
+    }
+
+    if cookie_file.exists() and cookie_file.stat().st_size > 0:
+        stat = cookie_file.stat()
+        cookie_info["exists"] = True
+        cookie_info["size_bytes"] = stat.st_size
+        cookie_info["updated_at"] = datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            from osap.modules.publisher.cookie_loader import load_cookies
+            parsed = load_cookies(cookie_file)
+            cookie_info["cookie_count"] = len(parsed)
+            with open(cookie_file, "r", encoding="utf-8", errors="replace") as f:
+                lines = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+                cookie_info["preview"] = "\n".join(lines[:6])
+        except Exception as e:
+            logger.debug(f"Error reading cookie file info: {e}")
+    elif storage_file.exists() and storage_file.stat().st_size > 0:
+        stat = storage_file.stat()
+        cookie_info["exists"] = True
+        cookie_info["filename"] = "youtube_storage.json"
+        cookie_info["size_bytes"] = stat.st_size
+        cookie_info["updated_at"] = datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            from osap.modules.publisher.cookie_loader import load_cookies
+            parsed = load_cookies(storage_file)
+            cookie_info["cookie_count"] = len(parsed)
+        except Exception:
+            pass
+
+    # Proxy check & mask password
+    proxy_raw = getattr(cfg, "PROXY_URL", None) or os.environ.get("PROXY_URL") or ""
+    masked_proxy = ""
+    if proxy_raw:
+        masked_proxy = re.sub(r":([^:@]+)@", r":****@", proxy_raw)
+
+    return {
+        "version": _get_ytdlp_version(),
+        "proxy": {
+            "configured": bool(proxy_raw),
+            "url": masked_proxy,
+        },
+        "cookies": cookie_info,
+    }
+
+
+@app.post("/api/ytdlp/update")
+async def update_ytdlp_package():
+    """Update yt-dlp to the latest release via pip in the background."""
+    old_version = _get_ytdlp_version()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "pip", "install", "-U", "yt-dlp",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+        )
+        stdout, _ = await proc.communicate()
+        output = stdout.decode("utf-8", errors="replace") if stdout else ""
+
+        if "yt_dlp" in sys.modules:
+            import importlib
+            try:
+                importlib.reload(sys.modules["yt_dlp"])
+                if "yt_dlp.version" in sys.modules:
+                    importlib.reload(sys.modules["yt_dlp.version"])
+            except Exception:
+                pass
+
+        new_version = _get_ytdlp_version()
+        success = (proc.returncode == 0)
+        return {
+            "success": success,
+            "old_version": old_version,
+            "new_version": new_version,
+            "output": output,
+            "message": f"yt-dlp berhasil diperbarui dari v{old_version} ke v{new_version}!" if success else "Gagal memperbarui yt-dlp."
+        }
+    except Exception as exc:
+        return {
+            "success": False,
+            "old_version": old_version,
+            "new_version": old_version,
+            "output": str(exc),
+            "message": f"Error saat update yt-dlp: {exc}"
+        }
+
+
+@app.post("/api/ytdlp/cookies/upload")
+async def upload_ytdlp_cookies(file: UploadFile = File(...)):
+    """Upload cookie file for yt-dlp (Netscape .txt or Playwright .json)."""
+    cfg = get_config()
+    profiles_dir = Path(cfg.PROFILES_DIR)
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="File kosong!")
+
+    filename = file.filename.lower() if file.filename else ""
+    stripped = contents.strip()
+    is_json = filename.endswith(".json") or stripped.startswith(b"[") or stripped.startswith(b"{")
+
+    from osap.modules.publisher.cookie_loader import load_cookies, export_netscape_cookies
+
+    yt_netscape = profiles_dir / "youtube_cookies.txt"
+    yt_storage = profiles_dir / "youtube_storage.json"
+
+    if is_json:
+        with open(yt_storage, "wb") as f:
+            f.write(contents)
+        try:
+            parsed = load_cookies(yt_storage)
+        except Exception:
+            parsed = []
+
+        if parsed:
+            try:
+                with open(yt_storage, "w", encoding="utf-8") as sf:
+                    json.dump({"cookies": parsed, "origins": []}, sf, indent=2)
+            except Exception:
+                pass
+            try:
+                export_netscape_cookies(parsed, yt_netscape)
+            except Exception as exc:
+                logger.warning(f"Could not export netscape cookies: {exc}")
+    else:
+        # Netscape txt
+        with open(yt_netscape, "wb") as f:
+            f.write(contents)
+        try:
+            parsed = load_cookies(yt_netscape)
+        except Exception:
+            parsed = []
+        if parsed:
+            try:
+                with open(yt_storage, "w", encoding="utf-8") as sf:
+                    json.dump({"cookies": parsed, "origins": []}, sf, indent=2)
+            except Exception:
+                pass
+
+    count = len(parsed)
+    logger.info(f"Updated YouTube cookies for yt-dlp: {count} cookies parsed.")
+    return {
+        "success": True,
+        "cookies_count": count,
+        "message": f"Berhasil mengunggah & menyimpan {count} cookies untuk yt-dlp!"
+    }
+
+
+@app.post("/api/ytdlp/cookies/save-text")
+async def save_ytdlp_cookies_text(req: YtdlpCookieTextRequest):
+    """Save raw Netscape cookies pasted directly from browser extension into youtube_cookies.txt."""
+    text = req.content.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Konten cookies teks kosong!")
+
+    cfg = get_config()
+    profiles_dir = Path(cfg.PROFILES_DIR)
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+
+    yt_netscape = profiles_dir / "youtube_cookies.txt"
+    yt_storage = profiles_dir / "youtube_storage.json"
+
+    with open(yt_netscape, "w", encoding="utf-8") as f:
+        f.write(text)
+
+    from osap.modules.publisher.cookie_loader import load_cookies
+    try:
+        parsed = load_cookies(yt_netscape)
+    except Exception:
+        parsed = []
+
+    if parsed:
+        try:
+            with open(yt_storage, "w", encoding="utf-8") as sf:
+                json.dump({"cookies": parsed, "origins": []}, sf, indent=2)
+        except Exception:
+            pass
+
+    count = len(parsed)
+    return {
+        "success": True,
+        "cookies_count": count,
+        "message": f"Teks cookies berhasil disimpan! {count} cookies berhasil dikenali."
+    }
+
+
+@app.delete("/api/ytdlp/cookies")
+async def delete_ytdlp_cookies():
+    """Delete youtube_cookies.txt and youtube_storage.json."""
+    cfg = get_config()
+    profiles_dir = Path(cfg.PROFILES_DIR)
+    for fname in ["youtube_cookies.txt", "youtube_storage.json"]:
+        p = profiles_dir / fname
+        if p.exists():
+            try:
+                p.unlink()
+            except Exception:
+                pass
+    return {
+        "success": True,
+        "message": "File cookies YouTube berhasil dihapus."
+    }
+
+
+@app.post("/api/ytdlp/test")
+async def test_ytdlp_url(req: YtdlpTestRequest):
+    """Test extracting info for a YouTube URL using yt-dlp strategies without downloading full video."""
+    url = req.url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="URL tidak boleh kosong!")
+
+    cfg = get_config()
+    from osap.modules.ingestion import _get_youtube_cookiefile
+    cookie_file = _get_youtube_cookiefile(cfg)
+    proxy_url = getattr(cfg, "PROXY_URL", None) or os.environ.get("PROXY_URL")
+
+    import yt_dlp
+
+    strategies = [
+        ("iOS client (Apple mobile stream)", {"extractor_args": {"youtube": {"player_client": ["ios"]}}, "proxy": proxy_url if proxy_url else None}),
+        ("Android client (direct)", {"extractor_args": {"youtube": {"player_client": ["android"]}}}),
+        ("Cookies + Web/TV clients", {"cookiefile": str(cookie_file) if cookie_file else None, "extractor_args": {"youtube": {"player_client": ["web", "web_embedded", "tv"]}}}),
+    ]
+    if cookie_file and proxy_url:
+        strategies.append(("Cookies via Proxy", {"cookiefile": str(cookie_file), "proxy": proxy_url, "extractor_args": {"youtube": {"player_client": ["web", "tv"]}}}))
+    strategies.append(("Apple VisionOS / Safari", {"extractor_args": {"youtube": {"player_client": ["visionos", "web_safari"]}}, "proxy": proxy_url if proxy_url else None}))
+    strategies.append(("Default resolver", {"proxy": proxy_url if proxy_url else None}))
+
+    logs = []
+    success = False
+    video_info = None
+
+    for st_name, st_opts in strategies:
+        base_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "format": "bestvideo*+bestaudio/b/best/18",
+        }
+        base_opts.update({k: v for k, v in st_opts.items() if v is not None})
+        try:
+            with yt_dlp.YoutubeDL(base_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                if "entries" in info:
+                    info = info["entries"][0]
+                video_info = {
+                    "id": info.get("id"),
+                    "title": info.get("title"),
+                    "uploader": info.get("uploader"),
+                    "duration": info.get("duration"),
+                    "view_count": info.get("view_count"),
+                }
+                success = True
+                logs.append(f"✅ {st_name}: SUKSES! (Judul: {info.get('title')})")
+                break
+        except Exception as exc:
+            logs.append(f"❌ {st_name}: GAGAL ({exc})")
+
+    return {
+        "success": success,
+        "video": video_info,
+        "logs": logs,
+        "message": f"Berhasil mengekstrak info video: {video_info.get('title')}" if success else "Gagal mengekstrak info video dengan semua strategi."
+    }
 
 
 if __name__ == "__main__":
