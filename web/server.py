@@ -1058,6 +1058,57 @@ async def trigger_manual_publish(target_key: str):
     }
 
 
+def _run_fetch_latest_posts_proc(db_path: str):
+    """Top-level process target to scan all active platforms for latest posts and report to Telegram."""
+    import asyncio
+    from osap.db.queue import list_platform_targets, get_active_account
+    from osap.modules.post_fetcher import fetch_all_latest_posts
+    from osap.modules.telegram_notifier import send_post_summary_to_telegram
+
+    async def _do():
+        logger.info("[Manual Link Check] 🔍 Memulai scan link postingan terakhir di seluruh platform aktif...")
+        active_acc = get_active_account(db_path)
+        all_targets = list_platform_targets(db_path)
+        active_targets = [t for t in all_targets if t.get("enabled", 1) == 1]
+        if not active_targets:
+            logger.warning("[Manual Link Check] Tidak ada target platform yang aktif.")
+            return
+
+        post_links = await fetch_all_latest_posts(active_targets, account_id=active_acc["id"])
+        logger.info(f"[Manual Link Check] Selesai scan {len(post_links)} platform. Mengirim laporan ke Telegram...")
+
+        await send_post_summary_to_telegram(
+            video_title="Pengecekan Manual Link Postingan Terakhir",
+            post_links=post_links,
+            failed_platforms=None,
+        )
+        logger.info("[Manual Link Check] ✓ Laporan berhasil dikirim ke Telegram!")
+
+    try:
+        asyncio.run(_do())
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    except Exception as e:
+        logger.exception(f"[Manual Link Check] Error: {e}")
+
+
+@app.post("/api/fetch-latest-posts")
+async def trigger_fetch_latest_posts():
+    """Trigger background check of latest post links across all enabled platforms and report to Telegram."""
+    cfg = get_config()
+    p = multiprocessing.Process(
+        target=_run_fetch_latest_posts_proc,
+        args=(cfg.DB_PATH,),
+        name="fetch_latest_posts",
+        daemon=True,
+    )
+    p.start()
+
+    msg = "Pengecekan link postingan terakhir dimulai! Pantau Live Logs dan laporan akan otomatis masuk ke Telegram."
+    logger.info(f"[API] {msg}")
+    return {"success": True, "message": msg}
+
+
 
 def _parse_log_line(line: str) -> Optional[Dict[str, str]]:
     """Parse a '%(asctime)s | %(name)s | %(levelname)s | %(message)s' line from osap.log."""

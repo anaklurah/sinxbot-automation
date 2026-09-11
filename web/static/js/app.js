@@ -825,6 +825,38 @@ async function triggerPublishAllPlatforms(btnElement) {
     }
 }
 
+async function triggerFetchAllLatestLinks(btnElement) {
+    const btn = btnElement || (typeof event !== 'undefined' ? event?.currentTarget : null);
+    const originalHTML = btn ? btn.innerHTML : null;
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<svg class="spin-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Memindai...`;
+    }
+
+    showToast('🔍 Memulai scan link postingan terakhir dari semua platform... Pantau Live Logs dan Telegram!', 'info', 6000);
+
+    try {
+        const res = await fetch('/api/fetch-latest-posts', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(`✓ ${data.message}`, 'success', 8000);
+        } else {
+            showToast(`❌ ${data.detail || data.message || 'Gagal memulai scan link'}`, 'error', 7000);
+        }
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error', 6000);
+    } finally {
+        if (btn && originalHTML) {
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.innerHTML = originalHTML;
+            }, 3000);
+        }
+    }
+}
+
+
 
 /**
  * ─────────────────────────────────────────────

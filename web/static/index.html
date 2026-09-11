@@ -47,6 +47,12 @@
                 <span>Run Scheduler</span>
             </button>
 
+            <!-- Cek Link Postingan Terakhir Button -->
+            <button class="btn-clay btn-clay-secondary" id="btn-fetch-links-header" onclick="triggerFetchAllLatestLinks(this)" title="Scan & kirim link postingan terbaru ke Telegram">
+                <i data-lucide="search"></i>
+                <span>Cek Link Terakhir</span>
+            </button>
+
             <!-- Reset Stuck Jobs Button -->
             <button class="btn-clay btn-clay-secondary" onclick="resetStuckJobs()" title="Reset stuck jobs (>30 min)">
                 <i data-lucide="rotate-ccw"></i>
@@ -500,6 +506,10 @@
                         </p>
                     </div>
                     <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <button class="btn-clay btn-clay-secondary" id="btn-fetch-links-platforms" onclick="triggerFetchAllLatestLinks(this)" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700;" title="Scan & kirim link postingan terbaru ke Telegram">
+                            <i data-lucide="search"></i>
+                            <span>🔍 Cek Link Postingan Terakhir</span>
+                        </button>
                         <button class="btn-clay btn-clay-secondary" onclick="openAddPlatformTargetModal()" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700;">
                             <i data-lucide="plus-circle"></i>
                             <span>+ Tambah Akun Platform</span>

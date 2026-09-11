@@ -514,6 +514,48 @@ def cmd_info(args):
 
 
 # ─────────────────────────────────────────────
+# Command: fetch-posts
+# ─────────────────────────────────────────────
+def cmd_fetch_posts(args):
+    """Scan all active platform profiles, retrieve their latest post URLs, and report to console & Telegram."""
+    _ensure_env()
+    _init_db()
+    from osap.config import get_config
+    from osap.db.queue import list_platform_targets, get_active_account
+    from osap.modules.post_fetcher import fetch_all_latest_posts
+    from osap.modules.telegram_notifier import send_post_summary_to_telegram
+
+    cfg = get_config()
+    active_acc = get_active_account(cfg.DB_PATH)
+    all_targets = list_platform_targets(cfg.DB_PATH)
+    active_targets = [t for t in all_targets if t.get("enabled", 1) == 1]
+
+    if not active_targets:
+        console.print("[yellow]Tidak ada platform target yang aktif di database.[/yellow]")
+        return
+
+    target_names = [t.get("name") or t["target_key"] for t in active_targets]
+    console.print(f"[cyan]🔍 Memulai scan link postingan terakhir di {len(active_targets)} platform: {', '.join(target_names)}...[/cyan]")
+
+    async def _run():
+        return await fetch_all_latest_posts(active_targets, account_id=active_acc["id"])
+
+    links = asyncio.run(_run())
+
+    console.print("\n[bold green]Hasil Scan Link Postingan Terakhir:[/bold green]")
+    for name, url in links.items():
+        console.print(f"  • [bold]{name}:[/bold] {url}")
+
+    if getattr(args, "telegram", True):
+        console.print("\n[dim]Mengirim laporan ke Telegram...[/dim]")
+        asyncio.run(send_post_summary_to_telegram(
+            video_title="Pengecekan Manual Link Postingan Terakhir",
+            post_links=links,
+        ))
+        console.print("[green]✓ Laporan link berhasil dikirim ke Telegram![/green]")
+
+
+# ─────────────────────────────────────────────
 # Command: web
 # ─────────────────────────────────────────────
 def cmd_web(args):
@@ -577,8 +619,10 @@ def build_parser() -> argparse.ArgumentParser:
     # reset-stuck
     subparsers.add_parser("reset-stuck", help="Reset jobs stuck in intermediate states")
 
-    # info
-    subparsers.add_parser("info", help="Show system information (OS, GPU, encoder)")
+    # fetch-posts
+    p_fetch = subparsers.add_parser("fetch-posts", help="Scan and retrieve latest post links from all active platforms")
+    p_fetch.add_argument("--account-id", type=int, default=1, help="Account ID to use")
+    p_fetch.add_argument("--no-telegram", dest="telegram", action="store_false", help="Do not send report to Telegram")
 
     return parser
 
@@ -595,6 +639,7 @@ COMMANDS = {
     "status": cmd_status,
     "reset-stuck": cmd_reset_stuck,
     "info": cmd_info,
+    "fetch-posts": cmd_fetch_posts,
 }
 
 
