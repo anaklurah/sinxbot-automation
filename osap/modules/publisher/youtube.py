@@ -62,52 +62,125 @@ class YouTubePublisher(BasePublisher):
                 await page.goto(self.UPLOAD_URL, wait_until='domcontentloaded', timeout=60_000)
                 await self._jitter(2000, 3500)
 
-                # ── Step 2: Click upload button ───────────────────────────────
-                log.info('[youtube] Finding and clicking upload button')
-                upload_clicked = False
-                for direct_sel in [
-                    'ytcp-button#upload-icon',
-                    '[aria-label="Upload videos"]',
-                    '#upload-icon',
-                    'button[aria-label="Upload videos"]',
-                ]:
-                    try:
-                        el = await page.query_selector(direct_sel)
-                        if el and await el.is_visible():
-                            await el.click()
-                            upload_clicked = True
-                            await self._jitter(1000, 2000)
-                            break
-                    except Exception:
-                        pass
+                # Check URL and Auth status
+                curr_url = page.url
+                page_title = await page.title()
+                log.info('[youtube] Navigation complete. URL: %s | Title: %r', curr_url, page_title)
 
-                if not upload_clicked:
-                    # Fallback: Click the Create button, then click Upload videos from dropdown
-                    log.info('[youtube] Trying Create button dropdown fallback')
-                    for create_sel in ['#create-icon', 'button#create-icon', 'ytcp-button#create-icon', '[aria-label="Create"]']:
+                if 'accounts.google.com' in curr_url:
+                    log.error(
+                        '[youtube] GAGAL: Terdeteksi redirect ke Google Login (%s). '
+                        'Session YouTube belum aktif atau cookies expired! '
+                        'Silakan upload file profil "youtube.zip" atau cookies terbaru melalui Dashboard Web.',
+                        curr_url
+                    )
+                    await self._save_debug_screenshot(page, 'google_login')
+                    return False
+
+                # Dismiss initial modal / popup dialogs if present
+                await self._dismiss_popups(page)
+
+                # ── Step 2: Ensure Studio UI is ready & click upload ───────────
+                log.info('[youtube] Preparing file upload dialog...')
+                file_input_sel = 'input[type="file"]'
+
+                # If file input is already present in DOM
+                file_input_ready = False
+                try:
+                    if await page.locator(file_input_sel).count() > 0:
+                        file_input_ready = True
+                        log.info('[youtube] input[type="file"] is already present on page')
+                except Exception:
+                    pass
+
+                if not file_input_ready:
+                    # Wait for Studio UI to hydrate
+                    studio_ready_sel = (
+                        '#create-icon, ytcp-button#create-icon, ytcp-icon-button#create-icon, '
+                        'button#create-icon, #upload-icon, ytcp-button#upload-icon, '
+                        '[aria-label*="Create" i], [aria-label*="Buat" i], input[type="file"]'
+                    )
+                    try:
+                        await page.wait_for_selector(studio_ready_sel, timeout=25_000, state='attached')
+                        log.info('[youtube] Studio elements attached to DOM')
+                    except Exception as wait_err:
+                        log.warning('[youtube] Studio indicator wait timed out: %s', wait_err)
+                        if 'accounts.google.com' in page.url:
+                            log.error('[youtube] Redirected to Google login: %s', page.url)
+                            await self._save_debug_screenshot(page, 'google_login')
+                            return False
+
+                    # Dismiss any popups that appeared after hydration
+                    await self._dismiss_popups(page)
+
+                    # Trigger upload dialog
+                    upload_clicked = False
+
+                    # Option A: Direct upload button on channel dashboard
+                    for direct_sel in [
+                        'ytcp-button#upload-icon',
+                        '#upload-icon',
+                        'ytcp-icon-button#upload-icon',
+                        'ytcp-upload-video-widget ytcp-button',
+                        'button[aria-label*="Upload" i]',
+                        'button[aria-label*="Unggah" i]',
+                    ]:
                         try:
-                            create_btn = await page.query_selector(create_sel)
-                            if create_btn and await create_btn.is_visible():
-                                await create_btn.click()
-                                await self._jitter(800, 1500)
-                                menu_item = await page.wait_for_selector(
-                                    '#text-item-0, [test-id="upload-action"], tp-yt-paper-item:has-text("Upload videos"), ytcp-text-menu tp-yt-paper-item',
-                                    timeout=8_000,
-                                )
-                                if menu_item:
+                            el = page.locator(direct_sel).first
+                            if await el.count() and await el.is_visible():
+                                log.info('[youtube] Clicking direct upload button: %s', direct_sel)
+                                await el.click()
+                                upload_clicked = True
+                                await self._jitter(1000, 2000)
+                                break
+                        except Exception:
+                            pass
+
+                    # Option B: Create button dropdown
+                    if not upload_clicked:
+                        log.info('[youtube] Trying Create button dropdown fallback')
+                        for create_sel in [
+                            'ytcp-button#create-icon',
+                            '#create-icon',
+                            'button#create-icon',
+                            'ytcp-icon-button#create-icon',
+                            '[aria-label*="Create" i]',
+                            '[aria-label*="Buat" i]',
+                        ]:
+                            try:
+                                create_btn = page.locator(create_sel).first
+                                if await create_btn.count() and await create_btn.is_visible():
+                                    log.info('[youtube] Clicking Create button: %s', create_sel)
+                                    await create_btn.click()
+                                    await self._jitter(800, 1500)
+
+                                    menu_sel = (
+                                        '#text-item-0, [test-id="upload-action"], '
+                                        'tp-yt-paper-item:has-text("Upload"), '
+                                        'tp-yt-paper-item:has-text("Unggah"), '
+                                        'ytcp-text-menu tp-yt-paper-item'
+                                    )
+                                    menu_item = page.locator(menu_sel).first
+                                    await menu_item.wait_for(state='visible', timeout=8_000)
+                                    log.info('[youtube] Clicking "Upload videos" / "Unggah video" from menu')
                                     await menu_item.click()
                                     upload_clicked = True
                                     await self._jitter(1000, 2000)
                                     break
-                        except Exception as e:
-                            log.debug('[youtube] Create selector %s failed: %s', create_sel, e)
+                            except Exception as e:
+                                log.debug('[youtube] Create selector %s failed: %s', create_sel, e)
 
                 # ── Step 3: Set file via input ────────────────────────────────
                 log.info('[youtube] Setting input file: %s', video_path)
-                file_input_sel = 'input[type="file"]'
-                await page.wait_for_selector(file_input_sel, timeout=25_000, state='attached')
-                await page.locator(file_input_sel).set_input_files(video_path)
-                log.info('[youtube] File set, waiting for upload dialog to open')
+                try:
+                    await page.wait_for_selector(file_input_sel, timeout=30_000, state='attached')
+                except Exception as wait_file_err:
+                    log.error('[youtube] Timeout waiting for input[type="file"]. Current URL: %s', page.url)
+                    await self._save_debug_screenshot(page, 'file_input_timeout')
+                    raise wait_file_err
+
+                await page.locator(file_input_sel).first.set_input_files(video_path)
+                log.info('[youtube] File attached, waiting for upload dialog to open')
 
                 # Wait for title field to appear in the details dialog
                 log.info('[youtube] Waiting for details dialog and title field...')
@@ -115,7 +188,9 @@ class YouTubePublisher(BasePublisher):
                     '#title-textarea #textbox, '
                     'ytcp-uploads-dialog #title-textarea #textbox, '
                     '[aria-label*="title" i] #textbox, '
+                    '[aria-label*="judul" i] #textbox, '
                     '#textbox[aria-label*="title" i], '
+                    '#textbox[aria-label*="judul" i], '
                     'ytcp-video-title #textbox'
                 )
                 try:
@@ -290,9 +365,42 @@ class YouTubePublisher(BasePublisher):
 
             except Exception as exc:
                 log.exception('[youtube] Upload failed: %s', exc)
+                try:
+                    await self._save_debug_screenshot(page, 'error')
+                except Exception:
+                    pass
                 return False
             finally:
                 await context.close()
+
+    async def _dismiss_popups(self, page: Page) -> None:
+        """Dismiss common YouTube Studio welcome modals, privacy banners, and prompts."""
+        dismiss_selectors = [
+            'ytcp-confirmation-dialog #confirm-button',
+            'ytcp-button#dismiss-button',
+            'button:has-text("Continue")',
+            'button:has-text("Lanjutkan")',
+            'button:has-text("Dismiss")',
+            'button:has-text("Tutup")',
+            'button:has-text("Mengerti")',
+            'button:has-text("Got it")',
+            'tp-yt-paper-dialog button:has-text("Lanjutkan")',
+            'tp-yt-paper-dialog button:has-text("Continue")',
+            'button:has-text("Accept all")',
+            'button:has-text("Setuju semua")',
+            'button:has-text("I agree")',
+            'button:has-text("Saya setuju")',
+        ]
+        for sel in dismiss_selectors:
+            try:
+                btn = page.locator(sel).first
+                if await btn.count() and await btn.is_visible():
+                    self._log.info('[youtube] Dismissing popup dialog: %s', sel)
+                    await btn.click()
+                    await asyncio.sleep(1)
+            except Exception:
+                pass
+
 
 
 async def human_type_locator(locator, text: str, delay_ms: float = 60) -> None:

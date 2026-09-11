@@ -1255,3 +1255,9 @@ async function testProxyManual(btn) {
         if (btn) btn.disabled = false;
     }
 }
+
+function openDebugScreenshot(platform = 'youtube') {
+    const url = `/api/debug/screenshot/${platform}?t=${Date.now()}`;
+    window.open(url, '_blank');
+}
+

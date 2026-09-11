@@ -504,3 +504,22 @@ class BasePublisher(ABC):
             selector: CSS/text selector for the target element.
         """
         await human_move_and_click(page, selector)
+
+    async def _save_debug_screenshot(self, page: Page, tag: str = "debug") -> Path | None:
+        """Capture and save a debug screenshot for troubleshooting headless browser state."""
+        try:
+            download_dir = Path(self._cfg.DOWNLOAD_DIR)
+            download_dir.mkdir(parents=True, exist_ok=True)
+            shot_path = download_dir / f"{self.target_key}_{tag}.png"
+            latest_path = download_dir / f"{self.target_key}_last_state.png"
+            await page.screenshot(path=str(shot_path), full_page=False)
+            await page.screenshot(path=str(latest_path), full_page=False)
+            self._log.info(
+                '[%s] 📸 Debug screenshot captured: %s (API: /api/debug/screenshot/%s)',
+                self.target_key, shot_path.name, self.target_key
+            )
+            return latest_path
+        except Exception as ex:
+            self._log.warning('[%s] Could not capture screenshot: %s', self.target_key, ex)
+            return None
+

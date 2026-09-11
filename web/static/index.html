@@ -546,10 +546,16 @@
                         <p class="clay-card-subtitle">Real-time terminal output streamed directly from background worker processes.</p>
                     </div>
 
-                    <button class="btn-clay btn-clay-secondary" onclick="clearLogs()">
-                        <i data-lucide="trash-2"></i>
-                        <span>Clear Logs</span>
-                    </button>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <button class="btn-clay btn-clay-secondary" onclick="openDebugScreenshot('youtube')" title="Lihat screenshot layar browser terakhir (YouTube / error state)">
+                            <i data-lucide="camera"></i>
+                            <span>Screenshot Debug</span>
+                        </button>
+                        <button class="btn-clay btn-clay-secondary" onclick="clearLogs()">
+                            <i data-lucide="trash-2"></i>
+                            <span>Clear Logs</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="terminal-bezel" id="terminal-log">
@@ -779,7 +785,7 @@
 
 
     <!-- Application JavaScript Logic -->
-    <script src="/static/js/toast.js?v=1.0.5"></script>
-    <script src="/static/js/app.js?v=1.0.5"></script>
+    <script src="/static/js/toast.js?v=1.0.6"></script>
+    <script src="/static/js/app.js?v=1.0.6"></script>
 </body>
 </html>

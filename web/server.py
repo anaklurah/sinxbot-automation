@@ -1032,6 +1032,27 @@ async def upload_profile_zip(target_key: str, file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Gagal mengekstrak file zip: {exc}")
 
 
+@app.get("/api/debug/screenshot/{platform}")
+async def get_debug_screenshot(platform: str):
+    """Retrieve the latest debug screenshot for a publisher platform."""
+    cfg = get_config()
+    download_dir = Path(cfg.DOWNLOAD_DIR)
+
+    candidates = [
+        download_dir / f"{platform}_last_state.png",
+        download_dir / f"{platform}_error.png",
+        download_dir / f"{platform}_login_required.png",
+        download_dir / f"{platform}_google_login.png",
+        download_dir / f"{platform}_file_input_timeout.png",
+        download_dir / f"{platform}_debug.png",
+    ]
+    for p in candidates:
+        if p.exists() and p.is_file() and p.stat().st_size > 0:
+            return FileResponse(str(p), media_type="image/png", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+    raise HTTPException(status_code=404, detail=f"Belum ada screenshot debug untuk platform '{platform}'. Jalankan publish terlebih dahulu.")
+
+
 def _run_manual_publish_target(db_path: str, target_key: str):
     """Top-level process target for on-demand single-target publishing (no Telegram report)."""
     import asyncio
