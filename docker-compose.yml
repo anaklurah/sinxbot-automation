@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   osap:
     build: .
@@ -7,7 +5,7 @@ services:
     restart: unless-stopped
     shm_size: '2gb'
     ports:
-      - "8080:8080"
+      - "${HOST_PORT:-8085}:8080"
     environment:
       - OSAP_DB_PATH=/app/osap.db
       - DOWNLOAD_DIR=/app/downloads
