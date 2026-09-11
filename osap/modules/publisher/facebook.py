@@ -151,12 +151,6 @@ class FacebookPublisher(BasePublisher):
                 log.info('[facebook] Waiting for video upload to finish and Posting button to turn BLUE...')
 
                 check_blue_js = """() => {
-                    // Check if warning tooltip or uploading indicator is present in body text
-                    const bodyText = (document.body.innerText || '').toLowerCase();
-                    if (bodyText.includes('sedang diunggah') || bodyText.includes('media is uploading') || bodyText.includes('video is uploading')) {
-                        return { ready: false, reason: 'uploading_indicator_present' };
-                    }
-
                     function isBlueRgb(colorStr) {
                         if (!colorStr) return false;
                         const m = colorStr.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
@@ -165,91 +159,58 @@ class FacebookPublisher(BasePublisher):
                         return b > 140 && b > r + 30 && b > g + 15;
                     }
 
-                    function isWhiteRgb(colorStr) {
-                        if (!colorStr) return false;
-                        const m = colorStr.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
-                        if (!m) return false;
-                        const r = parseInt(m[1]), g = parseInt(m[2]), b = parseInt(m[3]);
-                        return r > 220 && g > 220 && b > 220;
-                    }
-
+                    // Look exclusively for Posting / Publish action buttons inside the dialog
                     const candidates = Array.from(document.querySelectorAll(
-                        'div[role="dialog"] div[role="button"], div[role="dialog"] button, div[role="button"], button'
+                        'div[role="dialog"] div[role="button"], div[role="dialog"] button'
                     )).filter(el => {
                         const text = (el.innerText || '').trim().toLowerCase();
                         const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
-                        return ['posting', 'publish', 'publikasikan', 'bagikan', 'share', 'post'].includes(text) ||
-                               ['posting', 'publish', 'publikasikan', 'bagikan', 'share', 'post'].includes(aria);
+                        return text === 'posting' || aria === 'posting' ||
+                               text === 'publish' || aria === 'publish' ||
+                               text === 'publikasikan' || aria === 'publikasikan';
                     });
 
-                    if (!candidates.length) return { ready: false, reason: 'no_candidate' };
+                    if (!candidates.length) return { ready: false, reason: 'no_posting_button_found' };
 
-                    // Check candidates from bottom up (wizard submit button is at the bottom)
-                    for (let i = candidates.length - 1; i >= 0; i--) {
-                        const btn = candidates[i];
+                    for (const btn of candidates) {
                         if (btn.offsetWidth === 0 || btn.offsetHeight === 0) continue;
-                        // ONLY check aria-disabled directly on the button itself, NEVER on ancestors!
                         if (btn.getAttribute('aria-disabled') === 'true' || btn.disabled || btn.hasAttribute('disabled')) {
-                            continue;
+                            return { ready: false, reason: 'posting_button_still_disabled' };
                         }
 
-                        let isBlue = false;
-                        let colorFound = '';
-
-                        // 1. Check self background
+                        // Check self background
                         const selfStyle = window.getComputedStyle(btn);
-                        if (isBlueRgb(selfStyle.backgroundColor)) {
-                            isBlue = true;
-                            colorFound = selfStyle.backgroundColor;
-                        }
+                        let isBlue = isBlueRgb(selfStyle.backgroundColor);
 
-                        // 2. Check child elements background
+                        // Check child background
                         if (!isBlue) {
                             for (const child of btn.querySelectorAll('*')) {
-                                const cs = window.getComputedStyle(child);
-                                if (isBlueRgb(cs.backgroundColor)) {
+                                if (isBlueRgb(window.getComputedStyle(child).backgroundColor)) {
                                     isBlue = true;
-                                    colorFound = cs.backgroundColor;
                                     break;
                                 }
                             }
                         }
 
-                        // 3. Check parent wrappers background (up to 3 levels)
+                        // Check parent background (up to 2 levels)
                         if (!isBlue) {
                             let p = btn.parentElement;
-                            for (let d = 0; d < 3 && p && p !== document.body; d++) {
-                                const ps = window.getComputedStyle(p);
-                                if (isBlueRgb(ps.backgroundColor)) {
+                            for (let d = 0; d < 2 && p && p !== document.body; d++) {
+                                if (isBlueRgb(window.getComputedStyle(p).backgroundColor)) {
                                     isBlue = true;
-                                    colorFound = ps.backgroundColor;
                                     break;
                                 }
                                 p = p.parentElement;
                             }
                         }
 
-                        // 4. Check text color: when active, FB primary Posting button text is bright white (rgb(255, 255, 255))
-                        let hasWhiteText = false;
-                        if (isWhiteRgb(selfStyle.color)) {
-                            hasWhiteText = true;
-                        } else {
-                            for (const child of btn.querySelectorAll('*')) {
-                                const cs = window.getComputedStyle(child);
-                                if (isWhiteRgb(cs.color)) {
-                                    hasWhiteText = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (isBlue || hasWhiteText) {
-                            // Mark element for reliable clicking
+                        if (isBlue) {
                             btn.setAttribute('data-target-post-ready', 'true');
-                            return { ready: true, index: i, color: colorFound || 'white_text_active' };
+                            return { ready: true, color: 'blue_active' };
                         }
                     }
-                    return { ready: false, reason: 'button_still_grey' };
+
+                    return { ready: false, reason: 'posting_button_not_blue_yet' };
                 }"""
 
                 button_ready = False
@@ -336,15 +297,24 @@ class FacebookPublisher(BasePublisher):
                         ':text("Your reel is being processed"), '
                         ':text("sedang diproses")'
                     )
-                    await page.wait_for_selector(success_sel, timeout=45_000)
+                    await page.wait_for_selector(success_sel, timeout=30_000)
                     log.info('[facebook] ✓ Reel published successfully')
                 except Exception:
                     # Check if reels creation modal closed
                     try:
-                        await page.locator('[role="dialog"]').first.wait_for(state="hidden", timeout=30_000)
-                        log.info('[facebook] Reels creation dialog closed — publication confirmed')
+                        modal = page.locator('div[role="dialog"]:has-text("Buat reel"), div[role="dialog"]:has-text("Create reel")').first
+                        if await modal.count():
+                            await modal.wait_for(state="hidden", timeout=30_000)
+                            log.info('[facebook] Reels creation dialog closed — publication confirmed')
                     except Exception:
-                        log.info('[facebook] Flow completed without explicit success toast — assuming success')
+                        log.info('[facebook] Flow completed without explicit success toast — checking URL')
+
+                # Check if current URL or redirected URL is a reel permalink
+                current_url = page.url
+                if "/reel/" in current_url and not any(x in current_url for x in ["/create", "?s=tab"]):
+                    clean_reel = current_url.split("?")[0]
+                    self.uploaded_url = clean_reel
+                    log.info('[facebook] ✓ Captured direct Reel URL: %s', self.uploaded_url)
 
                 return True
 

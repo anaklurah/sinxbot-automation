@@ -32,12 +32,22 @@ from pathlib import Path
 # Ensure project root is on the Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Ensure UTF-8 output on Windows consoles to prevent emoji charmap encode errors
+if sys.platform == "win32":
+    try:
+        if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich import print as rprint
 
-console = Console()
+console = Console(highlight=False)
 
 
 def _ensure_env():

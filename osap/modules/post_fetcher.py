@@ -162,30 +162,41 @@ async def _fetch_tiktok_latest(page: Page) -> Optional[str]:
 
 
 async def _fetch_facebook_latest(page: Page) -> Optional[str]:
-    logger.info("[fetcher-facebook] Navigating to Facebook reels tab...")
-    # Priority 1: Check user's Reels tab directly (where newly published reels reside)
+    logger.info("[fetcher-facebook] Navigating to Facebook profile...")
     try:
-        await page.goto("https://www.facebook.com/me/reels/", wait_until="domcontentloaded", timeout=40_000)
+        await page.goto("https://www.facebook.com/me", wait_until="domcontentloaded", timeout=40_000)
         await asyncio.sleep(4)
-        reel_url = await page.evaluate(r'''() => {
-            const anchors = Array.from(document.querySelectorAll('a[href*="/reel/"]'));
-            for (const a of anchors) {
-                const href = a.getAttribute('href') || '';
-                const match = href.match(/\/reel\/(\d+)/);
-                if (match && match[1]) {
-                    return `https://www.facebook.com/reel/${match[1]}`;
-                }
-            }
-            return null;
-        }''')
-        if reel_url:
-            return reel_url
-    except Exception as e:
-        logger.debug("[fetcher-facebook] Reels tab check failed: %s", e)
 
-    # Priority 2: Check timeline feed
-    try:
-        await page.goto("https://www.facebook.com/me/", wait_until="domcontentloaded", timeout=40_000)
+        # Priority 1: Check user's Reels tab
+        try:
+            reels_tab = page.locator('a[role="tab"]:has-text("Reels"), a:has-text("Reels")').first
+            if await reels_tab.count():
+                logger.info("[fetcher-facebook] Clicking Reels tab on profile...")
+                await reels_tab.click()
+                await asyncio.sleep(3)
+                await page.evaluate("window.scrollBy(0, 600)")
+                await asyncio.sleep(2)
+
+                reel_url = await page.evaluate(r'''() => {
+                    const anchors = Array.from(document.querySelectorAll('a[href*="/reel/"]'));
+                    for (const a of anchors) {
+                        const href = a.getAttribute('href') || '';
+                        if (href.includes('?s=tab') || href.includes('/reels/create') || href.includes('/reel/create')) continue;
+                        const match = href.match(/\/reel\/(\d+)/);
+                        if (match && match[1]) {
+                            return `https://www.facebook.com/reel/${match[1]}`;
+                        }
+                    }
+                    return null;
+                }''')
+                if reel_url:
+                    return reel_url
+        except Exception as e:
+            logger.debug("[fetcher-facebook] Reels tab check failed: %s", e)
+
+        # Priority 2: Check timeline feed posts & videos
+        logger.info("[fetcher-facebook] Checking timeline feed for latest post/reel...")
+        await page.goto("https://www.facebook.com/me", wait_until="domcontentloaded", timeout=40_000)
         await asyncio.sleep(3)
         await page.evaluate("window.scrollBy(0, 1000)")
         await asyncio.sleep(2)
@@ -194,12 +205,12 @@ async def _fetch_facebook_latest(page: Page) -> Optional[str]:
             const anchors = Array.from(document.querySelectorAll('a[href]'));
             for (const a of anchors) {
                 const href = a.getAttribute('href') || '';
-                if (href.includes('?s=tab') || href.includes('sk=reels') || href.includes('sk=')) continue;
+                if (href.includes('?s=tab') || href.includes('sk=reels') || href.includes('sk=') || href.includes('/reels/create')) continue;
                 if (href.includes('/reel/')) {
                     const m = href.match(/\/reel\/(\d+)/);
                     if (m && m[1]) return `https://www.facebook.com/reel/${m[1]}`;
                 }
-                if (href.includes('/videos/') || href.includes('/posts/') || href.includes('story_fbid=')) {
+                if (href.includes('/videos/') || href.includes('/posts/') || href.includes('story_fbid=') || href.includes('fbid=')) {
                     const base = href.split('&__cft__')[0].split('?__cft__')[0];
                     return base.startsWith('http') ? base : `https://www.facebook.com${base}`;
                 }
@@ -208,8 +219,9 @@ async def _fetch_facebook_latest(page: Page) -> Optional[str]:
         }''')
         if post_url:
             return post_url
+
     except Exception as e:
-        logger.debug("[fetcher-facebook] Timeline check failed: %s", e)
+        logger.warning("[fetcher-facebook] Error: %s", e)
 
     return None
 
@@ -280,50 +292,72 @@ async def _fetch_febspot_latest(page: Page) -> Optional[str]:
 
 
 async def _fetch_youtube_latest(page: Page) -> Optional[str]:
-    logger.info("[fetcher-youtube] Navigating to YouTube Studio...")
+    logger.info("[fetcher-youtube] Resolving YouTube channel...")
     try:
-        # Direct navigation to YouTube Studio content shorts view
-        await page.goto("https://studio.youtube.com/videos/shorts", wait_until="domcontentloaded", timeout=40_000)
+        # Navigate to Studio root to resolve channel ID
+        await page.goto("https://studio.youtube.com", wait_until="domcontentloaded", timeout=40_000)
         await asyncio.sleep(4)
 
-        # Ensure Shorts tab is active
-        shorts_tab = page.locator('tp-yt-paper-tab:has-text("Shorts"), div[role="tab"]:has-text("Shorts")').first
-        if await shorts_tab.count():
-            try:
-                await shorts_tab.click(timeout=5000)
-                await asyncio.sleep(2)
-            except Exception:
-                pass
+        channel_id = None
+        current_url = page.url
+        if "/channel/" in current_url:
+            channel_id = current_url.split("/channel/")[1].split("/")[0].split("?")[0]
 
-        video_url = await page.evaluate(r'''() => {
-            // 1. Direct watch or shorts permalink
-            const anchors = Array.from(document.querySelectorAll('a[href*="/watch?v="], a[href*="/shorts/"], a#video-title'));
+        if not channel_id:
+            channel_id = await page.evaluate(r'''() => {
+                const a = document.querySelector('a[href*="/channel/"]');
+                if (a) {
+                    const m = a.href.match(/\/channel\/([^\/\?]+)/);
+                    if (m) return m[1];
+                }
+                return null;
+            }''')
+
+        # Priority 1: Public channel shorts page (instant & reliable)
+        if channel_id:
+            logger.info("[fetcher-youtube] Found channel ID: %s. Checking public shorts...", channel_id)
+            try:
+                await page.goto(f"https://www.youtube.com/channel/{channel_id}/shorts", wait_until="domcontentloaded", timeout=35_000)
+                await asyncio.sleep(3)
+
+                short_link = await page.evaluate(r'''() => {
+                    const anchors = Array.from(document.querySelectorAll('a[href*="/shorts/"]'));
+                    for (const a of anchors) {
+                        const href = a.getAttribute('href') || '';
+                        const m = href.match(/\/shorts\/([a-zA-Z0-9_-]+)/);
+                        if (m && m[1]) {
+                            return `https://www.youtube.com/shorts/${m[1]}`;
+                        }
+                    }
+                    return null;
+                }''')
+                if short_link:
+                    return short_link
+            except Exception as e:
+                logger.debug("[fetcher-youtube] Public shorts check failed: %s", e)
+
+        # Priority 2: Studio shorts content list
+        logger.info("[fetcher-youtube] Checking YouTube Studio shorts content list...")
+        studio_shorts_url = f"https://studio.youtube.com/channel/{channel_id}/videos/short" if channel_id else "https://studio.youtube.com"
+        await page.goto(studio_shorts_url, wait_until="domcontentloaded", timeout=35_000)
+        await asyncio.sleep(4)
+
+        studio_link = await page.evaluate(r'''() => {
+            const anchors = Array.from(document.querySelectorAll('a[href*="/video/"], a[href*="/watch"], a[href*="/shorts/"]'));
             for (const a of anchors) {
                 const href = a.getAttribute('href') || '';
-                if (href.includes('/shorts/')) {
-                    return href.startsWith('http') ? href : `https://www.youtube.com${href}`;
-                }
-                if (href.includes('/watch?v=')) {
-                    const vId = href.split('/watch?v=')[1].split('&')[0];
-                    if (vId) return `https://www.youtube.com/shorts/${vId}`;
-                }
-            }
-            // 2. Video thumbnail/edit link: /video/<id>/edit
-            const editAnchors = Array.from(document.querySelectorAll('a[href*="/video/"][href*="/edit"]'));
-            for (const a of editAnchors) {
-                const href = a.getAttribute('href') || '';
-                const m = href.match(/\\/video\\/([^\\/]+)\\/edit/);
+                const m = href.match(/\/video\/([^\/]+)\/edit/) || href.match(/\/shorts\/([a-zA-Z0-9_-]+)/) || href.match(/v=([a-zA-Z0-9_-]+)/);
                 if (m && m[1]) {
                     return `https://www.youtube.com/shorts/${m[1]}`;
                 }
             }
             return null;
         }''')
-        if video_url:
-            return video_url
+        if studio_link:
+            return studio_link
 
     except Exception as e:
-        logger.debug("[fetcher-youtube] Error navigating to Studio shorts: %s", e)
+        logger.warning("[fetcher-youtube] Error: %s", e)
 
     return None
 
