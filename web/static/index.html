@@ -75,10 +75,6 @@
             <i data-lucide="sliders"></i>
             <span>Configuration</span>
         </button>
-        <button class="clay-tab-btn" data-tab="platforms" onclick="switchTab('platforms', this)">
-            <i data-lucide="share-2"></i>
-            <span>Platforms</span>
-        </button>
         <button class="clay-tab-btn" data-tab="ytdlp" onclick="switchTab('ytdlp', this)">
             <i data-lucide="download-cloud"></i>
             <span>yt-dlp & Cookies</span>
@@ -182,18 +178,96 @@
                 </div>
             </div>
 
-            <!-- Video Queue Table Card -->
+            <!-- Social Media Publishing Targets (Platforms) -->
             <div class="clay-card">
+                <div class="clay-card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                    <div>
+                        <h2 class="clay-card-title">
+                            <i data-lucide="share-2"></i>
+                            <span>Social Media Publishing Targets</span>
+                        </h2>
+                        <p class="clay-card-subtitle">
+                            Kelola channel, upload cookies, atau klik "Login Browser" jika cookies kadaluarsa/perlu login manual.
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <button class="btn-clay btn-clay-secondary" id="btn-fetch-links-platforms" onclick="triggerFetchAllLatestLinks(this)" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700;" title="Scan & kirim link postingan terbaru ke Telegram">
+                            <i data-lucide="search"></i>
+                            <span>🔍 Cek Link Postingan Terakhir</span>
+                        </button>
+                        <button class="btn-clay btn-clay-secondary" onclick="openAddPlatformTargetModal()" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700;">
+                            <i data-lucide="plus-circle"></i>
+                            <span>+ Tambah Akun Platform</span>
+                        </button>
+                        <button class="btn-clay btn-clay-primary" onclick="triggerPublishAllPlatforms(this)" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700;">
+                            <i data-lucide="send"></i>
+                            <span>Post 1 Video ke Semua Platform</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="clay-platform-grid" id="platforms-grid">
+                    <!-- Populated dynamically via app.js -->
+                </div>
+            </div>
+        </section>
+
+        <!-- ─────────────────────────────────────────────
+             TAB 2: GUDANG KONTEN (URL INGESTION & QUEUE)
+        ───────────────────────────────────────────── -->
+        <section id="tab-urls" class="tab-content">
+            <!-- URL Ingestion Form Card -->
+            <div class="clay-card" style="margin-bottom: 2rem;">
                 <div class="clay-card-header">
                     <div>
                         <h2 class="clay-card-title">
-                            <i data-lucide="list-video"></i>
-                            <span>Video Queue & Upload Status</span>
+                            <i data-lucide="database"></i>
+                            <span>Gudang Konten (Batch URL Ingestion)</span>
                         </h2>
-                        <p class="clay-card-subtitle">Real-time pipeline progression and per-platform publishing states.</p>
+                        <p class="clay-card-subtitle">
+                            Masukkan URL video YouTube Shorts ke dalam Gudang Konten. Video disimpan sebagai antrian link (tanpa didownload terlebih dahulu untuk hemat penyimpanan) dan akan didownload & diproses JIT (Just-In-Time) saat siap diposting.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="clay-form-group">
+                    <label for="urls-input">
+                        <i data-lucide="file-text"></i> Source Video URLs
+                    </label>
+                    <textarea id="urls-input" class="clay-textarea" rows="8" placeholder="https://www.youtube.com/shorts/dQw4w9WgXcQ&#10;https://www.youtube.com/shorts/5qap5aO4i9A"></textarea>
+                    <span class="help-text">Input link YouTube Shorts atau video standar (1 baris per link). Link akan otomatis ditag ke Akun yang aktif.</span>
+                </div>
+
+                <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <button class="btn-clay btn-clay-primary" onclick="submitIngest()">
+                        <i data-lucide="folder-plus"></i>
+                        <span>Simpan ke Gudang Konten</span>
+                    </button>
+
+                    <button class="btn-clay btn-clay-secondary" onclick="confirmClearQueue('pending')" title="Hapus semua stok video pending (belum diproses)">
+                        <i data-lucide="trash-2"></i>
+                        <span>Kosongkan Stok Pending</span>
+                    </button>
+
+                    <button class="btn-clay btn-clay-secondary" onclick="confirmClearQueue('all')" style="color: #ef4444;" title="Reset total: hapus seluruh antrian & riwayat video serta file sementara">
+                        <i data-lucide="alert-triangle"></i>
+                        <span>Reset Total Gudang</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Video Queue Table Card -->
+            <div class="clay-card">
+                <div class="clay-card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                    <div>
+                        <h2 class="clay-card-title">
+                            <i data-lucide="list-video"></i>
+                            <span>Stok Antrian & Status Upload</span>
+                        </h2>
+                        <p class="clay-card-subtitle">Daftar stok link video dalam antrian Gudang Konten dan status publikasi per platform.</p>
                     </div>
 
-                    <div style="display: flex; gap: 10px; align-items: center;">
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                         <select id="filter-status" class="clay-select" onchange="loadVideos(1)">
                             <option value="">All Statuses</option>
                             <option value="pending">Pending</option>
@@ -206,14 +280,9 @@
                             <option value="failed">Failed</option>
                         </select>
 
-                        <button class="btn-clay btn-clay-secondary" onclick="loadDashboardData()">
+                        <button class="btn-clay btn-clay-secondary" onclick="loadVideos(1)">
                             <i data-lucide="refresh-cw"></i>
                             <span>Refresh</span>
-                        </button>
-
-                        <button class="btn-clay btn-clay-secondary" onclick="confirmClearQueue('pending')" title="Hapus semua stok antrian pending yang belum diposting">
-                            <i data-lucide="trash-2"></i>
-                            <span>Kosongkan Pending</span>
                         </button>
                     </div>
                 </div>
@@ -251,50 +320,6 @@
                             Next <i data-lucide="chevron-right"></i>
                         </button>
                     </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- ─────────────────────────────────────────────
-             TAB 2: GUDANG KONTEN (URL INGESTION)
-        ───────────────────────────────────────────── -->
-        <section id="tab-urls" class="tab-content">
-            <div class="clay-card" style="max-width: 820px; margin: 0 auto;">
-                <div class="clay-card-header">
-                    <div>
-                        <h2 class="clay-card-title">
-                            <i data-lucide="database"></i>
-                            <span>Gudang Konten (Batch URL Ingestion)</span>
-                        </h2>
-                        <p class="clay-card-subtitle">
-                            Masukkan URL video YouTube Shorts ke dalam Gudang Konten. Video disimpan sebagai antrian link (tanpa didownload terlebih dahulu untuk hemat penyimpanan) dan akan didownload & diproses JIT (Just-In-Time) saat siap diposting.
-                        </p>
-                    </div>
-                </div>
-
-                <div class="clay-form-group">
-                    <label for="urls-input">
-                        <i data-lucide="file-text"></i> Source Video URLs
-                    </label>
-                    <textarea id="urls-input" class="clay-textarea" rows="12" placeholder="https://www.youtube.com/shorts/dQw4w9WgXcQ&#10;https://www.youtube.com/shorts/5qap5aO4i9A"></textarea>
-                    <span class="help-text">Input link YouTube Shorts atau video standar (1 baris per link). Link akan otomatis ditag ke Akun yang aktif.</span>
-                </div>
-
-                <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-                    <button class="btn-clay btn-clay-primary" onclick="submitIngest()">
-                        <i data-lucide="folder-plus"></i>
-                        <span>Simpan ke Gudang Konten</span>
-                    </button>
-
-                    <button class="btn-clay btn-clay-secondary" onclick="confirmClearQueue('pending')" title="Hapus semua stok video pending (belum diproses)">
-                        <i data-lucide="trash-2"></i>
-                        <span>Kosongkan Stok Pending</span>
-                    </button>
-
-                    <button class="btn-clay btn-clay-secondary" onclick="confirmClearQueue('all')" style="color: #ef4444;" title="Reset total: hapus seluruh antrian & riwayat video serta file sementara">
-                        <i data-lucide="alert-triangle"></i>
-                        <span>Reset Total Gudang</span>
-                    </button>
                 </div>
             </div>
         </section>
@@ -541,43 +566,6 @@
             </div>
         </section>
 
-        <!-- ─────────────────────────────────────────────
-             TAB 4: PLATFORMS
-        ───────────────────────────────────────────── -->
-        <section id="tab-platforms" class="tab-content">
-            <div class="clay-card">
-                <div class="clay-card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-                    <div>
-                        <h2 class="clay-card-title">
-                            <i data-lucide="share-2"></i>
-                            <span>Social Media Publishing Targets</span>
-                        </h2>
-                        <p class="clay-card-subtitle">
-                            Kelola channel, upload cookies, atau klik "Login Browser" jika cookies kadaluarsa/perlu login manual.
-                        </p>
-                    </div>
-                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                        <button class="btn-clay btn-clay-secondary" id="btn-fetch-links-platforms" onclick="triggerFetchAllLatestLinks(this)" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700;" title="Scan & kirim link postingan terbaru ke Telegram">
-                            <i data-lucide="search"></i>
-                            <span>🔍 Cek Link Postingan Terakhir</span>
-                        </button>
-                        <button class="btn-clay btn-clay-secondary" onclick="openAddPlatformTargetModal()" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700;">
-                            <i data-lucide="plus-circle"></i>
-                            <span>+ Tambah Akun Platform</span>
-                        </button>
-                        <button class="btn-clay btn-clay-primary" onclick="triggerPublishAllPlatforms(this)" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700;">
-                            <i data-lucide="send"></i>
-                            <span>Post 1 Video ke Semua Platform</span>
-                        </button>
-                    </div>
-
-                </div>
-
-                <div class="clay-platform-grid" id="platforms-grid">
-                    <!-- Populated dynamically via app.js -->
-                </div>
-            </div>
-        </section>
 
         <!-- ─────────────────────────────────────────────
              TAB 5: LIVE LOGS
@@ -832,7 +820,7 @@
 
 
     <!-- Application JavaScript Logic -->
-    <script src="/static/js/toast.js?v=1.0.7"></script>
-    <script src="/static/js/app.js?v=1.0.7"></script>
+    <script src="/static/js/toast.js?v=1.0.8"></script>
+    <script src="/static/js/app.js?v=1.0.8"></script>
 </body>
 </html>

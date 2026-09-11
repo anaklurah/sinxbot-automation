@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initLucide();
     loadDashboardData();
     loadPlatformsData();
+    loadVideos(1);
     loadConfigData();
     setupLogStream();
 
@@ -50,8 +51,11 @@ function switchTab(tabId, el) {
         targetContent.classList.add('active');
     }
 
-    if (tabId === 'dashboard') loadDashboardData();
-    if (tabId === 'platforms') loadPlatformsData();
+    if (tabId === 'dashboard') {
+        loadDashboardData();
+        loadPlatformsData();
+    }
+    if (tabId === 'urls') loadVideos(currentPage);
     if (tabId === 'config') loadConfigData();
     if (tabId === 'ytdlp') loadYtdlpData();
 
@@ -171,6 +175,7 @@ async function loadDashboardData(silent = false) {
         updatePipelineStatusUI(isPipelineActive, data.scheduler);
 
         if (!silent) {
+            loadPlatformsData();
             loadVideos(currentPage);
         }
     } catch (err) {
