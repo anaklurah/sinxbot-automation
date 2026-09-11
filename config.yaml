@@ -1,7 +1,7 @@
 ai_caption:
   model: deepseek-v4-flash
 browser:
-  headless: false
+  headless: true
 caption:
   fallback: metadata
   system_prompt: ''

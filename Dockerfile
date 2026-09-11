@@ -4,17 +4,21 @@ FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies (FFmpeg for video rendering, Xvfb for virtual display)
+# Install system dependencies (FFmpeg for video rendering, Xvfb for virtual display, fonts)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     xvfb \
+    fontconfig \
+    fonts-liberation \
+    fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file first for layer caching
 COPY requirements.txt .
 
-# Install Python packages
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python packages & download Camoufox anti-detect browser binary
+RUN pip install --no-cache-dir -r requirements.txt && \
+    camoufox fetch
 
 # Copy application source code
 COPY . .
