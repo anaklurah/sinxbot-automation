@@ -277,7 +277,7 @@ async function loadVideos(page = 1) {
         if (!data.videos || data.videos.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 3rem 1rem;">
+                    <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 3rem 1rem;">
                         <i data-lucide="inbox" style="width: 38px; height: 38px; opacity: 0.4; margin-bottom: 8px; display: block; margin-left: auto; margin-right: auto;"></i>
                         No video jobs found in queue.
                     </td>
@@ -314,6 +314,11 @@ async function loadVideos(page = 1) {
                 <td><div class="platform-pills">${platformHtml}</div></td>
                 <td style="color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono); white-space: nowrap;">
                     ${escapeHtml(v.created_at || '')}
+                </td>
+                <td style="text-align: center;">
+                    <button class="btn-clay btn-clay-secondary btn-clay-sm" onclick="deleteVideoItem(${v.id})" title="Hapus video #${v.id} dari antrian" style="padding: 4px 8px; color: #ef4444; border-radius: 6px;">
+                        <i data-lucide="trash-2" style="width: 13px; height: 13px;"></i>
+                    </button>
                 </td>
             `;
             tbody.appendChild(row);
@@ -460,6 +465,23 @@ async function loadConfigData() {
         if (document.getElementById('cfg-telegram-chat-id')) {
             document.getElementById('cfg-telegram-chat-id').value = env.TELEGRAM_CHAT_ID || '';
         }
+
+        // Proxy URL
+        const proxyInput = document.getElementById('cfg-proxy-url');
+        if (proxyInput) {
+            proxyInput.value = env.PROXY_URL || yaml.proxy_url || '';
+            const badge = document.getElementById('cfg-proxy-status-badge');
+            if (badge) {
+                if (proxyInput.value) {
+                    badge.className = 'badge-clay badge-done';
+                    badge.innerHTML = '<i data-lucide="network" style="width: 12px; height: 12px;"></i> Proxy Configured';
+                } else {
+                    badge.className = 'badge-clay badge-secondary';
+                    badge.innerHTML = '<i data-lucide="zap" style="width: 12px; height: 12px;"></i> Direct Mode';
+                }
+            }
+        }
+        initLucide();
     } catch (err) {
         console.error("Error loading config:", err);
     }
@@ -490,6 +512,7 @@ async function saveConfiguration() {
         telegram_enabled: document.getElementById('cfg-telegram-enabled') ? document.getElementById('cfg-telegram-enabled').value === 'true' : true,
         telegram_bot_token: document.getElementById('cfg-telegram-token')?.value?.trim() || null,
         telegram_chat_id: document.getElementById('cfg-telegram-chat-id')?.value?.trim() || null,
+        proxy_url: document.getElementById('cfg-proxy-url')?.value?.trim() ?? '',
     };
 
     try {
@@ -1260,4 +1283,96 @@ function openDebugScreenshot(platform = 'youtube') {
     const url = `/api/debug/screenshot/${platform}?t=${Date.now()}`;
     window.open(url, '_blank');
 }
+
+async function confirmClearQueue(scope = 'pending') {
+    let confirmMsg = 'Yakin ingin mengosongkan antrian stok pending? Video yang belum diproses akan dihapus dari antrian.';
+    if (scope === 'all') {
+        confirmMsg = '⚠️ PERINGATAN: Reset Total akan menghapus SEMUA antrian stok video dan riwayat posting di Gudang Konten, serta membersihkan file video di server. Yakin ingin melanjutkan?';
+    } else if (scope === 'failed') {
+        confirmMsg = 'Yakin ingin menghapus semua video yang gagal diproses?';
+    }
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        const res = await fetch('/api/queue/clear', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scope: scope }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(data.message || 'Stok konten berhasil dibersihkan!', 'success', 5000);
+            loadDashboardData(true);
+        } else {
+            showToast(data.detail || 'Gagal membersihkan antrian konten', 'error', 5000);
+        }
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error', 5000);
+    }
+}
+
+async function deleteVideoItem(videoId) {
+    if (!confirm(`Hapus video #${videoId} dari antrian Gudang Konten?`)) return;
+
+    try {
+        const res = await fetch(`/api/videos/${videoId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(data.message || `Video #${videoId} berhasil dihapus.`, 'success', 3000);
+            loadVideos(currentPage);
+            loadDashboardData(true);
+        } else {
+            showToast(data.detail || 'Gagal menghapus video', 'error', 4000);
+        }
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error', 4000);
+    }
+}
+
+async function testProxyFromConfig() {
+    const inputEl = document.getElementById('cfg-proxy-url');
+    const proxyUrl = inputEl ? inputEl.value.trim() : '';
+    const statusEl = document.getElementById('cfg-proxy-test-result');
+    const badgeEl = document.getElementById('cfg-proxy-status-badge');
+
+    if (statusEl) {
+        statusEl.style.color = 'var(--accent-amber)';
+        statusEl.innerHTML = '<i data-lucide="loader-2" class="spin" style="width:14px;height:14px;vertical-align:middle;"></i> Menguji koneksi proxy...';
+        if (window.lucide) lucide.createIcons();
+    }
+
+    try {
+        const res = await fetch('/api/proxy/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ proxy_url: proxyUrl || null }),
+        });
+        const data = await res.json();
+        if (statusEl) {
+            if (data.success) {
+                statusEl.style.color = 'var(--success)';
+                statusEl.innerText = `✅ ONLINE! Exit IP: ${data.exit_ip || '-'} (${data.latency_ms || 0}ms)`;
+                if (badgeEl) {
+                    badgeEl.className = 'badge-clay badge-done';
+                    badgeEl.innerHTML = '<i data-lucide="check-circle" style="width: 12px; height: 12px;"></i> Proxy Online';
+                }
+            } else {
+                statusEl.style.color = '#ef4444';
+                statusEl.innerText = `❌ ${data.message || 'Gagal terhubung ke proxy'}`;
+                if (badgeEl) {
+                    badgeEl.className = 'badge-clay badge-failed';
+                    badgeEl.innerHTML = '<i data-lucide="alert-circle" style="width: 12px; height: 12px;"></i> Proxy Offline';
+                }
+            }
+            if (window.lucide) lucide.createIcons();
+        }
+    } catch (err) {
+        if (statusEl) {
+            statusEl.style.color = '#ef4444';
+            statusEl.innerText = `Error: ${err.message}`;
+        }
+    }
+}
+
 

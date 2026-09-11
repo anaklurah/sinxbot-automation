@@ -210,6 +210,11 @@
                             <i data-lucide="refresh-cw"></i>
                             <span>Refresh</span>
                         </button>
+
+                        <button class="btn-clay btn-clay-secondary" onclick="confirmClearQueue('pending')" title="Hapus semua stok antrian pending yang belum diposting">
+                            <i data-lucide="trash-2"></i>
+                            <span>Kosongkan Pending</span>
+                        </button>
                     </div>
                 </div>
 
@@ -223,11 +228,12 @@
                                 <th>Pipeline State</th>
                                 <th>Platform Uploads</th>
                                 <th>Created At</th>
+                                <th style="width: 60px; text-align: center;">Aksi</th>
                             </tr>
                         </thead>
                         <tbody id="videos-table-body">
                             <tr>
-                                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2.5rem;">
+                                <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2.5rem;">
                                     Loading videos...
                                 </td>
                             </tr>
@@ -274,10 +280,22 @@
                     <span class="help-text">Input link YouTube Shorts atau video standar (1 baris per link). Link akan otomatis ditag ke Akun yang aktif.</span>
                 </div>
 
-                <button class="btn-clay btn-clay-primary" onclick="submitIngest()">
-                    <i data-lucide="folder-plus"></i>
-                    <span>Simpan ke Gudang Konten</span>
-                </button>
+                <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <button class="btn-clay btn-clay-primary" onclick="submitIngest()">
+                        <i data-lucide="folder-plus"></i>
+                        <span>Simpan ke Gudang Konten</span>
+                    </button>
+
+                    <button class="btn-clay btn-clay-secondary" onclick="confirmClearQueue('pending')" title="Hapus semua stok video pending (belum diproses)">
+                        <i data-lucide="trash-2"></i>
+                        <span>Kosongkan Stok Pending</span>
+                    </button>
+
+                    <button class="btn-clay btn-clay-secondary" onclick="confirmClearQueue('all')" style="color: #ef4444;" title="Reset total: hapus seluruh antrian & riwayat video serta file sementara">
+                        <i data-lucide="alert-triangle"></i>
+                        <span>Reset Total Gudang</span>
+                    </button>
+                </div>
             </div>
         </section>
 
@@ -482,6 +500,35 @@
                             <span>Test Kirim Pesan Telegram</span>
                         </button>
                         <span id="telegram-test-result" style="font-size: 0.82rem; font-weight: 500;"></span>
+                    </div>
+                </div>
+
+                <!-- 6. Proxy Server & Anti-Banned -->
+                <div class="clay-card">
+                    <div class="clay-card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3 class="clay-card-title">
+                            <i data-lucide="shield"></i>
+                            <span>Proxy Server & Anti-Banned</span>
+                        </h3>
+                        <span class="badge-clay badge-done" id="cfg-proxy-status-badge" style="font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px;">
+                            <i data-lucide="network" style="width: 12px; height: 12px;"></i> Direct / Proxy
+                        </span>
+                    </div>
+
+                    <div class="clay-form-group">
+                        <label for="cfg-proxy-url">
+                            <i data-lucide="globe"></i> Proxy URL (HTTP / HTTPS / SOCKS5)
+                        </label>
+                        <input type="text" id="cfg-proxy-url" class="clay-input" placeholder="http://user:pass@ip:port atau socks5://ip:port">
+                        <span class="help-text">Routing lalu lintas Camoufox & yt-dlp lewat proxy residensial/ISP. Kosongkan jika ingin mode <b>Direct (Tanpa Proxy)</b>. Disimpan otomatis ke <code>.env</code> & <code>config.yaml</code> tanpa perlu restart container manual.</span>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap;">
+                        <button type="button" class="btn-clay btn-clay-secondary btn-clay-sm" onclick="testProxyFromConfig()">
+                            <i data-lucide="activity"></i>
+                            <span>Test Koneksi Proxy</span>
+                        </button>
+                        <span id="cfg-proxy-test-result" style="font-size: 0.82rem; font-weight: 500;"></span>
                     </div>
                 </div>
             </div>
@@ -785,7 +832,7 @@
 
 
     <!-- Application JavaScript Logic -->
-    <script src="/static/js/toast.js?v=1.0.6"></script>
-    <script src="/static/js/app.js?v=1.0.6"></script>
+    <script src="/static/js/toast.js?v=1.0.7"></script>
+    <script src="/static/js/app.js?v=1.0.7"></script>
 </body>
 </html>

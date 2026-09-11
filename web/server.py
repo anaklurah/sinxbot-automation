@@ -244,6 +244,12 @@ class ConfigUpdateRequest(BaseModel):
     telegram_enabled: Optional[bool] = None
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
+    proxy_url: Optional[str] = None
+
+
+class ClearQueueRequest(BaseModel):
+    scope: str = Field("pending", description="'pending' (hanya antrian pending), 'failed' (hanya gagal), atau 'all' (semua stok & riwayat)")
+    account_id: Optional[int] = None
 
 
 class TelegramTestRequest(BaseModel):
@@ -393,6 +399,53 @@ async def ingest_urls(req: IngestRequest):
     }
 
 
+@app.post("/api/queue/clear")
+async def clear_queue_endpoint(req: ClearQueueRequest):
+    """Clear videos from queue (pending, failed, or all)."""
+    cfg = get_config()
+    from osap.db.queue import clear_queue
+
+    count, cleaned_files = clear_queue(
+        scope=req.scope,
+        account_id=req.account_id,
+        clean_files=True,
+        db_path=cfg.DB_PATH,
+    )
+
+    scope_names = {
+        "pending": "stok antrian pending",
+        "failed": "antrian gagal",
+        "all": "seluruh stok antrian & riwayat",
+    }
+    label = scope_names.get(req.scope, req.scope)
+    logger.info(f"Gudang Konten cleared ({req.scope}): {count} videos removed, {cleaned_files} leftover files deleted.")
+    return {
+        "success": True,
+        "deleted_count": count,
+        "cleaned_files": cleaned_files,
+        "scope": req.scope,
+        "message": f"Berhasil membersihkan {count} video ({label}) dari Gudang Konten!"
+    }
+
+
+@app.delete("/api/videos/{video_id}")
+async def delete_single_video(video_id: int):
+    """Delete a single video from queue and its files on disk."""
+    cfg = get_config()
+    from osap.db.queue import delete_video_by_id
+
+    success = delete_video_by_id(video_id, clean_files=True, db_path=cfg.DB_PATH)
+    if not success:
+        raise HTTPException(status_code=404, detail="Video tidak ditemukan!")
+
+    logger.info(f"Deleted video #{video_id} from queue via dashboard.")
+    return {
+        "success": True,
+        "message": f"Video #{video_id} berhasil dihapus dari Gudang Konten."
+    }
+
+
+
 def _is_valid_new_secret(val: Optional[str]) -> bool:
     """Check if a string is a legitimate new secret and not a masked representation."""
     if not val:
@@ -457,6 +510,7 @@ async def read_configuration():
             "TELEGRAM_BOT_TOKEN_MASKED": tg_token_masked,
             "TELEGRAM_HAS_TOKEN": bool(tg_token and not tg_token.startswith("****") and "..." not in tg_token),
             "TELEGRAM_CHAT_ID": tg_chat_id,
+            "PROXY_URL": getattr(cfg, "PROXY_URL", "") or os.environ.get("PROXY_URL", ""),
         }
     }
 
@@ -571,6 +625,13 @@ async def update_configuration(req: ConfigUpdateRequest):
         env_val = "true" if req.headless else "false"
         env_updates["HEADLESS"] = env_val
         os.environ["HEADLESS"] = env_val
+
+    if req.proxy_url is not None:
+        clean_proxy = req.proxy_url.strip()
+        yaml_data["proxy_url"] = clean_proxy if clean_proxy else None
+        env_updates["PROXY_URL"] = clean_proxy
+        os.environ["PROXY_URL"] = clean_proxy
+        cfg.PROXY_URL = clean_proxy if clean_proxy else None
 
     if req.enabled_platforms:
         if "platforms" not in yaml_data:

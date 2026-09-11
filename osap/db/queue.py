@@ -801,3 +801,82 @@ def delete_platform_target(target_key: str, db_path: str | Path | None = None) -
         return True
 
 
+def clear_queue(
+    scope: str = "pending",
+    account_id: int | None = None,
+    clean_files: bool = True,
+    db_path: str | Path | None = None,
+) -> tuple[int, int]:
+    """Delete videos from queue according to scope ('pending', 'failed', 'all').
+
+    Returns:
+        tuple of (deleted_videos_count, cleaned_files_count)
+    """
+    resolved_db = db_path if db_path is not None else _get_db_path()
+    cleaned_files = 0
+
+    with _immediate(resolved_db) as conn:
+        cursor = conn.cursor()
+        where_parts = []
+        params = []
+
+        if scope == "pending":
+            where_parts.append("status = 'pending'")
+        elif scope == "failed":
+            where_parts.append("status = 'failed'")
+        elif scope != "all":
+            where_parts.append("status = ?")
+            params.append(scope)
+
+        if account_id:
+            where_parts.append("account_id = ?")
+            params.append(account_id)
+
+        where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+
+        if clean_files:
+            cursor.execute(f"SELECT raw_path, rendered_path, meta_path FROM videos {where_clause}", params)
+            for row in cursor.fetchall():
+                for p_str in (row[0], row[1], row[2]):
+                    if p_str:
+                        p = Path(p_str)
+                        if p.exists() and p.is_file():
+                            try:
+                                p.unlink()
+                                cleaned_files += 1
+                            except Exception:
+                                pass
+
+        cursor.execute(f"DELETE FROM videos {where_clause}", params)
+        deleted_count = cursor.rowcount
+
+    return deleted_count, cleaned_files
+
+
+def delete_video_by_id(
+    video_id: int,
+    clean_files: bool = True,
+    db_path: str | Path | None = None,
+) -> bool:
+    """Delete a single video by id and remove its files."""
+    resolved_db = db_path if db_path is not None else _get_db_path()
+    with _immediate(resolved_db) as conn:
+        cursor = conn.cursor()
+        if clean_files:
+            cursor.execute("SELECT raw_path, rendered_path, meta_path FROM videos WHERE id = ?", (video_id,))
+            row = cursor.fetchone()
+            if row:
+                for p_str in (row[0], row[1], row[2]):
+                    if p_str:
+                        p = Path(p_str)
+                        if p.exists() and p.is_file():
+                            try:
+                                p.unlink()
+                            except Exception:
+                                pass
+
+        cursor.execute("DELETE FROM videos WHERE id = ?", (video_id,))
+        return cursor.rowcount > 0
+
+
+
