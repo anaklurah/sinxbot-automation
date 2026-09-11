@@ -7,14 +7,14 @@ services:
     ports:
       - "${HOST_PORT:-8085}:8080"
     environment:
-      - OSAP_DB_PATH=/app/osap.db
+      - OSAP_DB_PATH=/app/data/osap.db
       - DOWNLOAD_DIR=/app/downloads
       - ASSETS_DIR=/app/assets
       - PROFILES_DIR=/app/assets/profiles
       - HEADLESS=true
     volumes:
       # Persist database, downloads, profiles, and config
-      - ./osap.db:/app/osap.db
+      - ./data:/app/data
       - ./downloads:/app/downloads
       - ./assets:/app/assets
       - ./config.yaml:/app/config.yaml
