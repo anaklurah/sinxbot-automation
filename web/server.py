@@ -259,6 +259,10 @@ class YtdlpTestRequest(BaseModel):
     url: str
 
 
+class ProxyCheckRequest(BaseModel):
+    proxy_url: Optional[str] = None
+
+
 # ─────────────────────────────────────────────
 # API Endpoints
 # ─────────────────────────────────────────────
@@ -1312,16 +1316,130 @@ async def get_ytdlp_status():
     # Proxy check & mask password
     proxy_raw = getattr(cfg, "PROXY_URL", None) or os.environ.get("PROXY_URL") or ""
     masked_proxy = ""
+    proxy_alive = None
     if proxy_raw:
         masked_proxy = re.sub(r":([^:@]+)@", r":****@", proxy_raw)
+        from osap.modules.publisher.base import is_proxy_reachable
+        proxy_alive = is_proxy_reachable(proxy_raw, timeout=1.2)
 
     return {
         "version": _get_ytdlp_version(),
         "proxy": {
             "configured": bool(proxy_raw),
             "url": masked_proxy,
+            "alive": proxy_alive,
         },
         "cookies": cookie_info,
+    }
+
+
+@app.post("/api/proxy/check")
+async def check_proxy_endpoint(req: Optional[ProxyCheckRequest] = None):
+    """Check connectivity, port accessibility, and exit IP of a given proxy URL or configured PROXY_URL."""
+    cfg = get_config()
+    target_proxy = (req.proxy_url.strip() if req and req.proxy_url else None) or getattr(cfg, "PROXY_URL", None) or os.environ.get("PROXY_URL") or ""
+
+    if not target_proxy:
+        return {
+            "success": False,
+            "configured": False,
+            "status": "unconfigured",
+            "message": "Belum ada proxy yang dikonfigurasi di .env (Status saat ini: Direct / Tanpa Proxy)."
+        }
+
+    import urllib.parse
+    import socket
+    import time
+    import urllib.request
+
+    masked_url = re.sub(r":([^:@]+)@", r":****@", target_proxy)
+    parsed = urllib.parse.urlsplit(target_proxy)
+    host = parsed.hostname
+    if not host:
+        return {
+            "success": False,
+            "configured": True,
+            "url": masked_url,
+            "status": "invalid_format",
+            "message": "Format URL proxy tidak valid! Contoh: http://user:pass@ip:port atau socks5://ip:port"
+        }
+
+    port = parsed.port or (1080 if "socks" in (parsed.scheme or "") else 8080)
+
+    # 1. TCP connection check (fast 3.5s)
+    t0 = time.time()
+    try:
+        sock = socket.create_connection((host, port), timeout=3.5)
+        sock.close()
+        tcp_latency = round((time.time() - t0) * 1000)
+    except ConnectionRefusedError:
+        return {
+            "success": False,
+            "configured": True,
+            "url": masked_url,
+            "status": "connection_refused",
+            "message": f"Koneksi DITOLAK (Connection Refused) ke {host}:{port}. Pastikan proxy daemon aktif dan port {port} terbuka!"
+        }
+    except socket.timeout:
+        return {
+            "success": False,
+            "configured": True,
+            "url": masked_url,
+            "status": "timeout",
+            "message": f"Koneksi TIMEOUT ke {host}:{port} (tidak merespons dalam 3.5 detik). Cek firewall atau IP proxy."
+        }
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "url": masked_url,
+            "status": "error",
+            "message": f"Gagal menghubungi {host}:{port}: {exc}"
+        }
+
+    # 2. If HTTP/HTTPS, test real request through proxy to discover exit IP
+    if (parsed.scheme or "").startswith("http"):
+        try:
+            t1 = time.time()
+            proxy_handler = urllib.request.ProxyHandler({"http": target_proxy, "https": target_proxy})
+            opener = urllib.request.build_opener(proxy_handler)
+            req_ip = urllib.request.Request("http://api.ipify.org?format=json", headers={"User-Agent": "Mozilla/5.0"})
+            with opener.open(req_ip, timeout=7.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                http_latency = round((time.time() - t1) * 1000)
+                exit_ip = data.get("ip")
+                return {
+                    "success": True,
+                    "configured": True,
+                    "url": masked_url,
+                    "status": "online",
+                    "host": host,
+                    "port": port,
+                    "exit_ip": exit_ip,
+                    "latency_ms": http_latency,
+                    "message": f"Proxy ONLINE & BERFUNGSI! Exit IP: {exit_ip} (Ping: {http_latency}ms)"
+                }
+        except Exception as exc:
+            return {
+                "success": False,
+                "configured": True,
+                "url": masked_url,
+                "status": "auth_or_http_failed",
+                "host": host,
+                "port": port,
+                "latency_ms": tcp_latency,
+                "message": f"Port {host}:{port} terbuka (Ping: {tcp_latency}ms), namun HTTP request gagal: {exc}"
+            }
+
+    return {
+        "success": True,
+        "configured": True,
+        "url": masked_url,
+        "status": "online",
+        "host": host,
+        "port": port,
+        "latency_ms": tcp_latency,
+        "message": f"Proxy {parsed.scheme.upper()} {host}:{port} ONLINE! (TCP Ping: {tcp_latency}ms)"
     }
 
 

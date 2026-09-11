@@ -986,13 +986,25 @@ async function loadYtdlpData() {
 
         // Update proxy
         const proxyEl = document.getElementById('ytdlp-proxy-display');
+        const proxyBubbleEl = document.getElementById('ytdlp-proxy-bubble');
         if (proxyEl) {
             if (data.proxy && data.proxy.configured) {
-                proxyEl.innerText = data.proxy.url || 'Configured';
-                proxyEl.style.color = '#38bdf8';
+                if (data.proxy.alive === true) {
+                    proxyEl.innerText = `Online (${data.proxy.url})`;
+                    proxyEl.style.color = '#10b981';
+                    if (proxyBubbleEl) proxyBubbleEl.className = 'stat-icon-bubble stat-bubble-done';
+                } else if (data.proxy.alive === false) {
+                    proxyEl.innerText = `OFFLINE / Refused (${data.proxy.url})`;
+                    proxyEl.style.color = '#f43f5e';
+                    if (proxyBubbleEl) proxyBubbleEl.className = 'stat-icon-bubble stat-bubble-failed';
+                } else {
+                    proxyEl.innerText = data.proxy.url || 'Configured';
+                    proxyEl.style.color = '#38bdf8';
+                }
             } else {
-                proxyEl.innerText = 'Direct (No Proxy)';
+                proxyEl.innerText = 'Direct (Tanpa Proxy)';
                 proxyEl.style.color = 'var(--text-secondary)';
+                if (proxyBubbleEl) proxyBubbleEl.className = 'stat-icon-bubble stat-bubble-total';
             }
         }
 
@@ -1160,6 +1172,47 @@ async function testYtdlpUrl(btn) {
         }
         if (data.success) {
             showToast(data.message, 'success', 5000);
+        } else {
+            showToast(data.message, 'error', 5000);
+        }
+    } catch (err) {
+        if (resultBox) resultBox.innerText = `Error: ${err.message}`;
+        showToast(`Error: ${err.message}`, 'error', 5000);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function testProxyManual(btn) {
+    const inputEl = document.getElementById('proxy-test-url');
+    const proxyUrl = inputEl ? inputEl.value.trim() : '';
+    const resultBox = document.getElementById('proxy-test-result');
+    if (resultBox) {
+        resultBox.style.display = 'block';
+        resultBox.innerText = 'Menguji koneksi proxy... Mohon tunggu...';
+    }
+    if (btn) btn.disabled = true;
+    showToast('Menguji koneksi proxy...', 'info', 3000);
+
+    try {
+        const res = await fetch('/api/proxy/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ proxy_url: proxyUrl || null }),
+        });
+        const data = await res.json();
+        if (resultBox) {
+            let output = `HASIL DIAGNOSTIK PROXY:\n`;
+            output += `Status: ${data.success ? 'ONLINE & SIAP PAKAI' : 'GAGAL / OFFLINE'}\n`;
+            if (data.url) output += `Target: ${data.url}\n`;
+            if (data.exit_ip) output += `Public Exit IP: ${data.exit_ip}\n`;
+            if (data.latency_ms) output += `Latency/Ping: ${data.latency_ms} ms\n`;
+            output += `\nDetail: ${data.message || ''}\n`;
+            resultBox.innerText = output;
+        }
+        if (data.success) {
+            showToast(data.message, 'success', 5000);
+            loadYtdlpData();
         } else {
             showToast(data.message, 'error', 5000);
         }

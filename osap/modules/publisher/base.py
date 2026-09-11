@@ -39,6 +39,25 @@ from osap.utils.logger import get_logger
 _UPLOAD_TIMEOUT_S = 600
 
 
+def is_proxy_reachable(proxy_url: str | None, timeout: float = 2.0) -> bool:
+    """Verify if proxy host and port can be connected via TCP."""
+    if not proxy_url:
+        return False
+    try:
+        import urllib.parse
+        import socket
+        parsed = urllib.parse.urlsplit(proxy_url)
+        host = parsed.hostname
+        if not host:
+            return False
+        port = parsed.port or (1080 if "socks" in (parsed.scheme or "") else 8080)
+        sock = socket.create_connection((host, port), timeout=timeout)
+        sock.close()
+        return True
+    except Exception:
+        return False
+
+
 class BasePublisher(ABC):
     """Abstract base for all OSAP platform publishers.
 
@@ -165,11 +184,20 @@ class BasePublisher(ABC):
         cfg = self._cfg
         launch_opts = get_launch_options(headless=getattr(cfg, 'HEADLESS', False))
         
-        # Inject proxy if configured
+        # Inject proxy if configured and verified reachable
         proxy_url = getattr(cfg, 'PROXY_URL', None) or os.environ.get('PROXY_URL')
+        use_proxy = False
         if proxy_url:
-            self._log.info('[%s] Routing browser traffic through proxy: %s', self.PLATFORM_NAME, proxy_url)
-            launch_opts['proxy'] = {'server': proxy_url}
+            if is_proxy_reachable(proxy_url, timeout=2.0):
+                use_proxy = True
+                self._log.info('[%s] Routing browser traffic through verified proxy: %s', self.PLATFORM_NAME, proxy_url)
+                launch_opts['proxy'] = {'server': proxy_url}
+            else:
+                self._log.warning(
+                    '[%s] Configured PROXY_URL (%s) is UNREACHABLE (Connection Refused/Timeout). '
+                    'Bypassing proxy to prevent browser navigation failure!',
+                    self.PLATFORM_NAME, proxy_url
+                )
 
         ctx_opts = get_context_options(
             locale=getattr(cfg, 'BROWSER_LOCALE', 'en-US'),
@@ -192,7 +220,7 @@ class BasePublisher(ABC):
                         'headless': getattr(cfg, 'HEADLESS', False),
                         'humanize': True,
                     }
-                    if proxy_url:
+                    if use_proxy and proxy_url:
                         cf_kwargs['proxy'] = {'server': proxy_url}
                     self._log.info('[%s] Launching anti-detect Camoufox persistent context: %s', profile_key, profile_dir)
                     cf = AsyncCamoufox(
@@ -245,7 +273,7 @@ class BasePublisher(ABC):
                     'headless': getattr(cfg, 'HEADLESS', False),
                     'humanize': True,
                 }
-                if proxy_url:
+                if use_proxy and proxy_url:
                     cf_kwargs['proxy'] = {'server': proxy_url}
                 self._log.info('[%s] Launching anti-detect Camoufox browser...', profile_key)
                 cf = AsyncCamoufox(**cf_kwargs)

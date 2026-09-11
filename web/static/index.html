@@ -591,18 +591,18 @@
 
                 <!-- Card 3: Status Proxy -->
                 <div class="stat-clay-card">
-                    <div class="stat-icon-bubble stat-bubble-total">
+                    <div class="stat-icon-bubble stat-bubble-total" id="ytdlp-proxy-bubble">
                         <i data-lucide="shield-check"></i>
                     </div>
-                    <div class="stat-details">
-                        <span class="stat-label">Proxy Downloader</span>
-                        <span class="stat-value" id="ytdlp-proxy-display" style="font-size: 1.1rem;">Direct / None</span>
+                    <div class="stat-details" style="flex: 1;">
+                        <span class="stat-label">Proxy Status (.env)</span>
+                        <span class="stat-value" id="ytdlp-proxy-display" style="font-size: 1.05rem;">Direct / None</span>
                     </div>
                 </div>
             </div>
 
-            <!-- Two-column layout for Management -->
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 1.8rem;">
+            <!-- Three-column layout for Management -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
                 <!-- Column 1: yt-dlp Engine & Update -->
                 <div class="clay-card">
                     <div class="clay-card-header">
@@ -612,12 +612,12 @@
                         </h3>
                     </div>
                     <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1.2rem;">
-                        YouTube rutin memperbarui algoritma bot detection mereka. Pastikan yt-dlp selalu memakai rilis terbaru untuk meminimalisir error <em>Sign in to confirm you're not a bot</em>.
+                        YouTube rutin memperbarui algoritma bot detection. Pastikan yt-dlp selalu versi terbaru untuk meminimalisir bot challenge.
                     </p>
                     <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 1.2rem;">
                         <button class="btn-clay btn-clay-primary" id="btn-update-ytdlp" onclick="updateYtdlp(this)">
                             <i data-lucide="arrow-up-circle"></i>
-                            <span>Update yt-dlp Sekarang</span>
+                            <span>Update yt-dlp</span>
                         </button>
                         <button class="btn-clay btn-clay-secondary" onclick="loadYtdlpData()" title="Refresh status">
                             <i data-lucide="rotate-cw"></i>
@@ -633,20 +633,41 @@
                     <div class="clay-card-header">
                         <h3 class="clay-card-title">
                             <i data-lucide="play-circle"></i>
-                            <span>Tes Ekstraksi Video YouTube</span>
+                            <span>Tes Ekstraksi Video</span>
                         </h3>
                     </div>
                     <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1.2rem;">
-                        Tes apakah cookies dan strategi bypass yt-dlp saat ini sudah berhasil menembus proteksi YouTube untuk URL video / Shorts tertentu.
+                        Tes apakah cookies dan strategi bypass saat ini berhasil mengambil info video/Shorts tertentu.
                     </p>
                     <div style="display: flex; gap: 8px; margin-bottom: 1rem;">
-                        <input type="text" id="ytdlp-test-url" class="clay-input" placeholder="https://www.youtube.com/shorts/dam6S8IRtkU" style="flex: 1;">
+                        <input type="text" id="ytdlp-test-url" class="clay-input" placeholder="https://www.youtube.com/shorts/..." style="flex: 1;">
                         <button class="btn-clay btn-clay-primary" id="btn-test-ytdlp" onclick="testYtdlpUrl(this)">
                             <i data-lucide="zap"></i>
-                            <span>Tes Ekstraksi</span>
+                            <span>Tes Video</span>
                         </button>
                     </div>
-                    <div id="ytdlp-test-result" style="display: none; background: #0f172a; border-radius: 12px; padding: 12px; font-family: monospace; font-size: 0.82rem; color: #f8fafc; max-height: 220px; overflow-y: auto; white-space: pre-wrap;"></div>
+                    <div id="ytdlp-test-result" style="display: none; background: #0f172a; border-radius: 12px; padding: 12px; font-family: monospace; font-size: 0.82rem; color: #f8fafc; max-height: 200px; overflow-y: auto; white-space: pre-wrap;"></div>
+                </div>
+
+                <!-- Column 3: Proxy Diagnostic & Tester -->
+                <div class="clay-card">
+                    <div class="clay-card-header">
+                        <h3 class="clay-card-title">
+                            <i data-lucide="shield-alert"></i>
+                            <span>Diagnostik & Tes Proxy</span>
+                        </h3>
+                    </div>
+                    <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1.2rem;">
+                        Cek koneksi, tes port terbuka, dan periksa Public Exit IP proxy sebelum dipakai pipeline.
+                    </p>
+                    <div style="display: flex; gap: 8px; margin-bottom: 1rem;">
+                        <input type="text" id="proxy-test-url" class="clay-input" placeholder="http://user:pass@ip:port (kosongkan: cek .env)" style="flex: 1;">
+                        <button class="btn-clay btn-clay-primary" id="btn-test-proxy" onclick="testProxyManual(this)">
+                            <i data-lucide="activity"></i>
+                            <span>Cek Proxy</span>
+                        </button>
+                    </div>
+                    <div id="proxy-test-result" style="display: none; background: #0f172a; border-radius: 12px; padding: 12px; font-family: monospace; font-size: 0.82rem; color: #f8fafc; max-height: 200px; overflow-y: auto; white-space: pre-wrap;"></div>
                 </div>
             </div>
 
@@ -753,7 +774,7 @@
 
 
     <!-- Application JavaScript Logic -->
-    <script src="/static/js/toast.js?v=1.0.3"></script>
-    <script src="/static/js/app.js?v=1.0.3"></script>
+    <script src="/static/js/toast.js?v=1.0.4"></script>
+    <script src="/static/js/app.js?v=1.0.4"></script>
 </body>
 </html>
