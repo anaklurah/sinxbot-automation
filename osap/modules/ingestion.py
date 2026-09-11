@@ -515,48 +515,77 @@ class DownloadWorker:
                 last_error = str(exc2)
                 logger.warning("  [yt-dlp] Strategy 2 failed: %s", exc2)
 
-        # Strategy 3: Cookies with Web/TV clients (if cookies available)
-        if cookie_file:
-            try:
-                logger.info("  [yt-dlp] Strategy 3: Cookies with Web/TV clients...")
-                s3_opts = _make_opts(include_cookies=True, client=["web", "web_embedded", "tv"], use_proxy=False)
-                with yt_dlp.YoutubeDL(s3_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    if "entries" in info:
-                        info = info["entries"][0]
-                logger.info("  [yt-dlp] Strategy 3 succeeded!")
-                return _save_and_build_result(info)
-            except Exception as exc3:
-                last_error = str(exc3)
-                logger.warning("  [yt-dlp] Strategy 3 failed: %s", exc3)
-
-        # Strategy 4: Apple Vision/Safari clients (Apple devices bypass BotGuard)
+        # Strategy 3: iOS client (iOS client does not enforce BotGuard or PO Token challenge)
         try:
-            logger.info("  [yt-dlp] Strategy 4: visionos/web_safari client (Apple bypass)...")
-            s4_opts = _make_opts(include_cookies=False, client=["visionos", "web_safari"], use_proxy=False)
-            with yt_dlp.YoutubeDL(s4_opts) as ydl:
+            logger.info("  [yt-dlp] Strategy 3: iOS client (Apple mobile stream)...")
+            s3_opts = _make_opts(include_cookies=False, client=["ios"], use_proxy=bool(proxy_url))
+            s3_opts["format"] = "bestvideo*+bestaudio/b/best/18"
+            with yt_dlp.YoutubeDL(s3_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 if "entries" in info:
                     info = info["entries"][0]
-            logger.info("  [yt-dlp] Strategy 4 (visionos/safari) succeeded!")
+            logger.info("  [yt-dlp] Strategy 3 (iOS client) succeeded!")
             return _save_and_build_result(info)
-        except Exception as exc4:
-            last_error = str(exc4)
-            logger.warning("  [yt-dlp] Strategy 4 failed: %s", exc4)
+        except Exception as exc3:
+            last_error = str(exc3)
+            logger.warning("  [yt-dlp] Strategy 3 failed: %s", exc3)
 
-        # Strategy 5: Clean direct default download (multi-client resolver)
+        # Strategy 4: Cookies with Web/TV clients (if cookies available)
+        if cookie_file:
+            try:
+                logger.info("  [yt-dlp] Strategy 4: Cookies with Web/TV clients...")
+                s4_opts = _make_opts(include_cookies=True, client=["web", "web_embedded", "tv"], use_proxy=False)
+                with yt_dlp.YoutubeDL(s4_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    if "entries" in info:
+                        info = info["entries"][0]
+                logger.info("  [yt-dlp] Strategy 4 succeeded!")
+                return _save_and_build_result(info)
+            except Exception as exc4:
+                last_error = str(exc4)
+                logger.warning("  [yt-dlp] Strategy 4 failed: %s", exc4)
+
+            if proxy_url:
+                try:
+                    logger.info("  [yt-dlp] Strategy 4b: Cookies via proxy...")
+                    s4b_opts = _make_opts(include_cookies=True, client=["web", "web_embedded", "tv"], use_proxy=True)
+                    with yt_dlp.YoutubeDL(s4b_opts) as ydl:
+                        info = ydl.extract_info(url, download=True)
+                        if "entries" in info:
+                            info = info["entries"][0]
+                    logger.info("  [yt-dlp] Strategy 4b (Cookies via proxy) succeeded!")
+                    return _save_and_build_result(info)
+                except Exception as exc4b:
+                    last_error = str(exc4b)
+                    logger.warning("  [yt-dlp] Strategy 4b failed: %s", exc4b)
+
+        # Strategy 5: Apple Vision/Safari clients (Apple devices bypass BotGuard)
         try:
-            logger.info("  [yt-dlp] Strategy 5: Default multi-client resolver...")
-            s5_opts = _make_opts(include_cookies=False, client=None, use_proxy=False)
+            logger.info("  [yt-dlp] Strategy 5: visionos/web_safari client (Apple bypass)...")
+            s5_opts = _make_opts(include_cookies=False, client=["visionos", "web_safari"], use_proxy=bool(proxy_url))
             with yt_dlp.YoutubeDL(s5_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 if "entries" in info:
                     info = info["entries"][0]
-            logger.info("  [yt-dlp] Strategy 5 succeeded!")
+            logger.info("  [yt-dlp] Strategy 5 (visionos/safari) succeeded!")
             return _save_and_build_result(info)
         except Exception as exc5:
             last_error = str(exc5)
-            logger.error("  [yt-dlp] Strategy 5 also failed: %s", exc5)
+            logger.warning("  [yt-dlp] Strategy 5 failed: %s", exc5)
+
+        # Strategy 6: Clean direct default download (multi-client resolver)
+        try:
+            logger.info("  [yt-dlp] Strategy 6: Default multi-client resolver...")
+            s6_opts = _make_opts(include_cookies=False, client=None, use_proxy=False)
+            with yt_dlp.YoutubeDL(s6_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                if "entries" in info:
+                    info = info["entries"][0]
+            logger.info("  [yt-dlp] Strategy 6 succeeded!")
+            return _save_and_build_result(info)
+        except Exception as exc6:
+            last_error = str(exc6)
+            logger.error("  [yt-dlp] Strategy 6 also failed: %s", exc6)
 
         msg = f"yt-dlp failed all download strategies. Last error: {last_error}"
         logger.error("Video id=%d failed: %s", vid_id, msg)
