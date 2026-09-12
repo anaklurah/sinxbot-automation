@@ -203,14 +203,16 @@ function updatePipelineStatusUI(active, scheduler) {
 
     if (active) {
         beacon.classList.add('active');
-        const nextTime = scheduler?.next_slot ? `Next: ${scheduler.next_slot} WIB (${formatRemaining(scheduler.remaining_seconds)})` : 'Running';
+        const tzAbbr = scheduler?.timezone_abbr || 'WIB';
+        const nextTime = scheduler?.next_slot ? `Next: ${scheduler.next_slot} ${tzAbbr} (${formatRemaining(scheduler.remaining_seconds)})` : 'Running';
         text.innerText = `Scheduler Aktif • ${nextTime}`;
         text.style.color = 'var(--success)';
         btn.className = 'btn-clay btn-clay-danger';
         btn.innerHTML = `<i data-lucide="square"></i> <span>Stop Scheduler</span>`;
     } else {
         beacon.classList.remove('active');
-        const nextSlot = scheduler?.next_slot ? `Next: ${scheduler.next_slot} WIB` : 'Idle';
+        const tzAbbr = scheduler?.timezone_abbr || 'WIB';
+        const nextSlot = scheduler?.next_slot ? `Next: ${scheduler.next_slot} ${tzAbbr}` : 'Idle';
         text.innerText = `Scheduler Idle • ${nextSlot}`;
         text.style.color = 'var(--text-secondary)';
         btn.className = 'btn-clay btn-clay-primary';
@@ -411,6 +413,11 @@ async function loadConfigData() {
             scheduleInput.value = Array.isArray(scheduleSlots) ? scheduleSlots.join(', ') : scheduleSlots;
         }
 
+        const tzSelect = document.getElementById('cfg-timezone');
+        if (tzSelect) {
+            tzSelect.value = env.TIMEZONE || yaml.scheduler?.timezone || 'Asia/Jakarta';
+        }
+
         const elPosts = document.getElementById('cfg-posts-per-hour');
         if (elPosts) elPosts.value = yaml.rate_limits?.posts_per_hour_per_platform || 2;
 
@@ -518,6 +525,7 @@ async function saveConfiguration() {
         telegram_bot_token: document.getElementById('cfg-telegram-token')?.value?.trim() || null,
         telegram_chat_id: document.getElementById('cfg-telegram-chat-id')?.value?.trim() || null,
         proxy_url: document.getElementById('cfg-proxy-url')?.value?.trim() ?? '',
+        timezone: document.getElementById('cfg-timezone')?.value || 'Asia/Jakarta',
     };
 
     try {

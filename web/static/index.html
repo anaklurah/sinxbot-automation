@@ -364,6 +364,19 @@
                         </div>
                     </div>
 
+                    <div class="clay-form-group" style="margin-bottom: 1.25rem;">
+                        <label for="cfg-timezone">
+                            <i data-lucide="globe"></i> Zona Waktu Acuan (Timezone)
+                        </label>
+                        <select id="cfg-timezone" class="clay-input" style="font-weight: 600; font-family: var(--font-sans);">
+                            <option value="Asia/Jakarta">Asia/Jakarta (WIB — UTC+7: Jakarta, Jawa, Sumatera)</option>
+                            <option value="Asia/Makassar">Asia/Makassar (WITA — UTC+8: Bali, NTB, NTT, Sulawesi)</option>
+                            <option value="Asia/Jayapura">Asia/Jayapura (WIT — UTC+9: Maluku, Papua)</option>
+                            <option value="UTC">UTC (Coordinated Universal Time)</option>
+                        </select>
+                        <span class="help-text">Zona waktu acuan jam posting. Sangat penting jika RDP / VPS Anda berada di luar negeri (UTC/US).</span>
+                    </div>
+
                     <div style="background: rgba(16, 185, 129, 0.08); border-left: 3px solid var(--accent-emerald); padding: 10px 14px; border-radius: 8px; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5;">
                         <strong><i data-lucide="shield-check" style="width: 14px; height: 14px; vertical-align: middle; margin-right: 4px;"></i> Smart Engine Otomatis:</strong>
                         Rate limits, jeda acak manusiawi antar platform (human-like delay), dan optimasi memori JIT sudah dikelola secara pintar otomatis oleh sistem. Anda cukup menentukan jam tayang di atas!
@@ -820,7 +833,7 @@
 
 
     <!-- Application JavaScript Logic -->
-    <script src="/static/js/toast.js?v=1.0.8"></script>
-    <script src="/static/js/app.js?v=1.0.8"></script>
+    <script src="/static/js/toast.js?v=1.0.9"></script>
+    <script src="/static/js/app.js?v=1.0.9"></script>
 </body>
 </html>

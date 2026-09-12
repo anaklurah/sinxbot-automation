@@ -7,6 +7,8 @@ services:
     ports:
       - "${HOST_PORT:-8085}:8080"
     environment:
+      - TZ=${TIMEZONE:-Asia/Jakarta}
+      - TIMEZONE=${TIMEZONE:-Asia/Jakarta}
       - OSAP_DB_PATH=/app/data/osap.db
       - DOWNLOAD_DIR=/app/downloads
       - ASSETS_DIR=/app/assets

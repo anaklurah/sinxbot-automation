@@ -19,6 +19,7 @@ openai>=1.30.0
 # --- Config & Environment ---
 python-dotenv>=1.0.1
 PyYAML>=6.0.1
+tzdata>=2024.1
 
 # --- Database ---
 # sqlite3 is built-in — no extra package needed

@@ -245,6 +245,7 @@ class ConfigUpdateRequest(BaseModel):
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     proxy_url: Optional[str] = None
+    timezone: Optional[str] = None
 
 
 class ClearQueueRequest(BaseModel):
@@ -283,15 +284,20 @@ async def get_dashboard_status():
     is_scheduler_active = scheduler_mgr.is_running()
     is_pipeline_active = pipeline_mgr.is_running() or is_scheduler_active
 
-    from osap.modules.scheduler import get_next_prime_time
+    from osap.modules.scheduler import get_next_prime_time, get_configured_timezone
     active_slots = getattr(cfg, "PRIME_TIME_SLOTS", None) or ["12:00", "18:00", "21:00"]
-    _, remaining_secs, next_slot = get_next_prime_time(active_slots)
+    tz = get_configured_timezone(getattr(cfg, "TIMEZONE", "Asia/Jakarta"))
+    now_tz = datetime.datetime.now(tz)
+    _, remaining_secs, next_slot = get_next_prime_time(active_slots, tz=tz)
 
     scheduler_info = {
         "active": is_scheduler_active,
         "next_slot": next_slot,
         "remaining_seconds": int(remaining_secs),
         "slots": active_slots,
+        "timezone": getattr(cfg, "TIMEZONE", "Asia/Jakarta"),
+        "timezone_abbr": now_tz.tzname() or "WIB",
+        "current_time": now_tz.strftime("%H:%M:%S"),
     }
 
     return {
@@ -511,6 +517,7 @@ async def read_configuration():
             "TELEGRAM_HAS_TOKEN": bool(tg_token and not tg_token.startswith("****") and "..." not in tg_token),
             "TELEGRAM_CHAT_ID": tg_chat_id,
             "PROXY_URL": getattr(cfg, "PROXY_URL", "") or os.environ.get("PROXY_URL", ""),
+            "TIMEZONE": getattr(cfg, "TIMEZONE", "Asia/Jakarta") or os.environ.get("TIMEZONE", "Asia/Jakarta"),
         }
     }
 
@@ -632,6 +639,15 @@ async def update_configuration(req: ConfigUpdateRequest):
         env_updates["PROXY_URL"] = clean_proxy
         os.environ["PROXY_URL"] = clean_proxy
         cfg.PROXY_URL = clean_proxy if clean_proxy else None
+
+    if req.timezone is not None and req.timezone.strip():
+        clean_tz = req.timezone.strip()
+        if "scheduler" not in yaml_data:
+            yaml_data["scheduler"] = {}
+        yaml_data["scheduler"]["timezone"] = clean_tz
+        env_updates["TIMEZONE"] = clean_tz
+        os.environ["TIMEZONE"] = clean_tz
+        cfg.TIMEZONE = clean_tz
 
     if req.enabled_platforms:
         if "platforms" not in yaml_data:
@@ -878,11 +894,14 @@ async def start_pipeline_api():
     """Start prime-time automated scheduler (3x daily: 12:00, 18:00, 21:00)."""
     cfg = get_config()
     scheduler_mgr.start_scheduler(cfg.DB_PATH)
-    from osap.modules.scheduler import get_next_prime_time
-    _, _, next_slot = get_next_prime_time()
+    from osap.modules.scheduler import get_next_prime_time, get_configured_timezone
+    tz = get_configured_timezone(getattr(cfg, "TIMEZONE", "Asia/Jakarta"))
+    now_tz = datetime.datetime.now(tz)
+    _, _, next_slot = get_next_prime_time(tz=tz)
+    tz_abbr = now_tz.tzname() or "WIB"
     return {
         "success": True,
-        "message": f"Prime-Time Scheduler aktif! Posting otomatis 3x sehari (Jadwal terdekat: {next_slot} WIB)."
+        "message": f"Prime-Time Scheduler aktif! Posting otomatis 3x sehari (Jadwal terdekat: {next_slot} {tz_abbr})."
     }
 
 

@@ -120,6 +120,9 @@ class Config:
     #: List of scheduled posting times in 24-hour format (e.g. ["12:00", "18:00", "21:00"]).
     PRIME_TIME_SLOTS: list[str] = field(default_factory=lambda: ["12:00", "18:00", "21:00"])
 
+    #: Application timezone (e.g. "Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura", "UTC").
+    TIMEZONE: str = "Asia/Jakarta"
+
     #: Maximum number of posts per hour per platform.
     POSTS_PER_HOUR: int = 2
 
@@ -531,6 +534,11 @@ def get_config(*, reload: bool = False) -> Config:
         TELEGRAM_CHAT_ID=os.environ.get(
             "TELEGRAM_CHAT_ID",
             _nested_get(yaml_data, "telegram", "chat_id", default=""),
+        ),
+        # Smart Scheduler & Timezone
+        TIMEZONE=os.environ.get(
+            "TIMEZONE",
+            _nested_get(yaml_data, "scheduler", "timezone", default="Asia/Jakarta"),
         ),
     )
 

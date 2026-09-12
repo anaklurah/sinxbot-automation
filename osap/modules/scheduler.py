@@ -23,18 +23,65 @@ logger = get_logger("osap.scheduler")
 DEFAULT_PRIME_TIME_SLOTS: List[str] = ["12:00", "18:00", "21:00"]
 
 
-def get_next_prime_time(slots: Optional[List[str]] = None) -> Tuple[datetime.datetime, float, str]:
+def get_configured_timezone(tz_name: Optional[str] = None) -> datetime.tzinfo:
     """
-    Calculate the next prime-time slot and seconds remaining.
+    Returns a tzinfo object for the configured timezone.
+    Supports standard IANA names ("Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura", "UTC")
+    and Indonesian abbreviations ("WIB", "WITA", "WIT").
+    Falls back gracefully to fixed offset if tzdata is not available on Windows.
+    """
+    if not tz_name:
+        try:
+            cfg = get_config()
+            tz_name = getattr(cfg, "TIMEZONE", "Asia/Jakarta")
+        except Exception:
+            tz_name = "Asia/Jakarta"
+
+    aliases = {
+        "WIB": "Asia/Jakarta",
+        "WITA": "Asia/Makassar",
+        "WIT": "Asia/Jayapura",
+    }
+    raw_name = (tz_name or "Asia/Jakarta").strip()
+    canonical = aliases.get(raw_name.upper(), raw_name)
+
+    try:
+        import zoneinfo
+        return zoneinfo.ZoneInfo(canonical)
+    except Exception:
+        # Fallback offsets in case system/Python has no tzdata database (e.g. Windows without tzdata package)
+        offsets = {
+            "Asia/Jakarta": 7,
+            "WIB": 7,
+            "Asia/Makassar": 8,
+            "WITA": 8,
+            "Asia/Jayapura": 9,
+            "WIT": 9,
+            "UTC": 0,
+        }
+        hours = offsets.get(canonical, 7)
+        name = "WIB" if hours == 7 else ("WITA" if hours == 8 else ("WIT" if hours == 9 else canonical))
+        return datetime.timezone(datetime.timedelta(hours=hours), name=name)
+
+
+def get_next_prime_time(
+    slots: Optional[List[str]] = None,
+    tz: Optional[datetime.tzinfo] = None,
+) -> Tuple[datetime.datetime, float, str]:
+    """
+    Calculate the next prime-time slot and seconds remaining in the configured timezone.
     
     Returns:
         (target_datetime, seconds_remaining, slot_str)
     """
+    cfg = get_config()
     if not slots:
-        cfg = get_config()
         slots = getattr(cfg, "PRIME_TIME_SLOTS", None) or DEFAULT_PRIME_TIME_SLOTS
 
-    now = datetime.datetime.now()
+    if tz is None:
+        tz = get_configured_timezone(getattr(cfg, "TIMEZONE", "Asia/Jakarta"))
+
+    now = datetime.datetime.now(tz)
     today = now.date()
 
     candidates: List[Tuple[datetime.datetime, str]] = []
@@ -42,7 +89,7 @@ def get_next_prime_time(slots: Optional[List[str]] = None) -> Tuple[datetime.dat
     # Check today's slots
     for s in sorted(slots):
         h, m = map(int, s.split(":"))
-        candidate = datetime.datetime(today.year, today.month, today.day, h, m, 0)
+        candidate = datetime.datetime(today.year, today.month, today.day, h, m, 0, tzinfo=tz)
         if candidate > now:
             candidates.append((candidate, s))
 
@@ -51,11 +98,11 @@ def get_next_prime_time(slots: Optional[List[str]] = None) -> Tuple[datetime.dat
         tomorrow = today + datetime.timedelta(days=1)
         first_slot = sorted(slots)[0]
         h, m = map(int, first_slot.split(":"))
-        candidate = datetime.datetime(tomorrow.year, tomorrow.month, tomorrow.day, h, m, 0)
+        candidate = datetime.datetime(tomorrow.year, tomorrow.month, tomorrow.day, h, m, 0, tzinfo=tz)
         candidates.append((candidate, first_slot))
 
     target_dt, slot_str = candidates[0]
-    remaining_secs = (target_dt - now).total_seconds()
+    remaining_secs = max(0.0, (target_dt - now).total_seconds())
     return target_dt, remaining_secs, slot_str
 
 
@@ -73,13 +120,15 @@ async def run_scheduler(db_path: Optional[str] = None, slots: Optional[List[str]
         try:
             current_cfg = get_config(reload=True)
             active_slots = slots or getattr(current_cfg, "PRIME_TIME_SLOTS", None) or DEFAULT_PRIME_TIME_SLOTS
+            tz = get_configured_timezone(getattr(current_cfg, "TIMEZONE", "Asia/Jakarta"))
 
-            target_dt, remaining_secs, slot_str = get_next_prime_time(active_slots)
+            target_dt, remaining_secs, slot_str = get_next_prime_time(active_slots, tz=tz)
             hours = int(remaining_secs // 3600)
             minutes = int((remaining_secs % 3600) // 60)
+            tz_abbr = target_dt.tzname() or "WIB"
             
             logger.info(
-                f"[Scheduler] ⏳ Next scheduled post at {slot_str} ({target_dt.strftime('%d/%m %H:%M')}) — "
+                f"[Scheduler] ⏳ Next scheduled post at {slot_str} {tz_abbr} ({target_dt.strftime('%d/%m %H:%M')}) — "
                 f"waiting {hours}h {minutes}m (Schedule: {', '.join(active_slots)})..."
             )
 
@@ -87,8 +136,8 @@ async def run_scheduler(db_path: Optional[str] = None, slots: Optional[List[str]
             while remaining_secs > 0:
                 sleep_chunk = min(remaining_secs, 15.0)
                 await asyncio.sleep(sleep_chunk)
-                # Recalculate remaining to handle any system clock adjustments
-                now = datetime.datetime.now()
+                # Recalculate remaining against timezone-aware clock
+                now = datetime.datetime.now(tz)
                 remaining_secs = (target_dt - now).total_seconds()
 
             # Time reached!
