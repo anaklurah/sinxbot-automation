@@ -902,4 +902,121 @@ def delete_video_by_id(
         return cursor.rowcount > 0
 
 
+# ---------------------------------------------------------------------------
+# Per-Account Settings (Smart Schedule, Anti-Hash, Watermark, Telegram)
+# ---------------------------------------------------------------------------
+
+def get_account_settings(account_id: int, db_path: str | Path | None = None) -> dict:
+    """
+    Get user-specific settings (schedule, anti-hash, watermark, telegram) for an account.
+    If no record exists yet, returns default settings and creates the initial row.
+    """
+    import json
+    from osap.config import get_config
+
+    cfg = get_config()
+    with _session(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS account_settings (
+                account_id                  INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+                schedule_slots              TEXT DEFAULT '["12:00", "18:00", "21:00"]',
+                timezone                    TEXT DEFAULT 'Asia/Jakarta',
+                posts_per_hour              INTEGER DEFAULT 2,
+                delay_between_platforms_sec INTEGER DEFAULT 30,
+                ffmpeg_zoom                 REAL DEFAULT 1.05,
+                ffmpeg_speed                REAL DEFAULT 1.05,
+                ffmpeg_noise                INTEGER DEFAULT 3,
+                ffmpeg_contrast             REAL DEFAULT 1.05,
+                ffmpeg_saturation           REAL DEFAULT 1.08,
+                watermark_enabled           INTEGER DEFAULT 1,
+                watermark_text              TEXT DEFAULT '',
+                watermark_font_size         INTEGER DEFAULT 15,
+                watermark_opacity           REAL DEFAULT 0.3,
+                watermark_color             TEXT DEFAULT 'white',
+                telegram_enabled            INTEGER DEFAULT 0,
+                telegram_bot_token          TEXT DEFAULT '',
+                telegram_chat_id            TEXT DEFAULT '',
+                updated_at                  DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        row = conn.execute("SELECT * FROM account_settings WHERE account_id = ?", (account_id,)).fetchone()
+        if not row:
+            default_slots = json.dumps(getattr(cfg, "PRIME_TIME_SLOTS", ["12:00", "18:00", "21:00"]))
+            conn.execute(
+                """INSERT OR IGNORE INTO account_settings (
+                    account_id, schedule_slots, timezone, posts_per_hour, delay_between_platforms_sec,
+                    ffmpeg_zoom, ffmpeg_speed, ffmpeg_noise, ffmpeg_contrast, ffmpeg_saturation,
+                    watermark_enabled, watermark_text, watermark_font_size, watermark_opacity, watermark_color,
+                    telegram_enabled, telegram_bot_token, telegram_chat_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    account_id,
+                    default_slots,
+                    getattr(cfg, "TIMEZONE", "Asia/Jakarta"),
+                    getattr(cfg, "POSTS_PER_HOUR", 2),
+                    getattr(cfg, "DELAY_BETWEEN_PLATFORMS_SEC", 30),
+                    getattr(cfg, "FFMPEG_ZOOM", 1.05),
+                    getattr(cfg, "FFMPEG_SPEED", 1.05),
+                    getattr(cfg, "FFMPEG_NOISE", 3),
+                    getattr(cfg, "FFMPEG_CONTRAST", 1.05),
+                    getattr(cfg, "FFMPEG_SATURATION", 1.08),
+                    1 if getattr(cfg, "WATERMARK_ENABLED", True) else 0,
+                    getattr(cfg, "WATERMARK_TEXT", ""),
+                    getattr(cfg, "WATERMARK_FONT_SIZE", 15),
+                    getattr(cfg, "WATERMARK_OPACITY", 0.3),
+                    getattr(cfg, "WATERMARK_COLOR", "white"),
+                    1 if getattr(cfg, "TELEGRAM_ENABLED", False) else 0,
+                    getattr(cfg, "TELEGRAM_BOT_TOKEN", ""),
+                    getattr(cfg, "TELEGRAM_CHAT_ID", ""),
+                )
+            )
+            row = conn.execute("SELECT * FROM account_settings WHERE account_id = ?", (account_id,)).fetchone()
+
+        d = dict(row) if row else {}
+        if isinstance(d.get("schedule_slots"), str):
+            try:
+                d["schedule_slots"] = json.loads(d["schedule_slots"])
+            except Exception:
+                d["schedule_slots"] = ["12:00", "18:00", "21:00"]
+        return d
+
+
+def update_account_settings(account_id: int, settings: dict, db_path: str | Path | None = None) -> dict:
+    """Update settings for a specific account."""
+    import json
+    resolved_db = db_path if db_path is not None else _get_db_path()
+
+    # Ensure defaults are initialized
+    get_account_settings(account_id, db_path=resolved_db)
+
+    allowed = {
+        "schedule_slots", "timezone", "posts_per_hour", "delay_between_platforms_sec",
+        "ffmpeg_zoom", "ffmpeg_speed", "ffmpeg_noise", "ffmpeg_contrast", "ffmpeg_saturation",
+        "watermark_enabled", "watermark_text", "watermark_font_size", "watermark_opacity", "watermark_color",
+        "telegram_enabled", "telegram_bot_token", "telegram_chat_id"
+    }
+    updates = {}
+    for k, v in settings.items():
+        if k in allowed and v is not None:
+            if k == "schedule_slots" and isinstance(v, list):
+                updates[k] = json.dumps(v)
+            elif k in ("watermark_enabled", "telegram_enabled") and isinstance(v, bool):
+                updates[k] = 1 if v else 0
+            else:
+                updates[k] = v
+
+    if updates:
+        set_clauses = [f"{col} = ?" for col in updates.keys()]
+        set_clauses.append("updated_at = CURRENT_TIMESTAMP")
+        values = list(updates.values()) + [account_id]
+        with _immediate(resolved_db) as conn:
+            conn.execute(
+                f"UPDATE account_settings SET {', '.join(set_clauses)} WHERE account_id = ?",
+                values
+            )
+
+    return get_account_settings(account_id, db_path=resolved_db)
+
+
+
 

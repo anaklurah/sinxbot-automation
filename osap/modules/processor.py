@@ -140,21 +140,35 @@ class VideoProcessor:
         suffix = f"_{output_suffix}" if output_suffix and not output_suffix.startswith("_") else output_suffix
         out_path = cfg.rendered_dir / f"{video_uid}_rendered{suffix}.mp4"
 
-        # ── Config values ──────────────────────────────────────────────── #
-        zoom: float = float(cfg.FFMPEG_ZOOM)          # e.g. 1.10
-        speed: float = float(cfg.FFMPEG_SPEED)        # e.g. 1.05
-        noise: int = int(cfg.FFMPEG_NOISE)            # e.g. 3
-        contrast: float = float(cfg.FFMPEG_CONTRAST)  # e.g. 1.05
-        saturation: float = float(cfg.FFMPEG_SATURATION)  # e.g. 1.08
+        # ── Check per-account settings ──────────────────────────────────── #
+        acc_id = video.get("account_id")
+        user_settings = {}
+        if acc_id:
+            try:
+                from osap.db.queue import get_account_settings
+                user_settings = get_account_settings(acc_id, self.db_path)
+            except Exception:
+                user_settings = {}
+
+        # ── Config values (User settings override global config) ───────── #
+        zoom: float = float(user_settings.get("ffmpeg_zoom") or cfg.FFMPEG_ZOOM)
+        speed: float = float(user_settings.get("ffmpeg_speed") or cfg.FFMPEG_SPEED)
+        noise: int = int(user_settings.get("ffmpeg_noise") if user_settings.get("ffmpeg_noise") is not None else cfg.FFMPEG_NOISE)
+        contrast: float = float(user_settings.get("ffmpeg_contrast") or cfg.FFMPEG_CONTRAST)
+        saturation: float = float(user_settings.get("ffmpeg_saturation") or cfg.FFMPEG_SATURATION)
 
         # Determine effective watermark
         is_wm_active = (
-            watermark_enabled if watermark_enabled is not None else getattr(cfg, "WATERMARK_ENABLED", True)
+            watermark_enabled if watermark_enabled is not None
+            else (bool(user_settings.get("watermark_enabled")) if "watermark_enabled" in user_settings else getattr(cfg, "WATERMARK_ENABLED", True))
         )
         active_wm_text = (
             watermark_text if (watermark_text is not None and watermark_text.strip() != "")
-            else str(getattr(cfg, "WATERMARK_TEXT", ""))
+            else (user_settings.get("watermark_text") if user_settings.get("watermark_text") else str(getattr(cfg, "WATERMARK_TEXT", "")))
         )
+        wm_font_size = int(user_settings.get("watermark_font_size") or getattr(cfg, "WATERMARK_FONT_SIZE", 20))
+        wm_opacity = float(user_settings.get("watermark_opacity") or getattr(cfg, "WATERMARK_OPACITY", 0.30))
+        wm_color = str(user_settings.get("watermark_color") or getattr(cfg, "WATERMARK_COLOR", "white"))
 
         # ── Build filter graph ─────────────────────────────────────────── #
         try:
@@ -228,10 +242,14 @@ class VideoProcessor:
                 border_opacity = round(opacity * 0.8, 2)
                 shadow_opacity = round(opacity * 0.7, 2)
 
+                opacity = wm_opacity
+                border_opacity = round(opacity * 0.8, 2)
+                shadow_opacity = round(opacity * 0.7, 2)
+
                 drawtext_kwargs: dict = {
                     "text": str(active_wm_text),
-                    "fontsize": int(getattr(cfg, "WATERMARK_FONT_SIZE", 20)),
-                    "fontcolor": f"{getattr(cfg, 'WATERMARK_COLOR', 'white')}@{opacity}",
+                    "fontsize": wm_font_size,
+                    "fontcolor": f"{wm_color}@{opacity}",
                     "shadowcolor": f"black@{shadow_opacity}",
                     "shadowx": 2,
                     "shadowy": 2,

@@ -504,6 +504,27 @@ class ProxyCheckRequest(BaseModel):
     proxy_url: Optional[str] = None
 
 
+class UserSettingsUpdateRequest(BaseModel):
+    schedule_slots: Optional[List[str]] = None
+    timezone: Optional[str] = None
+    posts_per_hour: Optional[int] = None
+    delay_between_platforms_sec: Optional[int] = None
+    ffmpeg_zoom: Optional[float] = None
+    ffmpeg_speed: Optional[float] = None
+    ffmpeg_noise: Optional[int] = None
+    ffmpeg_contrast: Optional[float] = None
+    ffmpeg_saturation: Optional[float] = None
+    watermark_enabled: Optional[bool] = None
+    watermark_text: Optional[str] = None
+    watermark_font_size: Optional[int] = None
+    watermark_opacity: Optional[float] = None
+    watermark_color: Optional[str] = None
+    telegram_enabled: Optional[bool] = None
+    telegram_bot_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+
+
+
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # API Endpoints
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -551,6 +572,50 @@ async def get_dashboard_status(current_user: dict = Depends(require_auth)):
     }
 
 
+# ─────────────────────────────────────────────
+# Per-User Settings API (Schedule, Anti-Hash, Watermark, Telegram)
+# ─────────────────────────────────────────────
+
+@app.get("/api/user/settings")
+async def get_my_settings(current_user: dict = Depends(require_auth)):
+    """Get current user's personal settings."""
+    cfg = get_config()
+    from osap.db.queue import get_account_settings
+    settings = get_account_settings(current_user["account_id"], cfg.DB_PATH)
+    return {"success": True, "settings": settings}
+
+
+@app.post("/api/user/settings")
+async def update_my_settings(req: UserSettingsUpdateRequest, current_user: dict = Depends(require_auth)):
+    """Update current user's personal settings."""
+    cfg = get_config()
+    from osap.db.queue import update_account_settings
+    settings_dict = req.dict(exclude_unset=True)
+    updated = update_account_settings(current_user["account_id"], settings_dict, cfg.DB_PATH)
+    return {"success": True, "settings": updated, "message": "Pengaturan akun berhasil disimpan!"}
+
+
+@app.post("/api/user/telegram/test")
+async def test_my_telegram(req: TelegramTestRequest, current_user: dict = Depends(require_auth)):
+    """Test telegram bot credentials for current user."""
+    from osap.db.queue import get_account_settings
+    cfg = get_config()
+    settings = get_account_settings(current_user["account_id"], cfg.DB_PATH)
+    token = req.bot_token or settings.get("telegram_bot_token")
+    chat_id = req.chat_id or settings.get("telegram_chat_id")
+    if not token or not chat_id:
+        raise HTTPException(status_code=400, detail="Bot Token dan Chat ID wajib diisi!")
+    from osap.modules.telegram_notifier import send_telegram_notification
+    ok = await send_telegram_notification(
+        f"<b>Test Notifikasi OSAP</b>\nUser: {current_user['username']}\nStatus: Berhasil terhubung!",
+        bot_token=token,
+        chat_id=chat_id
+    )
+    if not ok:
+        raise HTTPException(status_code=400, detail="Gagal mengirim pesan Telegram. Cek Bot Token dan Chat ID.")
+    return {"success": True, "message": "Pesan test Telegram berhasil terkirim!"}
+
+
 @app.get("/api/videos")
 async def list_videos(
     status: Optional[str] = Query(None, description="Filter by status"),
@@ -561,7 +626,6 @@ async def list_videos(
     """List videos in queue with pagination and platform status (scoped to current user's account)."""
     cfg = get_config()
     offset = (page - 1) * limit
-    # Non-admin users only see their own account's videos
     effective_account_id = None if current_user.get("is_admin") else current_user["account_id"]
 
     def _fetch():

@@ -46,6 +46,34 @@ CREATE TABLE IF NOT EXISTS accounts (
 );
 
 -- -----------------------------------------------------------------------
+-- account_settings
+-- -----------------------------------------------------------------------
+-- Per-user independent settings: Smart Schedule, FFmpeg Anti-Hash, Watermark, Telegram
+-- -----------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS account_settings (
+    account_id                  INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+    schedule_slots              TEXT DEFAULT '["12:00", "18:00", "21:00"]',
+    timezone                    TEXT DEFAULT 'Asia/Jakarta',
+    posts_per_hour              INTEGER DEFAULT 2,
+    delay_between_platforms_sec INTEGER DEFAULT 30,
+    ffmpeg_zoom                 REAL DEFAULT 1.05,
+    ffmpeg_speed                REAL DEFAULT 1.05,
+    ffmpeg_noise                INTEGER DEFAULT 3,
+    ffmpeg_contrast             REAL DEFAULT 1.05,
+    ffmpeg_saturation           REAL DEFAULT 1.08,
+    watermark_enabled           INTEGER DEFAULT 1,
+    watermark_text              TEXT DEFAULT '',
+    watermark_font_size         INTEGER DEFAULT 15,
+    watermark_opacity           REAL DEFAULT 0.3,
+    watermark_color             TEXT DEFAULT 'white',
+    telegram_enabled            INTEGER DEFAULT 0,
+    telegram_bot_token          TEXT DEFAULT '',
+    telegram_chat_id            TEXT DEFAULT '',
+    updated_at                  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- -----------------------------------------------------------------------
 -- platform_targets
 -- -----------------------------------------------------------------------
 -- Dynamic publishing targets (cards) such as Youtube, Youtube 2, Instagram 2

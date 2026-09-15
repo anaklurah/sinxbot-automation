@@ -159,11 +159,34 @@ def list_users(db_path: str | Path) -> list[dict]:
 
 
 def delete_user(db_path: str | Path, user_id: int) -> bool:
-    """Delete user by id. Returns True if deleted."""
+    """Delete user by id, revoke sessions, delete associated account profile and reset autoincrement sequence."""
     from osap.db.models import db_session
 
     with db_session(db_path) as conn:
+        user_row = conn.execute("SELECT account_id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not user_row:
+            return False
+        account_id = user_row["account_id"]
+
         cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+
+        # Delete linked account profile if not default account 1
+        if account_id and account_id != 1:
+            conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+            try:
+                conn.execute("DELETE FROM account_settings WHERE account_id = ?", (account_id,))
+            except Exception:
+                pass
+            conn.execute("DELETE FROM videos WHERE account_id = ?", (account_id,))
+
+        # Reset sqlite autoincrement sequence so next ID starts cleanly
+        try:
+            conn.execute("UPDATE sqlite_sequence SET seq = (SELECT COALESCE(MAX(id), 0) FROM users) WHERE name = 'users'")
+            conn.execute("UPDATE sqlite_sequence SET seq = (SELECT COALESCE(MAX(id), 0) FROM accounts) WHERE name = 'accounts'")
+        except Exception:
+            pass
+
         return cur.rowcount > 0
 
 
