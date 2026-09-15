@@ -580,6 +580,100 @@ def cmd_web(args):
 
 
 # ─────────────────────────────────────────────
+# Command: add-user
+# ─────────────────────────────────────────────
+def cmd_add_user(args):
+    """Create a new employee account profile and login user."""
+    _ensure_env()
+    _init_db()
+    from osap.config import get_config
+    import osap.auth as auth_module
+    from osap.db.queue import create_account, list_accounts
+
+    cfg = get_config()
+    auth_module.init_auth_schema(cfg.DB_PATH)
+
+    username = args.username or input("Username karyawan: ").strip()
+    if not username:
+        console.print("[red]Username tidak boleh kosong.[/red]")
+        return
+
+    password = args.password
+    if not password:
+        import getpass
+        password = getpass.getpass("Password: ")
+    if len(password) < 6:
+        console.print("[red]Password minimal 6 karakter.[/red]")
+        return
+
+    account_name = args.account or username
+    is_admin = bool(args.admin)
+
+    # Check if account name already exists or create new
+    existing_accs = {a["name"].lower(): a for a in list_accounts(cfg.DB_PATH)}
+    if account_name.lower() in existing_accs:
+        acc = existing_accs[account_name.lower()]
+    else:
+        acc = create_account(account_name, cfg.DB_PATH)
+
+    try:
+        user = auth_module.create_user(
+            db_path=cfg.DB_PATH,
+            username=username,
+            password=password,
+            account_id=acc["id"],
+            is_admin=is_admin,
+        )
+        console.print(f"\n[bold green]✓ Berhasil membuat akun karyawan![/bold green]")
+        console.print(f"  • Username    : [bold cyan]{username}[/bold cyan]")
+        console.print(f"  • Account Name: [bold]{acc['name']}[/bold] (ID: {acc['id']})")
+        console.print(f"  • Role        : [yellow]{'Admin' if is_admin else 'Karyawan'}[/yellow]")
+        console.print(f"\n[dim]Karyawan sekarang bisa login di Launcher atau Web Dashboard.[/dim]")
+    except Exception as e:
+        console.print(f"[red]Gagal membuat user:[/red] {e}")
+
+
+# ─────────────────────────────────────────────
+# Command: list-users
+# ─────────────────────────────────────────────
+def cmd_list_users(args):
+    """List all registered users and their linked account profiles."""
+    _ensure_env()
+    _init_db()
+    from osap.config import get_config
+    import osap.auth as auth_module
+
+    cfg = get_config()
+    auth_module.init_auth_schema(cfg.DB_PATH)
+    users = auth_module.list_users(cfg.DB_PATH)
+
+    if not users:
+        console.print("[yellow]Belum ada user terdaftar.[/yellow]")
+        return
+
+    table = Table(title="Daftar Akun Karyawan & User OSAP", show_header=True, header_style="bold magenta")
+    table.add_column("ID", style="dim", width=6)
+    table.add_column("Username", style="bold cyan")
+    table.add_column("Account Profile", style="green")
+    table.add_column("Account ID", justify="center")
+    table.add_column("Role", style="yellow")
+    table.add_column("Created At", style="dim")
+
+    for u in users:
+        role = "Admin" if u.get("is_admin") else "Karyawan"
+        table.add_row(
+            str(u["id"]),
+            u["username"],
+            u.get("account_name", "-"),
+            str(u["account_id"]),
+            role,
+            str(u.get("created_at", "-"))[:19],
+        )
+
+    console.print(table)
+
+
+# ─────────────────────────────────────────────
 # Argument Parser
 # ─────────────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
@@ -629,10 +723,15 @@ def build_parser() -> argparse.ArgumentParser:
     # reset-stuck
     subparsers.add_parser("reset-stuck", help="Reset jobs stuck in intermediate states")
 
-    # fetch-posts
-    p_fetch = subparsers.add_parser("fetch-posts", help="Scan and retrieve latest post links from all active platforms")
-    p_fetch.add_argument("--account-id", type=int, default=1, help="Account ID to use")
-    p_fetch.add_argument("--no-telegram", dest="telegram", action="store_false", help="Do not send report to Telegram")
+    # add-user
+    p_user = subparsers.add_parser("add-user", help="Create a new employee account profile and login user")
+    p_user.add_argument("--username", "-u", help="Username for login")
+    p_user.add_argument("--password", "-p", help="Password for login")
+    p_user.add_argument("--account", "-a", help="Account profile name (default: same as username)")
+    p_user.add_argument("--admin", action="store_true", help="Grant administrator privileges")
+
+    # list-users
+    subparsers.add_parser("list-users", help="List all registered users and account profiles")
 
     return parser
 
@@ -650,6 +749,8 @@ COMMANDS = {
     "reset-stuck": cmd_reset_stuck,
     "info": cmd_info,
     "fetch-posts": cmd_fetch_posts,
+    "add-user": cmd_add_user,
+    "list-users": cmd_list_users,
 }
 
 
