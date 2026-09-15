@@ -216,6 +216,10 @@
             <i data-lucide="terminal"></i>
             <span>Live Logs</span>
         </button>
+        <button class="clay-tab-btn" id="tab-btn-users" data-tab="users" onclick="switchTab('users', this)" style="display: none;">
+            <i data-lucide="users"></i>
+            <span>Kelola Karyawan</span>
+        </button>
     </nav>
 
     <!-- Main Content Area -->
@@ -957,6 +961,90 @@
                     <button class="btn-clay btn-clay-secondary" onclick="closeAddPlatformTargetModal()">Batal</button>
                     <button class="btn-clay btn-clay-primary" onclick="submitAddPlatformTarget()">
                         <i data-lucide="check"></i> Simpan Kartu
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ─────────────────────────────────────────────
+             TAB: KELOLA KARYAWAN (Admin Only)
+        ───────────────────────────────────────────── -->
+        <section id="tab-users" class="tab-content">
+            <div class="clay-card">
+                <div class="clay-card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                    <div>
+                        <h2 class="clay-card-title" style="display: flex; align-items: center; gap: 8px;">
+                            <i data-lucide="users" style="color: var(--primary);"></i>
+                            <span>Manajemen Akun Karyawan</span>
+                        </h2>
+                        <p class="clay-card-subtitle">
+                            Buat dan kelola akun login untuk karyawan. Masing-masing karyawan memiliki antrean video dan gudang konten terpisah.
+                        </p>
+                    </div>
+                    <div>
+                        <button class="btn-clay btn-clay-primary" onclick="openAddUserModal()" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; font-weight: 700;">
+                            <i data-lucide="user-plus"></i>
+                            <span>+ Tambah Karyawan Baru</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="clay-table-responsive" style="margin-top: 15px; overflow-x: auto;">
+                    <table class="clay-table" style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="border-bottom: 2px solid var(--border-color); text-align: left;">
+                                <th style="padding: 12px 16px;">ID</th>
+                                <th style="padding: 12px 16px;">Username</th>
+                                <th style="padding: 12px 16px;">Nama Profil Akun</th>
+                                <th style="padding: 12px 16px;">Account ID</th>
+                                <th style="padding: 12px 16px;">Role</th>
+                                <th style="padding: 12px 16px;">Tanggal Dibuat</th>
+                                <th style="padding: 12px 16px; text-align: right;">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body">
+                            <tr>
+                                <td colspan="7" style="text-align: center; color: var(--text-dim); padding: 30px;">Memuat data karyawan...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Modal: Tambah Karyawan Baru -->
+        <div id="modal-add-user" class="clay-modal-backdrop" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 9999; backdrop-filter: blur(6px); align-items: center; justify-content: center;">
+            <div class="clay-card" style="width: 100%; max-width: 480px; margin: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+                <div class="clay-card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem;">
+                    <h3 class="clay-card-title" style="display: flex; align-items: center; gap: 8px; font-size: 1.15rem;">
+                        <i data-lucide="user-plus" style="color: #6366f1;"></i>
+                        <span>Tambah Akun Karyawan Baru</span>
+                    </h3>
+                    <button class="btn-clay btn-clay-secondary btn-clay-sm" onclick="closeAddUserModal()" style="padding: 4px 10px; font-size: 1.1rem; line-height: 1;">✕</button>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 16px;">
+                    <div class="clay-form-group">
+                        <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; display: block;">Username Karyawan (untuk Login)</label>
+                        <input type="text" id="modal-user-username" class="clay-input" placeholder="contoh: budi" style="width: 100%;">
+                    </div>
+                    <div class="clay-form-group">
+                        <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; display: block;">Password (minimal 6 karakter)</label>
+                        <input type="password" id="modal-user-password" class="clay-input" placeholder="Masukkan password" style="width: 100%;">
+                    </div>
+                    <div class="clay-form-group">
+                        <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; display: block;">Nama Profil Akun (Opsional, default = sama dengan username)</label>
+                        <input type="text" id="modal-user-account" class="clay-input" placeholder="contoh: Tim Budi" style="width: 100%;">
+                        <span class="help-text">Nama workspace / folder profile untuk karyawan ini.</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+                        <input type="checkbox" id="modal-user-isadmin" style="width: 18px; height: 18px; cursor: pointer;">
+                        <label for="modal-user-isadmin" style="cursor: pointer; margin-bottom: 0; font-size: 0.85rem; font-weight: 600;">Jadikan Administrator (bisa kelola sistem & user lain)</label>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 1.5rem;">
+                    <button class="btn-clay btn-clay-secondary" onclick="closeAddUserModal()">Batal</button>
+                    <button class="btn-clay btn-clay-primary" onclick="submitAddUser()">
+                        <i data-lucide="check"></i> Simpan Karyawan
                     </button>
                 </div>
             </div>

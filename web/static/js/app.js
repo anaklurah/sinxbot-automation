@@ -125,6 +125,11 @@ function updateUserBadge(userInfo) {
         nameEl.textContent = userInfo.username || 'User';
         badge.style.display = 'inline-flex';
     }
+    // Show or hide admin tabs
+    const usersTabBtn = document.getElementById('tab-btn-users');
+    if (usersTabBtn) {
+        usersTabBtn.style.display = userInfo && userInfo.is_admin ? 'inline-flex' : 'none';
+    }
 }
 
 // Check auth on page load
@@ -216,6 +221,7 @@ function switchTab(tabId, el) {
     if (tabId === 'urls') loadVideos(currentPage);
     if (tabId === 'config') loadConfigData();
     if (tabId === 'ytdlp') loadYtdlpData();
+    if (tabId === 'users') loadUsersData();
 
     setTimeout(initLucide, 50);
 }
@@ -1545,5 +1551,124 @@ async function testProxyFromConfig() {
         }
     }
 }
+
+
+/**
+ * ─────────────────────────────────────────────
+ * Kelola Karyawan (Admin Only)
+ * ─────────────────────────────────────────────
+ */
+function openAddUserModal() {
+    const modal = document.getElementById('modal-add-user');
+    if (!modal) return;
+    document.getElementById('modal-user-username').value = '';
+    document.getElementById('modal-user-password').value = '';
+    document.getElementById('modal-user-account').value = '';
+    document.getElementById('modal-user-isadmin').checked = false;
+    modal.style.display = 'flex';
+    setTimeout(initLucide, 50);
+}
+
+function closeAddUserModal() {
+    const modal = document.getElementById('modal-add-user');
+    if (modal) modal.style.display = 'none';
+}
+
+async function loadUsersData() {
+    const tbody = document.getElementById('users-table-body');
+    if (!tbody) return;
+    try {
+        const res = await apiFetch('/api/admin/users');
+        if (!res.ok) throw new Error('Gagal memuat data user');
+        const data = await res.json();
+        const users = data.users || [];
+
+        if (users.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 30px;">Belum ada user karyawan terdaftar.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = users.map(u => {
+            const roleBadge = u.is_admin
+                ? `<span style="background: rgba(168,85,247,0.15); color: #c084fc; padding: 4px 10px; border-radius: 50px; font-size: 12px; font-weight: 700; border: 1px solid rgba(168,85,247,0.3);">Admin</span>`
+                : `<span style="background: rgba(16,185,129,0.15); color: #6ee7b7; padding: 4px 10px; border-radius: 50px; font-size: 12px; font-weight: 700; border: 1px solid rgba(16,185,129,0.3);">Karyawan</span>`;
+            const dateStr = u.created_at ? u.created_at.substring(0, 19).replace('T', ' ') : '-';
+            const deleteBtn = u.username === 'admin'
+                ? `<span style="color: var(--text-dim); font-size: 12px;">Bawaan</span>`
+                : `<button class="btn-clay btn-clay-danger" onclick="deleteUser(${u.id}, '${u.username}')" style="padding: 4px 12px; font-size: 12px; cursor: pointer;">Hapus</button>`;
+
+            return `
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="padding: 12px 16px; color: var(--text-dim);">#${u.id}</td>
+                    <td style="padding: 12px 16px; font-weight: 700; color: var(--text-primary);">${u.username}</td>
+                    <td style="padding: 12px 16px; color: var(--text-secondary);">${u.account_name || '-'}</td>
+                    <td style="padding: 12px 16px; color: var(--text-dim);">${u.account_id}</td>
+                    <td style="padding: 12px 16px;">${roleBadge}</td>
+                    <td style="padding: 12px 16px; color: var(--text-dim); font-size: 13px;">${dateStr}</td>
+                    <td style="padding: 12px 16px; text-align: right;">${deleteBtn}</td>
+                </tr>
+            `;
+        }).join('');
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--accent-rose); padding: 30px;">Error: ${err.message}</td></tr>`;
+    }
+}
+
+async function submitAddUser() {
+    const username = document.getElementById('modal-user-username')?.value?.trim();
+    const password = document.getElementById('modal-user-password')?.value;
+    const accountName = document.getElementById('modal-user-account')?.value?.trim();
+    const isAdmin = !!document.getElementById('modal-user-isadmin')?.checked;
+
+    if (!username) {
+        showToast('Username wajib diisi!', 'error');
+        return;
+    }
+    if (!password || password.length < 6) {
+        showToast('Password minimal 6 karakter!', 'error');
+        return;
+    }
+
+    try {
+        const res = await apiFetch('/api/admin/users', {
+            method: 'POST',
+            body: JSON.stringify({
+                username: username,
+                password: password,
+                account_name: accountName || username,
+                is_admin: isAdmin
+            })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(data.message || `Akun karyawan '${username}' berhasil dibuat!`, 'success');
+            closeAddUserModal();
+            await loadUsersData();
+        } else {
+            showToast(data.detail || 'Gagal membuat akun karyawan.', 'error');
+        }
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error');
+    }
+}
+
+async function deleteUser(userId, username) {
+    if (!confirm(`Yakin ingin menghapus karyawan '${username}'? Akun ini tidak akan bisa login lagi.`)) {
+        return;
+    }
+    try {
+        const res = await apiFetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(data.message || `User '${username}' berhasil dihapus!`, 'success');
+            await loadUsersData();
+        } else {
+            showToast(data.detail || 'Gagal menghapus user.', 'error');
+        }
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error');
+    }
+}
+
 
 

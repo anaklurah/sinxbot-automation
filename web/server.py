@@ -279,7 +279,8 @@ class ChangePasswordRequest(BaseModel):
 class AdminCreateUserRequest(BaseModel):
     username: str
     password: str
-    account_id: int
+    account_id: Optional[int] = None
+    account_name: Optional[str] = None
     is_admin: bool = False
 
 
@@ -391,12 +392,27 @@ async def list_users_admin(current_user: dict = Depends(require_admin)):
 
 @app.post("/api/admin/users")
 async def create_user_admin(req: AdminCreateUserRequest, current_user: dict = Depends(require_admin)):
-    """[Admin] Create a new user linked to an existing account."""
+    """[Admin] Create a new user linked to an existing or new account."""
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Password minimal 6 karakter.")
     cfg = get_config()
+    from osap.db.queue import create_account, list_accounts
+
+    acc_id = req.account_id
+    if not acc_id:
+        acc_name = (req.account_name or req.username).strip()
+        existing = {a["name"].lower(): a for a in list_accounts(cfg.DB_PATH)}
+        if acc_name.lower() in existing:
+            acc_id = existing[acc_name.lower()]["id"]
+        else:
+            try:
+                new_acc = create_account(acc_name, cfg.DB_PATH)
+                acc_id = new_acc["id"]
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Gagal membuat account profile: {e}")
+
     try:
-        user = auth_module.create_user(cfg.DB_PATH, req.username, req.password, req.account_id, req.is_admin)
+        user = auth_module.create_user(cfg.DB_PATH, req.username, req.password, acc_id, req.is_admin)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"success": True, "user": user, "message": f"User '{req.username}' berhasil dibuat!"}
