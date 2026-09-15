@@ -14,8 +14,25 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <!-- 3D Claymorphism Stylesheet -->
-    <link rel="stylesheet" href="/static/css/clay.css?v=1.0.3">
+    <link rel="stylesheet" href="/static/css/clay.css?v=1.2.0">
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+
+    <!-- Fast-path Auth Check (Prevents login modal flashing on reload if already logged in) -->
+    <script>
+        (function() {
+            try {
+                var token = localStorage.getItem('osap_auth_token');
+                var urlParams = new URLSearchParams(window.location.search);
+                var urlToken = urlParams.get('token');
+                if (token || urlToken) {
+                    document.documentElement.classList.add('is-auth');
+                }
+            } catch(e) {}
+        })();
+    </script>
+    <style>
+        html.is-auth #login-overlay { display: none !important; }
+    </style>
 </head>
 <body>
 
@@ -1048,7 +1065,7 @@
 
 
     <!-- Application JavaScript Logic -->
-    <script src="/static/js/toast.js?v=1.0.9"></script>
-    <script src="/static/js/app.js?v=1.0.9"></script>
+    <script src="/static/js/toast.js?v=1.2.0"></script>
+    <script src="/static/js/app.js?v=1.2.0"></script>
 </body>
 </html>

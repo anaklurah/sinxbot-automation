@@ -573,6 +573,36 @@ class DownloadWorker:
             last_error = str(exc5)
             logger.warning("  [yt-dlp] Strategy 5 failed: %s", exc5)
 
+        # Strategy 5b: Mobile web & creator clients (mweb/android_creator bypasses BotGuard)
+        try:
+            logger.info("  [yt-dlp] Strategy 5b: mweb/android_creator mobile client...")
+            s5b_opts = _make_opts(include_cookies=False, client=["mweb", "android_creator", "web_creator"], use_proxy=bool(proxy_url))
+            s5b_opts["format"] = "bestvideo*+bestaudio/b/best/18"
+            with yt_dlp.YoutubeDL(s5b_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                if "entries" in info:
+                    info = info["entries"][0]
+            logger.info("  [yt-dlp] Strategy 5b (mweb/creator) succeeded!")
+            return _save_and_build_result(info)
+        except Exception as exc5b:
+            last_error = str(exc5b)
+            logger.warning("  [yt-dlp] Strategy 5b failed: %s", exc5b)
+
+        # Strategy 5c: Smart TV embedded client (tv_embedded bypass)
+        try:
+            logger.info("  [yt-dlp] Strategy 5c: tv_embedded client...")
+            s5c_opts = _make_opts(include_cookies=False, client=["tv_embedded", "web_embedded"], use_proxy=bool(proxy_url))
+            s5c_opts["format"] = "bestvideo*+bestaudio/b/best/18"
+            with yt_dlp.YoutubeDL(s5c_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                if "entries" in info:
+                    info = info["entries"][0]
+            logger.info("  [yt-dlp] Strategy 5c (tv_embedded) succeeded!")
+            return _save_and_build_result(info)
+        except Exception as exc5c:
+            last_error = str(exc5c)
+            logger.warning("  [yt-dlp] Strategy 5c failed: %s", exc5c)
+
         # Strategy 6: Clean direct default download (multi-client resolver)
         try:
             logger.info("  [yt-dlp] Strategy 6: Default multi-client resolver...")

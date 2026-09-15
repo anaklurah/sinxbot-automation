@@ -54,11 +54,13 @@ async function apiFetch(url, options = {}) {
 }
 
 function showLoginOverlay() {
+    document.documentElement.classList.remove('is-auth');
     const overlay = document.getElementById('login-overlay');
     if (overlay) overlay.style.display = 'flex';
 }
 
 function hideLoginOverlay() {
+    document.documentElement.classList.add('is-auth');
     const overlay = document.getElementById('login-overlay');
     if (overlay) overlay.style.display = 'none';
 }
@@ -119,6 +121,7 @@ async function doLogout() {
 }
 
 function updateUserBadge(userInfo) {
+    if (!userInfo) return;
     const badge = document.getElementById('user-badge');
     const nameEl = document.getElementById('user-badge-name');
     if (badge && nameEl) {
@@ -149,24 +152,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         return; // Don't init dashboard, wait for login
     }
 
-    // 2. Verify token is still valid using authenticated request
+    // 2. Hide login overlay immediately and restore cached user state
+    hideLoginOverlay();
+    const cachedUser = getCurrentUser();
+    if (cachedUser) {
+        updateUserBadge(cachedUser);
+    }
+
+    // 3. Normal dashboard init right away (instant page load)
+    initDashboard();
+
+    // 4. Verify token is still valid in background using authenticated request
     try {
         const resp = await apiFetch('/api/auth/me');
         if (resp.ok) {
             const user = await resp.json();
             setAuthData(token, user);
-            hideLoginOverlay();
             updateUserBadge(user);
-            // Normal dashboard init
-            initDashboard();
-        } else {
-            clearAuthData();
-            showLoginOverlay();
-            return;
         }
     } catch (e) {
-        // If 401, apiFetch already handles clearAuthData and showLoginOverlay
-        console.warn("Auth check on refresh:", e.message);
+        console.warn("Background auth check error:", e.message);
     }
 });
 
