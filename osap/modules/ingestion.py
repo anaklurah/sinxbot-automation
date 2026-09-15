@@ -526,15 +526,24 @@ class DownloadWorker:
         # ── Cascade of strategies to bypass YouTube bot blocks ────────────── #
         last_error: str = "Unknown error"
 
+        def _safe_get_info(info: dict | None) -> dict:
+            """Extract first entry from playlist or return video info. Guards None and empty entries."""
+            if info is None:
+                raise ValueError("yt-dlp returned None for info_dict (age-restricted / geo-blocked?)")
+            if "entries" in info:
+                entries = info["entries"]
+                if not entries:
+                    raise ValueError("yt-dlp returned an empty playlist — no video found at this URL")
+                return entries[0]
+            return info
+
         # Strategy 1 (Proven Top Working): Apple VisionOS / Safari client via Proxy
         try:
             logger.info("  [yt-dlp] Strategy 1: Apple VisionOS / Safari (Mobile Stream + Proxy)...")
             s1_opts = _make_opts(include_cookies=False, client=["visionos", "web_safari"], use_proxy=True)
             s1_opts["format"] = "bestvideo*+bestaudio/best"
             with yt_dlp.YoutubeDL(s1_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                if "entries" in info:
-                    info = info["entries"][0]
+                info = _safe_get_info(ydl.extract_info(url, download=True))
             logger.info("  [yt-dlp] Strategy 1 (VisionOS/Safari) succeeded!")
             return _save_and_build_result(info)
         except Exception as exc1:
@@ -547,9 +556,7 @@ class DownloadWorker:
             s2_opts = _make_opts(include_cookies=False, client=["tv_embedded", "web_embedded"], use_proxy=True)
             s2_opts["format"] = "bestvideo*+bestaudio/best"
             with yt_dlp.YoutubeDL(s2_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                if "entries" in info:
-                    info = info["entries"][0]
+                info = _safe_get_info(ydl.extract_info(url, download=True))
             logger.info("  [yt-dlp] Strategy 2 (tv_embedded) succeeded!")
             return _save_and_build_result(info)
         except Exception as exc2:
@@ -562,9 +569,7 @@ class DownloadWorker:
             s3_opts = _make_opts(include_cookies=False, client=["ios"], use_proxy=True)
             s3_opts["format"] = "best/bestvideo+bestaudio/18/22/b"
             with yt_dlp.YoutubeDL(s3_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                if "entries" in info:
-                    info = info["entries"][0]
+                info = _safe_get_info(ydl.extract_info(url, download=True))
             logger.info("  [yt-dlp] Strategy 3 (iOS mobile client) succeeded!")
             return _save_and_build_result(info)
         except Exception as exc3:
@@ -577,9 +582,7 @@ class DownloadWorker:
             s4_opts = _make_opts(include_cookies=False, client=["mweb", "android_creator", "web_creator"], use_proxy=True)
             s4_opts["format"] = "bestvideo*+bestaudio/best"
             with yt_dlp.YoutubeDL(s4_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                if "entries" in info:
-                    info = info["entries"][0]
+                info = _safe_get_info(ydl.extract_info(url, download=True))
             logger.info("  [yt-dlp] Strategy 4 (mweb/creator) succeeded!")
             return _save_and_build_result(info)
         except Exception as exc4:
@@ -592,9 +595,7 @@ class DownloadWorker:
             s5_opts = _make_opts(include_cookies=False, client=["android"], use_proxy=True)
             s5_opts["format"] = "bestvideo*+bestaudio/best"
             with yt_dlp.YoutubeDL(s5_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                if "entries" in info:
-                    info = info["entries"][0]
+                info = _safe_get_info(ydl.extract_info(url, download=True))
             logger.info("  [yt-dlp] Strategy 5 (Android client) succeeded!")
             return _save_and_build_result(info)
         except Exception as exc5:
@@ -607,9 +608,7 @@ class DownloadWorker:
                 logger.info("  [yt-dlp] Strategy 6: Cookies with Web/TV clients via proxy...")
                 s6_opts = _make_opts(include_cookies=True, client=["web", "web_embedded", "tv"], use_proxy=True)
                 with yt_dlp.YoutubeDL(s6_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    if "entries" in info:
-                        info = info["entries"][0]
+                    info = _safe_get_info(ydl.extract_info(url, download=True))
                 logger.info("  [yt-dlp] Strategy 6 (Cookies via proxy) succeeded!")
                 return _save_and_build_result(info)
             except Exception as exc6:
@@ -621,9 +620,7 @@ class DownloadWorker:
             logger.info("  [yt-dlp] Strategy 7: Default multi-client resolver via proxy...")
             s7_opts = _make_opts(include_cookies=False, client=None, use_proxy=True)
             with yt_dlp.YoutubeDL(s7_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                if "entries" in info:
-                    info = info["entries"][0]
+                info = _safe_get_info(ydl.extract_info(url, download=True))
             logger.info("  [yt-dlp] Strategy 7 succeeded!")
             return _save_and_build_result(info)
         except Exception as exc7:

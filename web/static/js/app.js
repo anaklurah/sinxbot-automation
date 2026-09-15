@@ -1566,7 +1566,9 @@ async function testProxyManual(btn) {
 }
 
 function openDebugScreenshot(platform = 'youtube') {
-    const url = `/api/debug/screenshot/${platform}?t=${Date.now()}`;
+    const token = typeof getToken === 'function' ? getToken() : '';
+    const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+    const url = `/api/debug/screenshot/${platform}?t=${Date.now()}${tokenParam}`;
     window.open(url, '_blank');
 }
 

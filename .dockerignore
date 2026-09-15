@@ -9,3 +9,8 @@ env/
 .venv/
 downloads/
 *.db
+launcher/
+*.exe
+*.bat
+.vscode/
+.idea/

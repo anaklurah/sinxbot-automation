@@ -300,7 +300,7 @@ class VideoProcessor:
             else:
                 logger.info("Video %s has no audio stream. Generating synchronized silent audio track.", raw_path.name)
                 silent_node = ffmpeg.input("anullsrc=channel_layout=stereo:sample_rate=44100", f="lavfi")
-                audio_stream = silent_node.audio
+                audio_stream = ffmpeg.filter(silent_node.audio, "atempo", speed)
                 output_kwargs["shortest"] = None
 
             # ── Encoder settings ─────────────────────────────────────── #

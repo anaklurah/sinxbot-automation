@@ -11,8 +11,10 @@ handles:
 - Delegation to osap.utils.human_delay helpers
 """
 import asyncio
+import os
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Any
 
 from playwright.async_api import (
     async_playwright,
@@ -29,7 +31,6 @@ from osap.modules.publisher.stealth import (
 )
 from osap.modules.publisher.cookie_loader import (
     load_cookies,
-    load_storage_state,
 )
 from osap.config import get_config
 from osap.utils.human_delay import jitter, human_type, human_click, human_move_and_click

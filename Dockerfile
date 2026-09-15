@@ -32,7 +32,10 @@ EXPOSE 8080
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
     PLAYWRIGHT_BROWSERS_PATH=0 \
-    OSAP_DB_PATH=/app/data/osap.db
+    OSAP_DB_PATH=/app/data/osap.db \
+    DOWNLOAD_DIR=/app/downloads \
+    ASSETS_DIR=/app/assets \
+    PROFILES_DIR=/app/assets/profiles
 
 # Command to launch the Web Dashboard server
 CMD ["python", "manage.py", "web", "--host", "0.0.0.0", "--port", "8080"]

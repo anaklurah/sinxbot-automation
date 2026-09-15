@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import random
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
@@ -248,10 +249,9 @@ async def run_jit_video_pipeline(
         wm_enabled = bool(target.get("watermark_enabled", 1))
 
         if i > 0:
-            import random
             base_delay = cfg.DELAY_BETWEEN_PLATFORMS if cfg.DELAY_BETWEEN_PLATFORMS > 0 else 25
-            jitter = random.randint(-5, 12)
-            smart_delay = max(15, base_delay + jitter)
+            jitter_val = random.randint(-5, 12)
+            smart_delay = max(15, base_delay + jitter_val)
             logger.info(f"[JIT Pipeline] 🛡️ Smart Anti-Ban: Menunggu jeda natural {smart_delay}s sebelum posting ke {target_name}...")
             await asyncio.sleep(smart_delay)
 
@@ -411,7 +411,7 @@ async def run_jit_video_pipeline(
         # Automatically purge browser junk caches (IndexedDB blobs, Code Cache, cache2)
         try:
             from osap.modules.cleanup import clean_browser_caches
-            clean_browser_caches()
+            await asyncio.to_thread(clean_browser_caches)
         except Exception:
             pass
 

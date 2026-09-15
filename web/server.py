@@ -1033,7 +1033,7 @@ async def update_configuration(req: ConfigUpdateRequest, current_user: dict = De
 
 
 @app.post("/api/telegram/test")
-async def test_telegram_endpoint(req: TelegramTestRequest):
+async def test_telegram_endpoint(req: TelegramTestRequest, current_user: dict = Depends(require_auth)):
     """Test Telegram Bot connection with provided or saved token and chat ID."""
     cfg = get_config()
     yaml_path = PROJECT_ROOT / "config.yaml"
@@ -1050,7 +1050,7 @@ async def test_telegram_endpoint(req: TelegramTestRequest):
     )
 
     from osap.modules.telegram_notifier import test_telegram_connection
-    success, msg = test_telegram_connection(token, str(chat_id))
+    success, msg = await asyncio.to_thread(test_telegram_connection, token, str(chat_id))
     if not success:
         raise HTTPException(status_code=400, detail=msg)
     return {"success": True, "message": msg}
@@ -1155,7 +1155,7 @@ async def list_platform_states(current_user: dict = Depends(require_auth)):
 
 
 @app.post("/api/platform-targets")
-async def create_platform_target_endpoint(req: CreatePlatformTargetRequest):
+async def create_platform_target_endpoint(req: CreatePlatformTargetRequest, current_user: dict = Depends(require_auth)):
     """Add a new target card (e.g. 'Youtube 2', 'Instagram 2')."""
     cfg = get_config()
     from osap.db.queue import create_platform_target, list_platform_targets
@@ -1191,110 +1191,7 @@ async def create_platform_target_endpoint(req: CreatePlatformTargetRequest):
 
 
 @app.patch("/api/platform-targets/{target_key}")
-async def update_platform_target_endpoint(target_key: str, req: UpdatePlatformTargetRequest):
-    """Update watermark, toggle status, or name for a target card."""
-    cfg = get_config()
-    from osap.db.queue import update_platform_target, get_platform_target
-    fields = {}
-    if req.name is not None:
-        fields["name"] = req.name
-    if req.enabled is not None:
-        fields["enabled"] = 1 if req.enabled else 0
-    if req.watermark_text is not None:
-        fields["watermark_text"] = req.watermark_text
-    if req.watermark_enabled is not None:
-        fields["watermark_enabled"] = 1 if req.watermark_enabled else 0
-
-    success = update_platform_target(target_key, db_path=cfg.DB_PATH, **fields)
-    if not success:
-        raise HTTPException(status_code=404, detail=f"Target '{target_key}' not found or no changes made")
-async def list_platform_states(current_user: dict = Depends(require_auth)):
-    """List all dynamic platform target cards, enabled status, watermark settings, and auth status."""
-    cfg = get_config(reload=True)
-    from osap.db.queue import list_platform_targets
-    targets = list_platform_targets(cfg.DB_PATH)
-
-    profiles_dir = Path(cfg.PROFILES_DIR)
-    persistent_platforms = {"youtube", "febspot"}
-    result = []
-
-    for t in targets:
-        t_key = t["target_key"]
-        p_base = t["platform"]
-        enabled = bool(t["enabled"])
-
-        # Check profile auth file/folder
-        auth_status = False
-        storage_json = profiles_dir / f"{t_key}_storage.json"
-        cookies_txt = profiles_dir / f"{t_key}_cookies.txt"
-        cookies_json = profiles_dir / f"{t_key}_cookies.json"
-        prof_dir = profiles_dir / t_key
-
-        if storage_json.exists() or cookies_txt.exists() or cookies_json.exists() or (prof_dir.exists() and any(prof_dir.iterdir())):
-            auth_status = True
-        elif p_base in persistent_platforms:
-            base_dir = profiles_dir / p_base
-            base_storage = profiles_dir / f"{p_base}_storage.json"
-            auth_status = (base_dir.exists() and any(base_dir.iterdir())) or base_storage.exists()
-        else:
-            base_storage = profiles_dir / f"{p_base}_storage.json"
-            base_cookies = profiles_dir / f"{p_base}_cookies.txt"
-            auth_status = base_storage.exists() or base_cookies.exists()
-
-        result.append({
-            "id": t_key,
-            "target_key": t_key,
-            "platform": p_base,
-            "name": t["name"],
-            "enabled": enabled,
-            "watermark_text": t.get("watermark_text", ""),
-            "watermark_enabled": bool(t.get("watermark_enabled", 1)),
-            "is_custom": bool(t.get("is_custom", 0)),
-            "auth_status": "configured" if auth_status else "missing",
-            "auth_type": "Persistent Profile" if p_base in persistent_platforms else "Cookies / Session State"
-        })
-
-    return {"platforms": result}
-
-
-@app.post("/api/platform-targets")
-async def create_platform_target_endpoint(req: CreatePlatformTargetRequest):
-    """Add a new target card (e.g. 'Youtube 2', 'Instagram 2')."""
-    cfg = get_config()
-    from osap.db.queue import create_platform_target, list_platform_targets
-    platform = req.platform.lower().strip()
-    if platform not in PLATFORMS:
-        raise HTTPException(status_code=400, detail=f"Invalid base platform: {platform}")
-
-    existing = list_platform_targets(cfg.DB_PATH)
-    existing_keys = {t["target_key"] for t in existing}
-
-    # Generate unique slug target_key
-    slug = re.sub(r'[^a-zA-Z0-9_]', '_', req.name.strip().lower())
-    slug = re.sub(r'_+', '_', slug).strip('_')
-    if not slug:
-        slug = f"{platform}_target"
-
-    candidate = slug
-    idx = 2
-    while candidate in existing_keys:
-        candidate = f"{slug}_{idx}"
-        idx += 1
-
-    target = create_platform_target(
-        target_key=candidate,
-        platform=platform,
-        name=req.name.strip(),
-        watermark_text=req.watermark_text or "",
-        watermark_enabled=1 if req.watermark_enabled else 0,
-        is_custom=1,
-        db_path=cfg.DB_PATH
-    )
-    return {"success": True, "target": target, "message": f"Kartu target '{req.name}' berhasil ditambahkan!"}
-
-
-@app.patch("/api/platform-targets/{target_key}")
-async def update_platform_target_endpoint(target_key: str, req: UpdatePlatformTargetRequest):
+async def update_platform_target_endpoint(target_key: str, req: UpdatePlatformTargetRequest, current_user: dict = Depends(require_auth)):
     """Update watermark, toggle status, or name for a target card."""
     cfg = get_config()
     from osap.db.queue import update_platform_target, get_platform_target
@@ -1335,7 +1232,8 @@ async def start_pipeline_api(current_user: dict = Depends(require_admin)):
     from osap.modules.scheduler import get_next_prime_time, get_configured_timezone
     tz = get_configured_timezone(getattr(cfg, "TIMEZONE", "Asia/Jakarta"))
     now_tz = datetime.datetime.now(tz)
-    _, _, next_slot = get_next_prime_time(tz=tz)
+    active_slots = getattr(cfg, "PRIME_TIME_SLOTS", None) or ["12:00", "18:00", "21:00"]
+    _, _, next_slot = get_next_prime_time(active_slots, tz=tz)
     tz_abbr = now_tz.tzname() or "WIB"
     return {
         "success": True,
@@ -1573,7 +1471,7 @@ async def upload_profile_zip(target_key: str, file: UploadFile = File(...)):
 
 
 @app.get("/api/debug/screenshot/{platform}")
-async def get_debug_screenshot(platform: str):
+async def get_debug_screenshot(platform: str, current_user: dict = Depends(require_auth)):
     """Retrieve the latest debug screenshot for a publisher platform."""
     cfg = get_config()
     search_dirs = [
@@ -1997,7 +1895,7 @@ async def get_ytdlp_status(current_user: dict = Depends(require_auth)):
 
 
 @app.post("/api/proxy/check")
-async def check_proxy_endpoint(req: Optional[ProxyCheckRequest] = None):
+async def check_proxy_endpoint(req: Optional[ProxyCheckRequest] = None, current_user: dict = Depends(require_auth)):
     """Check connectivity, port accessibility, and exit IP of a given proxy URL or configured PROXY_URL."""
     cfg = get_config()
     target_proxy = (req.proxy_url.strip() if req and req.proxy_url else None) or getattr(cfg, "PROXY_URL", None) or os.environ.get("PROXY_URL") or ""
@@ -2030,11 +1928,14 @@ async def check_proxy_endpoint(req: Optional[ProxyCheckRequest] = None):
     port = parsed.port or (1080 if "socks" in (parsed.scheme or "") else 8080)
 
     # 1. TCP connection check (fast 3.5s)
-    t0 = time.time()
-    try:
+    def _do_tcp_check():
+        t0 = time.time()
         sock = socket.create_connection((host, port), timeout=3.5)
         sock.close()
-        tcp_latency = round((time.time() - t0) * 1000)
+        return round((time.time() - t0) * 1000)
+
+    try:
+        tcp_latency = await asyncio.to_thread(_do_tcp_check)
     except ConnectionRefusedError:
         return {
             "success": False,
@@ -2061,22 +1962,22 @@ async def check_proxy_endpoint(req: Optional[ProxyCheckRequest] = None):
         }
 
     # 2. Test real request through proxy to discover exit IP (HTTP, HTTPS, SOCKS5)
-    try:
+    def _do_http_check():
         import requests as py_requests
         t1 = time.time()
-        proxies = {
-            "http": target_proxy,
-            "https": target_proxy,
-        }
+        proxies = {"http": target_proxy, "https": target_proxy}
         resp = py_requests.get(
             "http://api.ipify.org?format=json",
             proxies=proxies,
             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
             timeout=8.0
         )
+        return resp, round((time.time() - t1) * 1000)
+
+    try:
+        resp, http_latency = await asyncio.to_thread(_do_http_check)
         if resp.status_code == 200:
             data = resp.json()
-            http_latency = round((time.time() - t1) * 1000)
             exit_ip = data.get("ip")
             return {
                 "success": True,
@@ -2175,7 +2076,7 @@ async def update_ytdlp_package(current_user: dict = Depends(require_admin)):
 
 
 @app.post("/api/ytdlp/cookies/upload")
-async def upload_ytdlp_cookies(file: UploadFile = File(...)):
+async def upload_ytdlp_cookies(file: UploadFile = File(...), current_user: dict = Depends(require_auth)):
     """Upload cookie file for yt-dlp (Netscape .txt or Playwright .json)."""
     cfg = get_config()
     profiles_dir = Path(cfg.PROFILES_DIR)
@@ -2237,7 +2138,7 @@ async def upload_ytdlp_cookies(file: UploadFile = File(...)):
 
 
 @app.post("/api/ytdlp/cookies/save-text")
-async def save_ytdlp_cookies_text(req: YtdlpCookieTextRequest):
+async def save_ytdlp_cookies_text(req: YtdlpCookieTextRequest, current_user: dict = Depends(require_auth)):
     """Save raw Netscape cookies pasted directly from browser extension into youtube_cookies.txt."""
     text = req.content.strip()
     if not text:
@@ -2275,7 +2176,7 @@ async def save_ytdlp_cookies_text(req: YtdlpCookieTextRequest):
 
 
 @app.delete("/api/ytdlp/cookies")
-async def delete_ytdlp_cookies():
+async def delete_ytdlp_cookies(current_user: dict = Depends(require_auth)):
     """Delete youtube_cookies.txt and youtube_storage.json."""
     cfg = get_config()
     profiles_dir = Path(cfg.PROFILES_DIR)
@@ -2351,9 +2252,10 @@ async def test_ytdlp_url(req: YtdlpTestRequest, current_user: dict = Depends(req
         base_opts.update({k: v for k, v in st_opts.items() if v is not None})
         try:
             with yt_dlp.YoutubeDL(base_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                if "entries" in info:
-                    info = info["entries"][0]
+                raw_info = ydl.extract_info(url, download=False)
+                if not raw_info:
+                    raise ValueError("yt-dlp returned None for info")
+                info = raw_info["entries"][0] if ("entries" in raw_info and raw_info["entries"]) else raw_info
                 video_info = {
                     "id": info.get("id"),
                     "title": info.get("title"),
@@ -2371,7 +2273,7 @@ async def test_ytdlp_url(req: YtdlpTestRequest, current_user: dict = Depends(req
         "success": success,
         "video": video_info,
         "logs": logs,
-        "message": f"Berhasil mengekstrak info video: {video_info.get('title')}" if success else "Gagal mengekstrak info video dengan semua strategi."
+        "message": f"Berhasil mengekstrak info video: {(video_info or {}).get('title')}" if success else "Gagal mengekstrak info video dengan semua strategi."
     }
 
 
