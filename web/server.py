@@ -2255,7 +2255,7 @@ async def delete_ytdlp_cookies():
 
 
 @app.post("/api/ytdlp/test")
-async def test_ytdlp_url(req: YtdlpTestRequest):
+async def test_ytdlp_url(req: YtdlpTestRequest, current_user: dict = Depends(require_auth)):
     """Test extracting info for a YouTube URL using yt-dlp strategies without downloading full video."""
     url = req.url.strip()
     if not url:
@@ -2264,19 +2264,35 @@ async def test_ytdlp_url(req: YtdlpTestRequest):
     cfg = get_config()
     from osap.modules.ingestion import _get_youtube_cookiefile
     cookie_file = _get_youtube_cookiefile(cfg)
-    proxy_url = getattr(cfg, "PROXY_URL", None) or os.environ.get("PROXY_URL")
+    
+    # Resolve user or global proxy
+    proxy_url = None
+    if current_user and current_user.get("account_id"):
+        try:
+            from osap.db.queue import get_account_settings
+            acc_s = get_account_settings(current_user["account_id"], cfg.DB_PATH)
+            if acc_s and acc_s.get("proxy_url"):
+                proxy_url = acc_s.get("proxy_url").strip()
+        except Exception:
+            pass
+
+    if not proxy_url:
+        proxy_url = getattr(cfg, "PROXY_URL", None) or os.environ.get("PROXY_URL")
+
+    IOS_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
 
     import yt_dlp
 
     strategies = [
         ("iOS client (Apple mobile stream)", {"extractor_args": {"youtube": {"player_client": ["ios"]}}, "proxy": proxy_url if proxy_url else None}),
-        ("Android client (direct)", {"extractor_args": {"youtube": {"player_client": ["android"]}}}),
-        ("Cookies + Web/TV clients", {"cookiefile": str(cookie_file) if cookie_file else None, "extractor_args": {"youtube": {"player_client": ["web", "web_embedded", "tv"]}}}),
+        ("mweb & android_creator mobile client", {"extractor_args": {"youtube": {"player_client": ["mweb", "android_creator", "web_creator"]}}, "proxy": proxy_url if proxy_url else None}),
+        ("Apple VisionOS / Safari", {"extractor_args": {"youtube": {"player_client": ["visionos", "web_safari"]}}, "proxy": proxy_url if proxy_url else None}),
+        ("Android client (via proxy)", {"extractor_args": {"youtube": {"player_client": ["android"]}}, "proxy": proxy_url if proxy_url else None}),
+        ("Smart TV embedded client", {"extractor_args": {"youtube": {"player_client": ["tv_embedded", "web_embedded"]}}, "proxy": proxy_url if proxy_url else None}),
     ]
-    if cookie_file and proxy_url:
-        strategies.append(("Cookies via Proxy", {"cookiefile": str(cookie_file), "proxy": proxy_url, "extractor_args": {"youtube": {"player_client": ["web", "tv"]}}}))
-    strategies.append(("Apple VisionOS / Safari", {"extractor_args": {"youtube": {"player_client": ["visionos", "web_safari"]}}, "proxy": proxy_url if proxy_url else None}))
-    strategies.append(("Default resolver", {"proxy": proxy_url if proxy_url else None}))
+    if cookie_file:
+        strategies.append(("Cookies with Web/TV clients", {"cookiefile": str(cookie_file), "proxy": proxy_url if proxy_url else None, "extractor_args": {"youtube": {"player_client": ["web", "tv"]}}}))
+    strategies.append(("Default multi-client resolver", {"proxy": proxy_url if proxy_url else None}))
 
     logs = []
     success = False
@@ -2288,6 +2304,11 @@ async def test_ytdlp_url(req: YtdlpTestRequest):
             "no_warnings": True,
             "skip_download": True,
             "format": "bestvideo*+bestaudio/b/best/18",
+            "user_agent": IOS_UA,
+            "http_headers": {
+                "User-Agent": IOS_UA,
+                "Accept-Language": "en-US,en;q=0.9",
+            }
         }
         base_opts.update({k: v for k, v in st_opts.items() if v is not None})
         try:
@@ -2303,10 +2324,10 @@ async def test_ytdlp_url(req: YtdlpTestRequest):
                     "view_count": info.get("view_count"),
                 }
                 success = True
-                logs.append(f"âœ… {st_name}: SUKSES! (Judul: {info.get('title')})")
+                logs.append(f"✓ {st_name}: SUKSES! (Judul: {info.get('title')})")
                 break
         except Exception as exc:
-            logs.append(f"âŒ {st_name}: GAGAL ({exc})")
+            logs.append(f"✗ {st_name}: GAGAL ({exc})")
 
     return {
         "success": success,
