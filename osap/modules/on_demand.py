@@ -61,14 +61,6 @@ async def run_jit_video_pipeline(
     cfg = get_config()
     db_path = db_path or cfg.DB_PATH
 
-    # Resolve account
-    if account_id is None:
-        try:
-            active_acc = get_active_account(db_path)
-            account_id = active_acc["id"]
-        except Exception:
-            account_id = 1
-
     registry = _load_publishers()
 
     from osap.db.queue import list_platform_targets
@@ -137,7 +129,8 @@ async def run_jit_video_pipeline(
         if video is not None:
             vid_id = video["id"]
             url = video.get("url")
-            logger.info(f"[JIT Pipeline] JIT Download for video #{vid_id} ({url})...")
+            account_id = video.get("account_id") or account_id or 1
+            logger.info(f"[JIT Pipeline] JIT Download for video #{vid_id} (Account #{account_id}) ({url})...")
 
             downloader = DownloadWorker(db_path=db_path)
             dl_res = downloader._download_video(video)
@@ -355,6 +348,8 @@ async def run_jit_video_pipeline(
                     video_title=upload_title,
                     post_links=post_links,
                     failed_platforms=failed_target_names if failed_target_names else None,
+                    account_id=account_id,
+                    db_path=db_path,
                 )
             except Exception as tg_err:
                 logger.warning(f"[JIT Pipeline] Gagal mengirim notifikasi Telegram: {tg_err}")

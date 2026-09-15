@@ -747,11 +747,18 @@ class OSAPLauncher(tk.Tk):
                     stats = data.get("queue_stats", {})
                     sch = data.get("scheduler", {})
                     
-                    self.after(0, lambda: self.stat_total.configure(text=str(stats.get("total", 0))))
-                    self.after(0, lambda: self.stat_ready.configure(text=str(stats.get("pending", 0))))
-                    self.after(0, lambda: self.stat_proc.configure(text=str(stats.get("processing", 0))))
-                    self.after(0, lambda: self.stat_done.configure(text=str(stats.get("done", 0))))
-                    self.after(0, lambda: self.stat_failed.configure(text=str(stats.get("failed", 0))))
+                    by_st = stats.get("by_status", {})
+                    total_val = stats.get("total", 0)
+                    ready_val = stats.get("pending") if stats.get("pending") is not None else by_st.get("pending", 0)
+                    proc_val = stats.get("processing") if stats.get("processing") is not None else (by_st.get("downloading", 0) + by_st.get("rendering", 0) + by_st.get("uploading", 0))
+                    done_val = stats.get("done") if stats.get("done") is not None else (by_st.get("done", 0) + by_st.get("published", 0))
+                    failed_val = stats.get("failed") if stats.get("failed") is not None else (by_st.get("failed", 0) + by_st.get("error", 0))
+
+                    self.after(0, lambda: self.stat_total.configure(text=str(total_val)))
+                    self.after(0, lambda: self.stat_ready.configure(text=str(ready_val)))
+                    self.after(0, lambda: self.stat_proc.configure(text=str(proc_val)))
+                    self.after(0, lambda: self.stat_done.configure(text=str(done_val)))
+                    self.after(0, lambda: self.stat_failed.configure(text=str(failed_val)))
 
                     next_slot = sch.get("next_slot", "-")
                     rem = sch.get("remaining_seconds", 0)

@@ -1579,31 +1579,33 @@ async def get_debug_screenshot(platform: str):
     raise HTTPException(status_code=404, detail=f"Belum ada screenshot debug untuk platform '{platform}'. Jalankan publish terlebih dahulu.")
 
 
-def _run_manual_publish_target(db_path: str, target_key: str):
+def _run_manual_publish_target(db_path: str, target_key: str, account_id: Optional[int] = None):
     """Top-level process target for on-demand single-target publishing (no Telegram report)."""
     import asyncio
     from osap.modules.on_demand import run_jit_video_pipeline
     try:
         asyncio.run(run_jit_video_pipeline(
             target_platforms=[target_key],
+            account_id=account_id,
             db_path=db_path,
             auto_cleanup=True,
-            send_telegram=False,  # Manual card post â†’ no Telegram notification
+            send_telegram=False,  # Manual card post → no Telegram notification
         ))
     except (KeyboardInterrupt, SystemExit):
         pass
 
 
-def _run_publish_all_target(db_path: str):
+def _run_publish_all_target(db_path: str, account_id: Optional[int] = None):
     """Top-level process target for distributing 1 video to ALL enabled targets (sends Telegram report)."""
     import asyncio
     from osap.modules.on_demand import run_jit_video_pipeline
     try:
         asyncio.run(run_jit_video_pipeline(
             target_platforms=None,
+            account_id=account_id,
             db_path=db_path,
             auto_cleanup=True,
-            send_telegram=True,  # Scheduled/publish-all â†’ send Telegram notification
+            send_telegram=True,  # Scheduled/publish-all → send Telegram notification
         ))
     except (KeyboardInterrupt, SystemExit):
         pass
@@ -1613,10 +1615,17 @@ def _run_publish_all_target(db_path: str):
 async def trigger_publish_all(current_user: dict = Depends(require_auth)):
     """Trigger JIT 1-video download, render with per-target watermark & anti-hash, and publish to all active targets."""
     cfg = get_config()
+    acc_id = None if current_user.get("is_admin") else current_user["account_id"]
 
-    # Check video availability
+    # Check video availability for this account (or all if admin)
     with db_session(cfg.DB_PATH) as conn:
-        total_available = conn.execute("SELECT COUNT(*) FROM videos WHERE status IN ('pending', 'downloaded', 'rendered')").fetchone()[0]
+        if acc_id is not None:
+            total_available = conn.execute(
+                "SELECT COUNT(*) FROM videos WHERE status IN ('pending', 'downloaded', 'rendered') AND (account_id = ? OR account_id IS NULL)",
+                (acc_id,)
+            ).fetchone()[0]
+        else:
+            total_available = conn.execute("SELECT COUNT(*) FROM videos WHERE status IN ('pending', 'downloaded', 'rendered')").fetchone()[0]
 
     if total_available == 0:
         raise HTTPException(
@@ -1626,7 +1635,7 @@ async def trigger_publish_all(current_user: dict = Depends(require_auth)):
 
     p = multiprocessing.Process(
         target=_run_publish_all_target,
-        args=(cfg.DB_PATH,),
+        args=(cfg.DB_PATH, acc_id),
         name="publish_all_targets",
         daemon=True,
     )
@@ -1639,16 +1648,23 @@ async def trigger_publish_all(current_user: dict = Depends(require_auth)):
 
 
 @app.post("/api/publish/{target_key}")
-async def trigger_manual_publish(target_key: str):
+async def trigger_manual_publish(target_key: str, current_user: dict = Depends(require_auth)):
     """Trigger on-demand single-target publish (JIT Download -> Render with Watermark -> Caption -> Post)."""
     cfg = get_config()
     from osap.db.queue import get_platform_target
 
     target = get_platform_target(target_key, cfg.DB_PATH)
     target_name = target["name"] if target else target_key
+    acc_id = None if current_user.get("is_admin") else current_user["account_id"]
 
     with db_session(cfg.DB_PATH) as conn:
-        total_available = conn.execute("SELECT COUNT(*) FROM videos WHERE status IN ('pending', 'downloaded', 'rendered')").fetchone()[0]
+        if acc_id is not None:
+            total_available = conn.execute(
+                "SELECT COUNT(*) FROM videos WHERE status IN ('pending', 'downloaded', 'rendered') AND (account_id = ? OR account_id IS NULL)",
+                (acc_id,)
+            ).fetchone()[0]
+        else:
+            total_available = conn.execute("SELECT COUNT(*) FROM videos WHERE status IN ('pending', 'downloaded', 'rendered')").fetchone()[0]
 
     if total_available == 0:
         raise HTTPException(
@@ -1658,7 +1674,7 @@ async def trigger_manual_publish(target_key: str):
 
     p = multiprocessing.Process(
         target=_run_manual_publish_target,
-        args=(cfg.DB_PATH, target_key),
+        args=(cfg.DB_PATH, target_key, acc_id),
         name=f"manual_publish_{target_key}",
         daemon=True
     )

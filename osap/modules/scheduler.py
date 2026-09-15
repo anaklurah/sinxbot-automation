@@ -152,11 +152,11 @@ async def run_scheduler(db_path: Optional[str] = None, slots: Optional[List[str]
                 target_names = [t.get("name") or t.get("target_key") for t in active_targets]
                 logger.info(
                     f"[Scheduler] 🚀 Running scheduled JIT 1-video post across {len(active_targets)} active target(s) "
-                    f"({', '.join(target_names)}) for Account #{active_acc['id']} ({active_acc['name']})..."
+                    f"({', '.join(target_names)})..."
                 )
                 res = await run_jit_video_pipeline(
                     target_platforms=None,  # Dynamically pull all enabled targets from DB
-                    account_id=active_acc["id"],
+                    account_id=None,        # Claim any available pending video across all accounts
                     db_path=db_path,
                     auto_cleanup=True,
                     send_telegram=True,

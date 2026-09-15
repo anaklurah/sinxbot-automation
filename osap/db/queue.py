@@ -552,8 +552,17 @@ def get_stats(db_path: str | Path | None = None, account_id: int | None = None) 
         # Error log count
         error_count: int = conn.execute("SELECT COUNT(*) FROM error_log").fetchone()[0]
 
+    pending_cnt = by_status.get("pending", 0) + by_status.get("downloaded", 0) + by_status.get("rendered", 0)
+    proc_cnt = by_status.get("downloading", 0) + by_status.get("rendering", 0) + by_status.get("uploading", 0)
+    done_cnt = by_status.get("done", 0) + by_status.get("published", 0)
+    failed_cnt = by_status.get("failed", 0) + by_status.get("error", 0)
+
     return {
         "total": total,
+        "pending": pending_cnt,
+        "processing": proc_cnt,
+        "done": done_cnt,
+        "failed": failed_cnt,
         "by_status": by_status,
         "platforms": platforms,
         "errors": error_count,

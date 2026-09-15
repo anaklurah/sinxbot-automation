@@ -121,12 +121,30 @@ async def send_post_summary_to_telegram(
     post_links: Dict[str, str],
     failed_platforms: Optional[List[str]] = None,
     watermark_info: Optional[str] = None,
+    account_id: Optional[int] = None,
+    db_path: Optional[str] = None,
 ) -> bool:
     """Format and send publication summary to Telegram."""
     cfg = get_config()
+    bot_token = getattr(cfg, "TELEGRAM_BOT_TOKEN", None)
+    chat_id = getattr(cfg, "TELEGRAM_CHAT_ID", None)
     enabled = getattr(cfg, "TELEGRAM_ENABLED", True)
-    if not enabled:
-        logger.debug("[Telegram] Telegram notifications are disabled in config.")
+
+    if account_id is not None:
+        try:
+            from osap.db.queue import get_account_settings
+            s = get_account_settings(account_id, db_path or getattr(cfg, "DB_PATH", None))
+            if s.get("telegram_enabled") is not None:
+                enabled = bool(s["telegram_enabled"])
+            if s.get("telegram_bot_token"):
+                bot_token = s["telegram_bot_token"]
+            if s.get("telegram_chat_id"):
+                chat_id = s["telegram_chat_id"]
+        except Exception:
+            pass
+
+    if not enabled or not bot_token or not chat_id:
+        logger.debug("[Telegram] Telegram notifications disabled or credentials missing for account %s.", account_id)
         return False
 
     now_str = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")
@@ -180,4 +198,9 @@ async def send_post_summary_to_telegram(
     lines.append("✅ <i>Laporan otomatis dari Sinxbot Automation System.</i>")
 
     full_message = "\n".join(lines)
-    return await send_telegram_message(full_message, disable_web_page_preview=False)
+    return await send_telegram_message(
+        full_message,
+        token=bot_token,
+        chat_id=chat_id,
+        disable_web_page_preview=False,
+    )
