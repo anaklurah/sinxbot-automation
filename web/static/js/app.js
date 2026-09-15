@@ -134,14 +134,24 @@ function updateUserBadge(userInfo) {
 
 // Check auth on page load
 document.addEventListener('DOMContentLoaded', async () => {
+    // 1. Check if token was provided in URL (?token=...)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get('token');
+    if (urlToken) {
+        localStorage.setItem(AUTH_KEY, urlToken);
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+    }
+
     const token = getToken();
     if (!token) {
         showLoginOverlay();
         return; // Don't init dashboard, wait for login
     }
-    // Verify token is still valid
+
+    // 2. Verify token is still valid using authenticated request
     try {
-        const resp = await fetch('/api/auth/me');
+        const resp = await apiFetch('/api/auth/me');
         if (resp.ok) {
             const user = await resp.json();
             setAuthData(token, user);
@@ -155,8 +165,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
     } catch (e) {
-        showLoginOverlay();
-        return;
+        // If 401, apiFetch already handles clearAuthData and showLoginOverlay
+        console.warn("Auth check on refresh:", e.message);
     }
 });
 
