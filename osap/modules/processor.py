@@ -177,13 +177,13 @@ class VideoProcessor:
             # ── Video chain ─────────────────────────────────────────── #
             video_stream = input_node.video
 
-            # 1. Scale up by zoom factor (keeps full frame with sharp lanczos scaling).
+            # 1. Scale up by zoom factor (keeps full frame with sharp scaling).
             video_stream = ffmpeg.filter(
                 video_stream,
                 "scale",
                 w=f"iw*{zoom}",
                 h=f"ih*{zoom}",
-                flags="lanczos",
+                flags="bicubic",
             )
 
             # 2. Centre-crop back to original dimensions.
@@ -202,7 +202,7 @@ class VideoProcessor:
                 "scale",
                 w="if(gt(iw,ih),min(1920,iw),min(1080,iw))",
                 h="-2",
-                flags="lanczos",
+                flags="bicubic",
             )
 
             # 3. Speed-up via PTS manipulation.
@@ -325,8 +325,9 @@ class VideoProcessor:
                 output_kwargs.update(
                     {
                         "vcodec": "libx264",
-                        "preset": "fast",
+                        "preset": "veryfast",
                         "crf": 23,
+                        "threads": 0,
                         "maxrate": "3500k",
                         "bufsize": "6000k",
                         "profile:v": "main",   # Twitter/X requires H.264 main or baseline profile
@@ -342,12 +343,12 @@ class VideoProcessor:
                 **output_kwargs,
             )
 
-            logger.debug(
-                "FFmpeg command: %s",
-                " ".join(ffmpeg.compile(out.overwrite_output())),
-            )
+            logger.info("  [FFmpeg] ⏳ Encoding video with anti-hash filters & watermark (libx264 veryfast)...")
 
             out.overwrite_output().run(quiet=True, capture_stderr=True)
+
+            file_size_mb = out_path.stat().st_size / (1024 * 1024) if out_path.exists() else 0.0
+            logger.info("  [FFmpeg] ✓ Rendering complete: %s (Size: %.2f MB)", out_path.name, file_size_mb)
 
         except ffmpeg.Error as exc:
             stderr_text = ""
