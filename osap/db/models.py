@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS account_settings (
     telegram_enabled            INTEGER DEFAULT 0,
     telegram_bot_token          TEXT DEFAULT '',
     telegram_chat_id            TEXT DEFAULT '',
+    proxy_url                   TEXT DEFAULT '',
     updated_at                  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

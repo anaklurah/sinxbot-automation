@@ -209,8 +209,18 @@ class BasePublisher(ABC):
         cfg = self._cfg
         launch_opts = get_launch_options(headless=getattr(cfg, 'HEADLESS', False))
         
-        # Inject proxy if configured and verified reachable
-        proxy_url = getattr(cfg, 'PROXY_URL', None) or os.environ.get('PROXY_URL')
+        # Inject proxy if configured and verified reachable (check per-account proxy first)
+        proxy_url = None
+        if getattr(self, "account_id", None):
+            try:
+                from osap.db.queue import get_account_settings
+                acc_settings = get_account_settings(self.account_id, getattr(cfg, "DB_PATH", None))
+                if acc_settings.get("proxy_url"):
+                    proxy_url = acc_settings["proxy_url"].strip()
+            except Exception:
+                pass
+        if not proxy_url:
+            proxy_url = getattr(cfg, 'PROXY_URL', None) or os.environ.get('PROXY_URL')
         use_proxy = False
         pw_proxy = None
         if proxy_url:

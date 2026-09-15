@@ -564,6 +564,64 @@ function setSchedulePreset(slotsText) {
 
 async function loadConfigData() {
     try {
+        const u = getCurrentUser();
+        // If employee (non-admin), load personal account settings
+        if (u && !u.is_admin) {
+            const res = await apiFetch('/api/user/settings');
+            const data = await res.json();
+            if (res.ok && data.settings) {
+                const s = data.settings;
+                const scheduleInput = document.getElementById('cfg-schedule-slots');
+                if (scheduleInput && s.schedule_slots) {
+                    scheduleInput.value = Array.isArray(s.schedule_slots) ? s.schedule_slots.join(', ') : s.schedule_slots;
+                }
+                const tzSelect = document.getElementById('cfg-timezone');
+                if (tzSelect && s.timezone) tzSelect.value = s.timezone;
+                const elPosts = document.getElementById('cfg-posts-per-hour');
+                if (elPosts && s.posts_per_hour) elPosts.value = s.posts_per_hour;
+                const elDelay = document.getElementById('cfg-delay-platforms');
+                if (elDelay && s.delay_between_platforms_sec) elDelay.value = s.delay_between_platforms_sec;
+
+                if (s.ffmpeg_zoom !== undefined) document.getElementById('cfg-ffmpeg-zoom').value = s.ffmpeg_zoom;
+                if (s.ffmpeg_speed !== undefined) document.getElementById('cfg-ffmpeg-speed').value = s.ffmpeg_speed;
+                if (s.ffmpeg_noise !== undefined) document.getElementById('cfg-ffmpeg-noise').value = s.ffmpeg_noise;
+                if (s.ffmpeg_contrast !== undefined) document.getElementById('cfg-ffmpeg-contrast').value = s.ffmpeg_contrast;
+                if (s.ffmpeg_saturation !== undefined) document.getElementById('cfg-ffmpeg-saturation').value = s.ffmpeg_saturation;
+
+                if (s.watermark_enabled !== undefined) document.getElementById('cfg-watermark-enabled').value = s.watermark_enabled ? 'true' : 'false';
+                if (s.watermark_text !== undefined) document.getElementById('cfg-watermark-text').value = s.watermark_text;
+                if (s.watermark_font_size !== undefined) document.getElementById('cfg-watermark-size').value = s.watermark_font_size;
+
+                if (document.getElementById('cfg-telegram-enabled')) {
+                    document.getElementById('cfg-telegram-enabled').value = s.telegram_enabled ? 'true' : 'false';
+                }
+                const tgTokenInput = document.getElementById('cfg-telegram-token');
+                if (tgTokenInput) {
+                    tgTokenInput.value = s.telegram_bot_token || '';
+                    if (s.telegram_bot_token) tgTokenInput.placeholder = '(Tersimpan) - Biarkan kosong jika tidak diubah';
+                }
+                const tgChatIdInput = document.getElementById('cfg-telegram-chat-id');
+                if (tgChatIdInput) tgChatIdInput.value = s.telegram_chat_id || '';
+
+                const proxyInput = document.getElementById('cfg-proxy-url');
+                if (proxyInput) {
+                    proxyInput.value = s.proxy_url || '';
+                    const badge = document.getElementById('cfg-proxy-status-badge');
+                    if (badge) {
+                        if (proxyInput.value) {
+                            badge.className = 'badge-clay badge-done';
+                            badge.innerHTML = '<i data-lucide="network" style="width: 12px; height: 12px;"></i> Proxy Configured';
+                        } else {
+                            badge.className = 'badge-clay badge-secondary';
+                            badge.innerHTML = '<i data-lucide="zap" style="width: 12px; height: 12px;"></i> Direct Mode';
+                        }
+                    }
+                }
+                initLucide();
+                return;
+            }
+        }
+
         const res = await apiFetch('/api/config');
         const data = await res.json();
 
@@ -693,6 +751,42 @@ async function saveConfiguration() {
     };
 
     try {
+        const u = getCurrentUser();
+        if (u && !u.is_admin) {
+            // Employee saves directly to their own account settings
+            const userPayload = {
+                schedule_slots: payload.schedule_slots,
+                timezone: payload.timezone,
+                posts_per_hour: payload.posts_per_hour,
+                delay_between_platforms_sec: payload.delay_between_platforms_sec,
+                ffmpeg_zoom: payload.ffmpeg_zoom,
+                ffmpeg_speed: payload.ffmpeg_speed,
+                ffmpeg_noise: payload.ffmpeg_noise,
+                ffmpeg_contrast: payload.ffmpeg_contrast,
+                ffmpeg_saturation: payload.ffmpeg_saturation,
+                watermark_enabled: payload.watermark_enabled,
+                watermark_text: payload.watermark_text,
+                watermark_font_size: payload.watermark_font_size,
+                telegram_enabled: payload.telegram_enabled,
+                telegram_bot_token: payload.telegram_bot_token,
+                telegram_chat_id: payload.telegram_chat_id,
+                proxy_url: payload.proxy_url,
+            };
+            const res = await apiFetch('/api/user/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(userPayload)
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Pengaturan akun karyawan berhasil disimpan!', 'success');
+                loadDashboardData(true);
+            } else {
+                showToast(data.detail || 'Gagal menyimpan pengaturan akun', 'error');
+            }
+            return;
+        }
+
         const res = await apiFetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

@@ -522,6 +522,7 @@ class UserSettingsUpdateRequest(BaseModel):
     telegram_enabled: Optional[bool] = None
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
+    proxy_url: Optional[str] = None
 
 
 

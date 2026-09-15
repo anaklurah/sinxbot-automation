@@ -936,9 +936,15 @@ def get_account_settings(account_id: int, db_path: str | Path | None = None) -> 
                 telegram_enabled            INTEGER DEFAULT 0,
                 telegram_bot_token          TEXT DEFAULT '',
                 telegram_chat_id            TEXT DEFAULT '',
+                proxy_url                   TEXT DEFAULT '',
                 updated_at                  DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Ensure proxy_url column exists if table was already created
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(account_settings)").fetchall()]
+        if "proxy_url" not in cols:
+            conn.execute("ALTER TABLE account_settings ADD COLUMN proxy_url TEXT DEFAULT ''")
+
         row = conn.execute("SELECT * FROM account_settings WHERE account_id = ?", (account_id,)).fetchone()
         if not row:
             default_slots = json.dumps(getattr(cfg, "PRIME_TIME_SLOTS", ["12:00", "18:00", "21:00"]))
@@ -947,8 +953,8 @@ def get_account_settings(account_id: int, db_path: str | Path | None = None) -> 
                     account_id, schedule_slots, timezone, posts_per_hour, delay_between_platforms_sec,
                     ffmpeg_zoom, ffmpeg_speed, ffmpeg_noise, ffmpeg_contrast, ffmpeg_saturation,
                     watermark_enabled, watermark_text, watermark_font_size, watermark_opacity, watermark_color,
-                    telegram_enabled, telegram_bot_token, telegram_chat_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    telegram_enabled, telegram_bot_token, telegram_chat_id, proxy_url
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     account_id,
                     default_slots,
@@ -968,6 +974,7 @@ def get_account_settings(account_id: int, db_path: str | Path | None = None) -> 
                     1 if getattr(cfg, "TELEGRAM_ENABLED", False) else 0,
                     getattr(cfg, "TELEGRAM_BOT_TOKEN", ""),
                     getattr(cfg, "TELEGRAM_CHAT_ID", ""),
+                    getattr(cfg, "PROXY_URL", "") or "",
                 )
             )
             row = conn.execute("SELECT * FROM account_settings WHERE account_id = ?", (account_id,)).fetchone()
@@ -993,7 +1000,7 @@ def update_account_settings(account_id: int, settings: dict, db_path: str | Path
         "schedule_slots", "timezone", "posts_per_hour", "delay_between_platforms_sec",
         "ffmpeg_zoom", "ffmpeg_speed", "ffmpeg_noise", "ffmpeg_contrast", "ffmpeg_saturation",
         "watermark_enabled", "watermark_text", "watermark_font_size", "watermark_opacity", "watermark_color",
-        "telegram_enabled", "telegram_bot_token", "telegram_chat_id"
+        "telegram_enabled", "telegram_bot_token", "telegram_chat_id", "proxy_url"
     }
     updates = {}
     for k, v in settings.items():
