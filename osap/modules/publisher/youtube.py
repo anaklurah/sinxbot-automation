@@ -66,6 +66,7 @@ class YouTubePublisher(BasePublisher):
                 curr_url = page.url
                 page_title = await page.title()
                 log.info('[youtube] Navigation complete. URL: %s | Title: %r', curr_url, page_title)
+                await self._save_debug_screenshot(page, 'nav')
 
                 if 'accounts.google.com' in curr_url:
                     log.error(
@@ -242,6 +243,7 @@ class YouTubePublisher(BasePublisher):
                     await title_box.wait_for(state='visible', timeout=20_000)
 
                 await self._jitter(1000, 2000)
+                await self._save_debug_screenshot(page, 'upload_dialog')
 
                 # ── Step 4a: Fill title ───────────────────────────────────────
                 log.info('[youtube] Filling title: %r', title[:100])

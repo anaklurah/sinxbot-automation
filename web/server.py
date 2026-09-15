@@ -1569,19 +1569,50 @@ async def upload_profile_zip(target_key: str, file: UploadFile = File(...)):
 async def get_debug_screenshot(platform: str):
     """Retrieve the latest debug screenshot for a publisher platform."""
     cfg = get_config()
-    download_dir = Path(cfg.DOWNLOAD_DIR)
-
-    candidates = [
-        download_dir / f"{platform}_last_state.png",
-        download_dir / f"{platform}_error.png",
-        download_dir / f"{platform}_login_required.png",
-        download_dir / f"{platform}_google_login.png",
-        download_dir / f"{platform}_file_input_timeout.png",
-        download_dir / f"{platform}_debug.png",
+    search_dirs = [
+        Path(cfg.DOWNLOAD_DIR),
+        Path(cfg.PROFILES_DIR),
+        getattr(cfg, "ASSETS_DIR", None) and Path(cfg.ASSETS_DIR),
+        Path("/app/downloads"),
+        Path("./downloads"),
+        Path("./app/downloads"),
     ]
-    for p in candidates:
-        if p.exists() and p.is_file() and p.stat().st_size > 0:
-            return FileResponse(str(p), media_type="image/png", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+    # Specific named files first
+    specific_names = [
+        f"{platform}_last_state.png",
+        f"{platform}_error.png",
+        f"{platform}_google_login.png",
+        f"{platform}_login_required.png",
+        f"{platform}_file_input_timeout.png",
+        f"{platform}_nav.png",
+        f"{platform}_upload_dialog.png",
+        f"{platform}_debug.png",
+    ]
+
+    for d in search_dirs:
+        if not d or not d.exists():
+            continue
+        for name in specific_names:
+            p = d / name
+            if p.exists() and p.is_file() and p.stat().st_size > 0:
+                return FileResponse(str(p), media_type="image/png", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+    # Wildcard search for any matching platform screenshot sorted by mtime
+    matched_files = []
+    for d in search_dirs:
+        if not d or not d.exists():
+            continue
+        try:
+            for p in d.glob(f"*{platform}*.png"):
+                if p.is_file() and p.stat().st_size > 0:
+                    matched_files.append(p)
+        except Exception:
+            pass
+
+    if matched_files:
+        matched_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return FileResponse(str(matched_files[0]), media_type="image/png", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
     raise HTTPException(status_code=404, detail=f"Belum ada screenshot debug untuk platform '{platform}'. Jalankan publish terlebih dahulu.")
 

@@ -395,32 +395,25 @@ class DownloadWorker:
         cfg.meta_dir.mkdir(parents=True, exist_ok=True)
 
         # yt-dlp progress hook ─────────────────────────────────────────── #
+        last_progress_log = 0.0
+
         def _progress_hook(d: dict[str, Any]) -> None:
+            nonlocal last_progress_log
             status = d.get("status", "")
             if status == "downloading":
-                pct = d.get("_percent_str", "?%").strip()
-                speed = d.get("_speed_str", "?/s").strip()
-                logger.debug("  [yt-dlp] %s  speed=%s", pct, speed)
+                now = time.time()
+                if now - last_progress_log >= 2.5:
+                    last_progress_log = now
+                    pct = d.get("_percent_str", "?%").strip()
+                    speed = d.get("_speed_str", "?/s").strip()
+                    eta = d.get("_eta_str", "").strip()
+                    logger.info("  [yt-dlp] ⏳ Downloading: %s (Speed: %s, ETA: %s)", pct, speed, eta)
             elif status == "finished":
                 logger.info(
-                    "  [yt-dlp] Download finished: %s", d.get("filename", "")
+                    "  [yt-dlp] ✓ Download chunk finished: %s. Merging...", d.get("filename", "")
                 )
             elif status == "error":
                 logger.error("  [yt-dlp] Error hook triggered for url=%s", url)
-
-        ydl_opts: dict[str, Any] = {
-            "format": "bestvideo*+bestaudio/best",
-            "outtmpl": str(cfg.raw_dir / "%(id)s.%(ext)s"),
-            "quiet": True,
-            "no_warnings": True,
-            "writeinfojson": False,
-            "postprocessors": [
-                {"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}
-            ],
-            "merge_output_format": "mp4",
-            "progress_hooks": [_progress_hook],
-            "js_runtimes": {"node": {}},
-        }
 
         # Resolve proxy: check per-account proxy first, then global cfg.PROXY_URL / env
         account_id = video.get("account_id")
@@ -451,6 +444,10 @@ class DownloadWorker:
             "quiet": True,
             "no_warnings": True,
             "writeinfojson": False,
+            "socket_timeout": 30,
+            "retries": 5,
+            "fragment_retries": 5,
+            "nocheckcertificate": True,
             "user_agent": IOS_USER_AGENT,
             "http_headers": {
                 "User-Agent": IOS_USER_AGENT,
