@@ -244,12 +244,18 @@ class BasePublisher(ABC):
         )
 
         profiles_dir = self._get_profiles_dir()
+        root_profiles_dir = Path(getattr(cfg, 'PROFILES_DIR', './assets/profiles'))
         profile_key = getattr(self, "target_key", None) or self.PLATFORM_NAME
         use_camoufox = getattr(cfg, 'BROWSER_ENGINE', 'camoufox') == 'camoufox'
 
         if self.AUTH_METHOD == 'persistent':
             profile_dir = profiles_dir / profile_key
-            profile_dir.mkdir(parents=True, exist_ok=True)
+            # Fallback to populated root profile directory if account-specific folder is empty
+            if (not profile_dir.exists() or not any(profile_dir.iterdir())) and (root_profiles_dir / profile_key).exists() and any((root_profiles_dir / profile_key).iterdir()):
+                self._log.info('[%s] Menggunakan root persistent profile yang terisi: %s', profile_key, root_profiles_dir / profile_key)
+                profile_dir = root_profiles_dir / profile_key
+            else:
+                profile_dir.mkdir(parents=True, exist_ok=True)
             context: BrowserContext | None = None
 
             if use_camoufox:
@@ -283,12 +289,19 @@ class BasePublisher(ABC):
             await apply_stealth(context)
 
             # Inject uploaded cookies if available so persistent profile is authenticated
+            root_profiles_dir = Path(getattr(cfg, 'PROFILES_DIR', './assets/profiles'))
             candidate_files = [
                 profiles_dir / f'{profile_key}_storage.json',
                 profiles_dir / f'{profile_key}_cookies.json',
                 profiles_dir / f'{profile_key}_cookies.txt',
                 profiles_dir / f'{self.PLATFORM_NAME}_storage.json',
                 profiles_dir / f'{self.PLATFORM_NAME}_cookies.txt',
+                # Fallback to root profiles dir if cookies were saved globally
+                root_profiles_dir / f'{profile_key}_storage.json',
+                root_profiles_dir / f'{profile_key}_cookies.json',
+                root_profiles_dir / f'{profile_key}_cookies.txt',
+                root_profiles_dir / f'{self.PLATFORM_NAME}_storage.json',
+                root_profiles_dir / f'{self.PLATFORM_NAME}_cookies.txt',
             ]
             for cf in candidate_files:
                 if cf.exists() and cf.stat().st_size > 0:

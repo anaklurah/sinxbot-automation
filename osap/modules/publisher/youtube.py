@@ -57,10 +57,35 @@ class YouTubePublisher(BasePublisher):
             page: Page = context.pages[0] if context.pages else await context.new_page()
 
             try:
-                # ── Step 1: Navigate ──────────────────────────────────────────
-                log.info('[youtube] Navigating to %s', self.UPLOAD_URL)
+                # ── Step 1: Warm-up & initialize session on YouTube main page ──
+                log.info('[youtube] Tahap 1: Membuka https://www.youtube.com untuk pemanasan sesi & aktivasi cookies...')
+                try:
+                    await page.goto('https://www.youtube.com', wait_until='domcontentloaded', timeout=45_000)
+                    await self._jitter(2000, 3500)
+
+                    # Handle common consent / cookie dialogs if present
+                    try:
+                        consent_btn = page.locator(
+                            'button[aria-label*="Accept all" i], button:has-text("Accept all"), '
+                            'button:has-text("I agree"), button:has-text("Setuju semua"), '
+                            'ytd-button-renderer:has-text("Accept all"), ytd-button-renderer:has-text("Setuju semua")'
+                        )
+                        if await consent_btn.count() > 0 and await consent_btn.first.is_visible():
+                            await consent_btn.first.click()
+                            log.info('[youtube] Cookie consent dialog accepted on YouTube home.')
+                            await self._jitter(1000, 2000)
+                    except Exception:
+                        pass
+
+                    log.info('[youtube] YouTube Homepage loaded: %s | Title: %r', page.url, await page.title())
+                    await self._save_debug_screenshot(page, 'yt_home')
+                except Exception as yt_home_err:
+                    log.warning('[youtube] Warm-up ke youtube.com selesai/catatan: %s', yt_home_err)
+
+                # ── Step 2: Navigate to YouTube Studio ────────────────────────
+                log.info('[youtube] Tahap 2: Navigasi ke %s (YouTube Studio)...', self.UPLOAD_URL)
                 await page.goto(self.UPLOAD_URL, wait_until='domcontentloaded', timeout=60_000)
-                await self._jitter(2000, 3500)
+                await self._jitter(2500, 4000)
 
                 # Check URL and Auth status
                 curr_url = page.url
