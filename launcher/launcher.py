@@ -965,7 +965,8 @@ class OSAPLauncher(tk.Tk):
             try:
                 data, code = api_post(url, "/api/proxy/check", {"proxy_url": target_proxy}, token=self.token)
                 msg = data.get("message", "")
-                if data.get("reachable"):
+                is_ok = bool(data.get("reachable") or data.get("success") or data.get("status") == "online")
+                if is_ok:
                     self.after(0, lambda: self.proxy_status_lbl.configure(text="✓ ONLINE", fg=SUCCESS))
                     self.after(0, lambda: self.log(f"✓ {msg}", SUCCESS))
                     self.after(0, lambda: messagebox.showinfo("Proxy Sukses", msg))
