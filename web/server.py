@@ -2022,50 +2022,77 @@ async def check_proxy_endpoint(req: Optional[ProxyCheckRequest] = None):
             "message": f"Gagal menghubungi {host}:{port}: {exc}"
         }
 
-    # 2. If HTTP/HTTPS, test real request through proxy to discover exit IP
-    if (parsed.scheme or "").startswith("http"):
-        try:
-            t1 = time.time()
-            proxy_handler = urllib.request.ProxyHandler({"http": target_proxy, "https": target_proxy})
-            opener = urllib.request.build_opener(proxy_handler)
-            req_ip = urllib.request.Request("http://api.ipify.org?format=json", headers={"User-Agent": "Mozilla/5.0"})
-            with opener.open(req_ip, timeout=7.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                http_latency = round((time.time() - t1) * 1000)
-                exit_ip = data.get("ip")
-                return {
-                    "success": True,
-                    "configured": True,
-                    "url": masked_url,
-                    "status": "online",
-                    "host": host,
-                    "port": port,
-                    "exit_ip": exit_ip,
-                    "latency_ms": http_latency,
-                    "message": f"Proxy ONLINE & BERFUNGSI! Exit IP: {exit_ip} (Ping: {http_latency}ms)"
-                }
-        except Exception as exc:
+    # 2. Test real request through proxy to discover exit IP (HTTP, HTTPS, SOCKS5)
+    try:
+        import requests as py_requests
+        t1 = time.time()
+        proxies = {
+            "http": target_proxy,
+            "https": target_proxy,
+        }
+        resp = py_requests.get(
+            "http://api.ipify.org?format=json",
+            proxies=proxies,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+            timeout=8.0
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            http_latency = round((time.time() - t1) * 1000)
+            exit_ip = data.get("ip")
             return {
-                "success": False,
+                "success": True,
+                "reachable": True,
                 "configured": True,
                 "url": masked_url,
-                "status": "auth_or_http_failed",
+                "status": "online",
+                "host": host,
+                "port": port,
+                "exit_ip": exit_ip,
+                "latency_ms": http_latency,
+                "message": f"Proxy ONLINE & BERFUNGSI! Exit IP: {exit_ip} (Ping: {http_latency}ms)"
+            }
+        elif resp.status_code == 407:
+            return {
+                "success": False,
+                "reachable": False,
+                "configured": True,
+                "url": masked_url,
+                "status": "auth_failed",
                 "host": host,
                 "port": port,
                 "latency_ms": tcp_latency,
-                "message": f"Port {host}:{port} terbuka (Ping: {tcp_latency}ms), namun HTTP request gagal: {exc}"
+                "message": f"Port {host}:{port} aktif (Ping: {tcp_latency}ms), namun AUTENTIKASI DITOLAK (HTTP 407 Proxy Authentication Required). Username atau password proxy salah/expired, atau IP VPS belum di-whitelist di dashboard proxy lo!"
             }
-
-    return {
-        "success": True,
-        "configured": True,
-        "url": masked_url,
-        "status": "online",
-        "host": host,
-        "port": port,
-        "latency_ms": tcp_latency,
-        "message": f"Proxy {parsed.scheme.upper()} {host}:{port} ONLINE! (TCP Ping: {tcp_latency}ms)"
-    }
+        else:
+            return {
+                "success": False,
+                "reachable": False,
+                "configured": True,
+                "url": masked_url,
+                "status": "http_error",
+                "host": host,
+                "port": port,
+                "latency_ms": tcp_latency,
+                "message": f"Proxy merespons dengan HTTP Status {resp.status_code} ({resp.text[:100]})"
+            }
+    except Exception as exc:
+        err_str = str(exc)
+        if "407" in err_str or "Authentication" in err_str or "authentication failed" in err_str.lower():
+            auth_msg = f"Port {host}:{port} aktif (Ping: {tcp_latency}ms), namun AUTENTIKASI PROXY GAGAL (HTTP 407 / SOCKS5 Auth Failed). Username/password proxy lo salah atau IP belum di-whitelist penyedia proxy."
+        else:
+            auth_msg = f"Port {host}:{port} terbuka (Ping: {tcp_latency}ms), namun request melalui proxy gagal: {exc}"
+        return {
+            "success": False,
+            "reachable": False,
+            "configured": True,
+            "url": masked_url,
+            "status": "auth_or_http_failed",
+            "host": host,
+            "port": port,
+            "latency_ms": tcp_latency,
+            "message": auth_msg
+        }
 
 
 @app.post("/api/ytdlp/update")
