@@ -528,76 +528,76 @@ class DownloadWorker:
         # ── Cascade of strategies to bypass YouTube bot blocks ────────────── #
         last_error: str = "Unknown error"
 
-        # Strategy 1 (Priority): iOS mobile client with proxy + iOS UA
+        # Strategy 1 (Proven Top Working): Apple VisionOS / Safari client via Proxy
         try:
-            logger.info("  [yt-dlp] Strategy 1: iOS Mobile Client (Apple iOS Stream + Proxy)...")
-            s1_opts = _make_opts(include_cookies=False, client=["ios"], use_proxy=True)
-            s1_opts["format"] = "bestvideo*+bestaudio/b/best/18"
+            logger.info("  [yt-dlp] Strategy 1: Apple VisionOS / Safari (Mobile Stream + Proxy)...")
+            s1_opts = _make_opts(include_cookies=False, client=["visionos", "web_safari"], use_proxy=True)
+            s1_opts["format"] = "bestvideo*+bestaudio/best"
             with yt_dlp.YoutubeDL(s1_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 if "entries" in info:
                     info = info["entries"][0]
-            logger.info("  [yt-dlp] Strategy 1 (iOS mobile client) succeeded!")
+            logger.info("  [yt-dlp] Strategy 1 (VisionOS/Safari) succeeded!")
             return _save_and_build_result(info)
         except Exception as exc1:
             last_error = str(exc1)
             logger.warning("  [yt-dlp] Strategy 1 failed: %s", exc1)
 
-        # Strategy 2: Mobile Web & Creator clients (mweb/android_creator bypass)
+        # Strategy 2: Smart TV Embedded client via proxy
         try:
-            logger.info("  [yt-dlp] Strategy 2: mweb & android_creator mobile clients...")
-            s2_opts = _make_opts(include_cookies=False, client=["mweb", "android_creator", "web_creator"], use_proxy=True)
-            s2_opts["format"] = "bestvideo*+bestaudio/b/best/18"
+            logger.info("  [yt-dlp] Strategy 2: Smart TV Embedded client (tv_embedded + Proxy)...")
+            s2_opts = _make_opts(include_cookies=False, client=["tv_embedded", "web_embedded"], use_proxy=True)
+            s2_opts["format"] = "bestvideo*+bestaudio/best"
             with yt_dlp.YoutubeDL(s2_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 if "entries" in info:
                     info = info["entries"][0]
-            logger.info("  [yt-dlp] Strategy 2 (mweb/creator) succeeded!")
+            logger.info("  [yt-dlp] Strategy 2 (tv_embedded) succeeded!")
             return _save_and_build_result(info)
         except Exception as exc2:
             last_error = str(exc2)
             logger.warning("  [yt-dlp] Strategy 2 failed: %s", exc2)
 
-        # Strategy 3: Apple VisionOS / Safari client
+        # Strategy 3: iOS mobile client with flexible format fallback
         try:
-            logger.info("  [yt-dlp] Strategy 3: Apple visionos/safari client...")
-            s3_opts = _make_opts(include_cookies=False, client=["visionos", "web_safari"], use_proxy=True)
-            s3_opts["format"] = "bestvideo*+bestaudio/b/best/18"
+            logger.info("  [yt-dlp] Strategy 3: iOS Mobile client (Apple iOS stream + Proxy)...")
+            s3_opts = _make_opts(include_cookies=False, client=["ios"], use_proxy=True)
+            s3_opts["format"] = "best/bestvideo+bestaudio/18/22/b"
             with yt_dlp.YoutubeDL(s3_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 if "entries" in info:
                     info = info["entries"][0]
-            logger.info("  [yt-dlp] Strategy 3 (visionos/safari) succeeded!")
+            logger.info("  [yt-dlp] Strategy 3 (iOS mobile client) succeeded!")
             return _save_and_build_result(info)
         except Exception as exc3:
             last_error = str(exc3)
             logger.warning("  [yt-dlp] Strategy 3 failed: %s", exc3)
 
-        # Strategy 4: Android mobile client
+        # Strategy 4: Mobile Web & Creator clients (mweb/android_creator)
         try:
-            logger.info("  [yt-dlp] Strategy 4: Android client via proxy...")
-            s4_opts = _make_opts(include_cookies=False, client=["android"], use_proxy=True)
-            s4_opts["format"] = "bestvideo*+bestaudio/b/best/18"
+            logger.info("  [yt-dlp] Strategy 4: mweb & android_creator mobile clients via proxy...")
+            s4_opts = _make_opts(include_cookies=False, client=["mweb", "android_creator", "web_creator"], use_proxy=True)
+            s4_opts["format"] = "bestvideo*+bestaudio/best"
             with yt_dlp.YoutubeDL(s4_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 if "entries" in info:
                     info = info["entries"][0]
-            logger.info("  [yt-dlp] Strategy 4 (Android client) succeeded!")
+            logger.info("  [yt-dlp] Strategy 4 (mweb/creator) succeeded!")
             return _save_and_build_result(info)
         except Exception as exc4:
             last_error = str(exc4)
             logger.warning("  [yt-dlp] Strategy 4 failed: %s", exc4)
 
-        # Strategy 5: Smart TV Embedded client
+        # Strategy 5: Android mobile client via proxy
         try:
-            logger.info("  [yt-dlp] Strategy 5: tv_embedded client via proxy...")
-            s5_opts = _make_opts(include_cookies=False, client=["tv_embedded", "web_embedded"], use_proxy=True)
-            s5_opts["format"] = "bestvideo*+bestaudio/b/best/18"
+            logger.info("  [yt-dlp] Strategy 5: Android client via proxy...")
+            s5_opts = _make_opts(include_cookies=False, client=["android"], use_proxy=True)
+            s5_opts["format"] = "bestvideo*+bestaudio/best"
             with yt_dlp.YoutubeDL(s5_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 if "entries" in info:
                     info = info["entries"][0]
-            logger.info("  [yt-dlp] Strategy 5 (tv_embedded) succeeded!")
+            logger.info("  [yt-dlp] Strategy 5 (Android client) succeeded!")
             return _save_and_build_result(info)
         except Exception as exc5:
             last_error = str(exc5)
