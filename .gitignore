@@ -29,3 +29,9 @@ ENV/
 Thumbs.db
 .vscode/
 .idea/
+
+# PyInstaller builds
+launcher/build/
+launcher/dist/
+*.spec
+

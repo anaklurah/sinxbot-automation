@@ -1,5 +1,5 @@
 """
-OmniShorts Auto-Publisher (OSAP) — Web Dashboard Backend (FastAPI)
+OmniShorts Auto-Publisher (OSAP) â€” Web Dashboard Backend (FastAPI)
 """
 
 import asyncio
@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, UploadFile, File, Request
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, UploadFile, File, Request, Depends
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -32,12 +32,67 @@ from osap.db.queue import (
 )
 from osap.utils.hardware import get_system_info
 from osap.utils.logger import get_logger
+import osap.auth as auth_module
 
 logger = get_logger("osap.web")
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Auth Helpers
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+def _get_db_path() -> str:
+    return get_config().DB_PATH
+
+
+def _resolve_token(request: Request) -> Optional[str]:
+    """
+    Extract bearer token from:
+    1. Authorization: Bearer <token> header
+    2. X-Auth-Token header
+    3. ?token= query param (for SSE/EventSource which can't set headers)
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        return auth_header[7:].strip()
+    x_token = request.headers.get("X-Auth-Token", "").strip()
+    if x_token:
+        return x_token
+    query_token = request.query_params.get("token", "").strip()
+    if query_token:
+        return query_token
+    return None
+
+
+def require_auth(request: Request) -> dict:
+    """
+    FastAPI dependency: validates session token and returns current user dict.
+    Raises HTTP 401 if token is missing or invalid.
+    """
+    token = _resolve_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required. Please log in.")
+    user = auth_module.validate_token(_get_db_path(), token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired session. Please log in again.")
+    return user
+
+
+def require_admin(request: Request) -> dict:
+    """FastAPI dependency: like require_auth but also checks is_admin flag."""
+    user = require_auth(request)
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return user
+
+
+# Public endpoints that don't need authentication
+_PUBLIC_PATHS = frozenset({"/", "/api/auth/login", "/api/auth/register-first"})
+_PUBLIC_PREFIXES = ("/static/",)
+
+
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # SSE Log Handler
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 log_subscribers: List[asyncio.Queue] = []
 
 class SSELogHandler(logging.Handler):
@@ -69,9 +124,9 @@ root_logger = logging.getLogger()
 root_logger.addHandler(sse_handler)
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Pipeline Process Manager
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class PipelineManager:
     def __init__(self):
         self.processes: Dict[str, multiprocessing.Process] = {}
@@ -159,14 +214,18 @@ class SchedulerManager:
 scheduler_mgr = SchedulerManager()
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # FastAPI Lifespan & App Setup
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cfg = get_config()
     cfg.ensure_dirs()
     init_db(cfg.DB_PATH)
+    # Initialize auth schema (users + sessions tables)
+    auth_module.init_auth_schema(cfg.DB_PATH)
+    # Ensure at least one admin user exists so dashboard is never locked out
+    auth_module.ensure_default_admin(cfg.DB_PATH)
     logger.info("OSAP Web Dashboard API starting up...")
     yield
     logger.info("OSAP Web Dashboard API shutting down...")
@@ -199,9 +258,168 @@ async def read_root():
     return FileResponse(str(index_path))
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Auth API Endpoints
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    account_name: str  # Creates a new account with this name
+    is_admin: bool = False
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+class AdminCreateUserRequest(BaseModel):
+    username: str
+    password: str
+    account_id: int
+    is_admin: bool = False
+
+
+@app.post("/api/auth/login")
+async def login(req: LoginRequest):
+    """Authenticate user and return a session token."""
+    cfg = get_config()
+    user = auth_module.get_user_by_username(cfg.DB_PATH, req.username)
+    if not user or not auth_module.verify_password(req.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Username atau password salah.")
+    token = auth_module.create_session(cfg.DB_PATH, user["id"], user["account_id"])
+    logger.info(f"User '{req.username}' logged in (account_id={user['account_id']})")
+    return {
+        "success": True,
+        "token": token,
+        "username": user["username"],
+        "account_id": user["account_id"],
+        "is_admin": bool(user["is_admin"]),
+        "message": f"Selamat datang, {user['username']}!"
+    }
+
+
+@app.post("/api/auth/logout")
+async def logout(request: Request):
+    """Revoke current session token."""
+    token = _resolve_token(request)
+    if token:
+        auth_module.revoke_token(get_config().DB_PATH, token)
+    return {"success": True, "message": "Berhasil logout."}
+
+
+@app.get("/api/auth/me")
+async def get_current_user(current_user: dict = Depends(require_auth)):
+    """Return current authenticated user info."""
+    return {
+        "username": current_user["username"],
+        "account_id": current_user["account_id"],
+        "is_admin": bool(current_user.get("is_admin", False)),
+    }
+
+
+@app.post("/api/auth/change-password")
+async def change_password(req: ChangePasswordRequest, current_user: dict = Depends(require_auth)):
+    """Change password for current logged-in user."""
+    cfg = get_config()
+    user = auth_module.get_user_by_username(cfg.DB_PATH, current_user["username"])
+    if not user or not auth_module.verify_password(req.current_password, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="Password saat ini tidak cocok.")
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password baru minimal 6 karakter.")
+    auth_module.update_user_password(cfg.DB_PATH, user["id"], req.new_password)
+    # Revoke all sessions so user must re-login with new password
+    auth_module.revoke_all_user_sessions(cfg.DB_PATH, user["id"])
+    return {"success": True, "message": "Password berhasil diubah. Silakan login ulang."}
+
+
+@app.post("/api/auth/register-first")
+async def register_first_user(req: RegisterRequest):
+    """
+    Register the very first user (admin). Only works when zero users exist.
+    This endpoint is PUBLIC so initial setup can be done without a token.
+    """
+    cfg = get_config()
+    from osap.db.models import get_conn
+    conn = get_conn(cfg.DB_PATH)
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    finally:
+        conn.close()
+
+    if count > 0:
+        raise HTTPException(status_code=403, detail="Registrasi awal sudah selesai. Hubungi admin untuk membuat akun baru.")
+
+    # Create account first
+    from osap.db.queue import create_account
+    try:
+        account = create_account(req.account_name.strip(), cfg.DB_PATH)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Gagal membuat akun: {e}")
+
+    # Create user tied to that account (always admin for first user)
+    try:
+        user = auth_module.create_user(cfg.DB_PATH, req.username, req.password, account["id"], is_admin=True)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    token = auth_module.create_session(cfg.DB_PATH, user["id"], user["account_id"])
+    return {
+        "success": True,
+        "token": token,
+        "username": user["username"],
+        "account_id": user["account_id"],
+        "is_admin": True,
+        "message": "Admin pertama berhasil dibuat!"
+    }
+
+
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Admin: User Management Endpoints
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+@app.get("/api/admin/users")
+async def list_users_admin(current_user: dict = Depends(require_admin)):
+    """[Admin] List all users."""
+    cfg = get_config()
+    users = auth_module.list_users(cfg.DB_PATH)
+    return {"users": users}
+
+
+@app.post("/api/admin/users")
+async def create_user_admin(req: AdminCreateUserRequest, current_user: dict = Depends(require_admin)):
+    """[Admin] Create a new user linked to an existing account."""
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password minimal 6 karakter.")
+    cfg = get_config()
+    try:
+        user = auth_module.create_user(cfg.DB_PATH, req.username, req.password, req.account_id, req.is_admin)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"success": True, "user": user, "message": f"User '{req.username}' berhasil dibuat!"}
+
+
+@app.delete("/api/admin/users/{user_id}")
+async def delete_user_admin(user_id: int, current_user: dict = Depends(require_admin)):
+    """[Admin] Delete a user."""
+    cfg = get_config()
+    # Prevent deleting self
+    self_user = auth_module.get_user_by_username(cfg.DB_PATH, current_user["username"])
+    if self_user and self_user["id"] == user_id:
+        raise HTTPException(status_code=400, detail="Tidak bisa menghapus akun sendiri.")
+    success = auth_module.delete_user(cfg.DB_PATH, user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    return {"success": True, "message": "User berhasil dihapus."}
+
+
+
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Pydantic Schemas
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class IngestRequest(BaseModel):
     urls: str = Field(..., description="Newline or comma-separated list of URLs")
     account_id: Optional[int] = None
@@ -270,15 +488,17 @@ class ProxyCheckRequest(BaseModel):
     proxy_url: Optional[str] = None
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # API Endpoints
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.get("/api/status")
-async def get_dashboard_status():
+async def get_dashboard_status(current_user: dict = Depends(require_auth)):
     """Get aggregate DB stats, hardware info, worker status, and prime-time scheduler."""
     cfg = get_config()
-    stats = get_stats(cfg.DB_PATH)
+    # Scope stats to the current user's account (non-admin sees only their own data)
+    account_filter = None if current_user.get("is_admin") else current_user["account_id"]
+    stats = get_stats(cfg.DB_PATH, account_id=account_filter)
     hw_info = get_system_info()
     workers_status = pipeline_mgr.status()
     is_scheduler_active = scheduler_mgr.is_running()
@@ -307,19 +527,26 @@ async def get_dashboard_status():
         "workers": workers_status,
         "enabled_platforms": cfg.enabled_platforms,
         "scheduler": scheduler_info,
+        "current_user": {
+            "username": current_user["username"],
+            "account_id": current_user["account_id"],
+            "is_admin": bool(current_user.get("is_admin", False)),
+        },
     }
 
 
 @app.get("/api/videos")
 async def list_videos(
-    status: Optional[str] = Query(None, description="Filter by status: pending, downloading, downloaded, rendering, rendered, uploading, done, failed"),
-    account_id: Optional[int] = Query(None, description="Filter by account ID"),
+    status: Optional[str] = Query(None, description="Filter by status"),
     page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100)
+    limit: int = Query(20, ge=1, le=100),
+    current_user: dict = Depends(require_auth),
 ):
-    """List videos in queue with pagination and platform status."""
+    """List videos in queue with pagination and platform status (scoped to current user's account)."""
     cfg = get_config()
     offset = (page - 1) * limit
+    # Non-admin users only see their own account's videos
+    effective_account_id = None if current_user.get("is_admin") else current_user["account_id"]
 
     def _fetch():
         with db_session(cfg.DB_PATH) as conn:
@@ -331,9 +558,9 @@ async def list_videos(
                 where_conditions.append("v.status = ?")
                 params.append(status)
 
-            if account_id:
+            if effective_account_id is not None:
                 where_conditions.append("v.account_id = ?")
-                params.append(account_id)
+                params.append(effective_account_id)
 
             where_clause = f"WHERE {' AND '.join(where_conditions)}" if where_conditions else ""
 
@@ -384,8 +611,8 @@ async def list_videos(
 
 
 @app.post("/api/ingest")
-async def ingest_urls(req: IngestRequest):
-    """Parse and add raw URLs into queue."""
+async def ingest_urls(req: IngestRequest, current_user: dict = Depends(require_auth)):
+    """Parse and add raw URLs into queue (auto-assigned to current user's account)."""
     cfg = get_config()
     raw_lines = req.urls.replace(",", "\n").splitlines()
     cleaned_urls = [line.strip() for line in raw_lines if line.strip() and not line.strip().startswith("#")]
@@ -393,8 +620,10 @@ async def ingest_urls(req: IngestRequest):
     if not cleaned_urls:
         raise HTTPException(status_code=400, detail="No valid URLs provided")
 
-    added, skipped = add_urls_batch(cleaned_urls, db_path=cfg.DB_PATH, account_id=req.account_id)
-    logger.info(f"Ingested via Web Dashboard: {added} added, {skipped} skipped/duplicate into Gudang Konten")
+    # Always assign to current user's account_id (ignore any account_id in request body)
+    effective_account_id = current_user["account_id"]
+    added, skipped = add_urls_batch(cleaned_urls, db_path=cfg.DB_PATH, account_id=effective_account_id)
+    logger.info(f"Ingested via Web Dashboard: {added} added, {skipped} skipped/duplicate into Gudang Konten (account_id={effective_account_id})")
 
     return {
         "success": True,
@@ -406,14 +635,17 @@ async def ingest_urls(req: IngestRequest):
 
 
 @app.post("/api/queue/clear")
-async def clear_queue_endpoint(req: ClearQueueRequest):
-    """Clear videos from queue (pending, failed, or all)."""
+async def clear_queue_endpoint(req: ClearQueueRequest, current_user: dict = Depends(require_auth)):
+    """Clear videos from queue (pending, failed, or all) scoped to current user's account."""
     cfg = get_config()
     from osap.db.queue import clear_queue
 
+    # Non-admin can only clear their own account's videos
+    effective_account_id = None if current_user.get("is_admin") else current_user["account_id"]
+
     count, cleaned_files = clear_queue(
         scope=req.scope,
-        account_id=req.account_id,
+        account_id=effective_account_id,
         clean_files=True,
         db_path=cfg.DB_PATH,
     )
@@ -435,10 +667,18 @@ async def clear_queue_endpoint(req: ClearQueueRequest):
 
 
 @app.delete("/api/videos/{video_id}")
-async def delete_single_video(video_id: int):
+async def delete_single_video(video_id: int, current_user: dict = Depends(require_auth)):
     """Delete a single video from queue and its files on disk."""
     cfg = get_config()
-    from osap.db.queue import delete_video_by_id
+    from osap.db.queue import delete_video_by_id, get_video_by_id
+
+    # Non-admin: verify the video belongs to the current user before deleting
+    if not current_user.get("is_admin"):
+        video = get_video_by_id(video_id, db_path=cfg.DB_PATH)
+        if not video:
+            raise HTTPException(status_code=404, detail="Video tidak ditemukan!")
+        if video.get("account_id") != current_user["account_id"]:
+            raise HTTPException(status_code=403, detail="Anda tidak memiliki akses ke video ini.")
 
     success = delete_video_by_id(video_id, clean_files=True, db_path=cfg.DB_PATH)
     if not success:
@@ -473,7 +713,7 @@ def _nested_get(data: dict, *keys, default=None):
 
 
 @app.get("/api/config")
-async def read_configuration():
+async def read_configuration(current_user: dict = Depends(require_admin)):
     """Read existing config.yaml and environment settings."""
     cfg = get_config()
     yaml_path = PROJECT_ROOT / "config.yaml"
@@ -523,7 +763,7 @@ async def read_configuration():
 
 
 @app.post("/api/config")
-async def update_configuration(req: ConfigUpdateRequest):
+async def update_configuration(req: ConfigUpdateRequest, current_user: dict = Depends(require_admin)):
     """Update config.yaml and .env file with new settings."""
     cfg = get_config()
     yaml_path = PROJECT_ROOT / "config.yaml"
@@ -722,7 +962,7 @@ async def test_telegram_endpoint(req: TelegramTestRequest):
 
 
 @app.get("/api/accounts")
-async def get_accounts_api():
+async def get_accounts_api(current_user: dict = Depends(require_admin)):
     """List all account profiles and current active account."""
     cfg = get_config()
     from osap.db.queue import list_accounts, get_active_account
@@ -732,7 +972,7 @@ async def get_accounts_api():
 
 
 @app.post("/api/accounts")
-async def create_account_api(req: CreateAccountRequest):
+async def create_account_api(req: CreateAccountRequest, current_user: dict = Depends(require_admin)):
     """Create a new account profile."""
     name = req.name.strip()
     if not name:
@@ -749,7 +989,7 @@ async def create_account_api(req: CreateAccountRequest):
 
 
 @app.post("/api/accounts/active/{account_id}")
-async def set_active_account_api(account_id: int):
+async def set_active_account_api(account_id: int, current_user: dict = Depends(require_admin)):
     """Switch active account."""
     cfg = get_config()
     from osap.db.queue import set_active_account, get_active_account
@@ -759,7 +999,7 @@ async def set_active_account_api(account_id: int):
 
 
 @app.delete("/api/accounts/{account_id}")
-async def delete_account_api(account_id: int):
+async def delete_account_api(account_id: int, current_user: dict = Depends(require_admin)):
     """Delete an account profile."""
     if account_id == 1:
         raise HTTPException(status_code=400, detail="Akun utama (Default) tidak dapat dihapus")
@@ -770,7 +1010,110 @@ async def delete_account_api(account_id: int):
 
 
 @app.get("/api/platforms")
-async def list_platform_states():
+async def list_platform_states(current_user: dict = Depends(require_auth)):
+    """List all dynamic platform target cards, enabled status, watermark settings, and auth status."""
+    cfg = get_config(reload=True)
+    from osap.db.queue import list_platform_targets
+    targets = list_platform_targets(cfg.DB_PATH)
+
+    profiles_dir = Path(cfg.PROFILES_DIR)
+    persistent_platforms = {"youtube", "febspot"}
+    result = []
+
+    for t in targets:
+        t_key = t["target_key"]
+        p_base = t["platform"]
+        enabled = bool(t["enabled"])
+
+        # Check profile auth file/folder
+        auth_status = False
+        storage_json = profiles_dir / f"{t_key}_storage.json"
+        cookies_txt = profiles_dir / f"{t_key}_cookies.txt"
+        cookies_json = profiles_dir / f"{t_key}_cookies.json"
+        prof_dir = profiles_dir / t_key
+
+        if storage_json.exists() or cookies_txt.exists() or cookies_json.exists() or (prof_dir.exists() and any(prof_dir.iterdir())):
+            auth_status = True
+        elif p_base in persistent_platforms:
+            base_dir = profiles_dir / p_base
+            base_storage = profiles_dir / f"{p_base}_storage.json"
+            auth_status = (base_dir.exists() and any(base_dir.iterdir())) or base_storage.exists()
+        else:
+            base_storage = profiles_dir / f"{p_base}_storage.json"
+            base_cookies = profiles_dir / f"{p_base}_cookies.txt"
+            auth_status = base_storage.exists() or base_cookies.exists()
+
+        result.append({
+            "id": t_key,
+            "target_key": t_key,
+            "platform": p_base,
+            "name": t["name"],
+            "enabled": enabled,
+            "watermark_text": t.get("watermark_text", ""),
+            "watermark_enabled": bool(t.get("watermark_enabled", 1)),
+            "is_custom": bool(t.get("is_custom", 0)),
+            "auth_status": "configured" if auth_status else "missing",
+            "auth_type": "Persistent Profile" if p_base in persistent_platforms else "Cookies / Session State"
+        })
+
+    return {"platforms": result}
+
+
+@app.post("/api/platform-targets")
+async def create_platform_target_endpoint(req: CreatePlatformTargetRequest):
+    """Add a new target card (e.g. 'Youtube 2', 'Instagram 2')."""
+    cfg = get_config()
+    from osap.db.queue import create_platform_target, list_platform_targets
+    platform = req.platform.lower().strip()
+    if platform not in PLATFORMS:
+        raise HTTPException(status_code=400, detail=f"Invalid base platform: {platform}")
+
+    existing = list_platform_targets(cfg.DB_PATH)
+    existing_keys = {t["target_key"] for t in existing}
+
+    # Generate unique slug target_key
+    slug = re.sub(r'[^a-zA-Z0-9_]', '_', req.name.strip().lower())
+    slug = re.sub(r'_+', '_', slug).strip('_')
+    if not slug:
+        slug = f"{platform}_target"
+
+    candidate = slug
+    idx = 2
+    while candidate in existing_keys:
+        candidate = f"{slug}_{idx}"
+        idx += 1
+
+    target = create_platform_target(
+        target_key=candidate,
+        platform=platform,
+        name=req.name.strip(),
+        watermark_text=req.watermark_text or "",
+        watermark_enabled=1 if req.watermark_enabled else 0,
+        is_custom=1,
+        db_path=cfg.DB_PATH
+    )
+    return {"success": True, "target": target, "message": f"Kartu target '{req.name}' berhasil ditambahkan!"}
+
+
+@app.patch("/api/platform-targets/{target_key}")
+async def update_platform_target_endpoint(target_key: str, req: UpdatePlatformTargetRequest):
+    """Update watermark, toggle status, or name for a target card."""
+    cfg = get_config()
+    from osap.db.queue import update_platform_target, get_platform_target
+    fields = {}
+    if req.name is not None:
+        fields["name"] = req.name
+    if req.enabled is not None:
+        fields["enabled"] = 1 if req.enabled else 0
+    if req.watermark_text is not None:
+        fields["watermark_text"] = req.watermark_text
+    if req.watermark_enabled is not None:
+        fields["watermark_enabled"] = 1 if req.watermark_enabled else 0
+
+    success = update_platform_target(target_key, db_path=cfg.DB_PATH, **fields)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Target '{target_key}' not found or no changes made")
+async def list_platform_states(current_user: dict = Depends(require_auth)):
     """List all dynamic platform target cards, enabled status, watermark settings, and auth status."""
     cfg = get_config(reload=True)
     from osap.db.queue import list_platform_targets
@@ -879,7 +1222,7 @@ async def update_platform_target_endpoint(target_key: str, req: UpdatePlatformTa
 
 
 @app.delete("/api/platform-targets/{target_key}")
-async def delete_platform_target_endpoint(target_key: str):
+async def delete_platform_target_endpoint(target_key: str, current_user: dict = Depends(require_admin)):
     """Delete a custom platform target card."""
     cfg = get_config()
     from osap.db.queue import delete_platform_target
@@ -890,7 +1233,7 @@ async def delete_platform_target_endpoint(target_key: str):
 
 
 @app.post("/api/pipeline/start")
-async def start_pipeline_api():
+async def start_pipeline_api(current_user: dict = Depends(require_admin)):
     """Start prime-time automated scheduler (3x daily: 12:00, 18:00, 21:00)."""
     cfg = get_config()
     scheduler_mgr.start_scheduler(cfg.DB_PATH)
@@ -906,7 +1249,7 @@ async def start_pipeline_api():
 
 
 @app.post("/api/pipeline/stop")
-async def stop_pipeline_api():
+async def stop_pipeline_api(current_user: dict = Depends(require_admin)):
     """Stop prime-time automated scheduler and active workers."""
     scheduler_mgr.stop_scheduler()
     stopped = pipeline_mgr.stop_pipeline()
@@ -914,7 +1257,7 @@ async def stop_pipeline_api():
 
 
 @app.post("/api/reset-stuck")
-async def reset_stuck_jobs_api():
+async def reset_stuck_jobs_api(current_user: dict = Depends(require_auth)):
     """Reset jobs stuck in temporary states (>30m)."""
     cfg = get_config()
     reset_stuck(cfg.DB_PATH)
@@ -937,12 +1280,34 @@ _active_setup_auth_procs: dict[str, multiprocessing.Process] = {}
 
 
 @app.post("/api/setup-auth/{target_key}")
-async def setup_platform_auth(target_key: str):
-    """Run non-headless interactive login browser for a specific target card."""
+async def setup_platform_auth(target_key: str, current_user: dict = Depends(require_auth)):
+    """
+    Attempt to run non-headless browser login for a specific target card.
+    NOTE: On Linux servers without a display, this will fail.
+    Karyawan harus menggunakan OSAP Launcher (lokal) untuk login browser dan upload cookies.
+    """
     cfg = get_config()
     from osap.db.queue import get_platform_target
     target = get_platform_target(target_key, cfg.DB_PATH)
     target_name = target["name"] if target else target_key
+
+    # On Linux headless servers, browser can't open — guide user to use Launcher instead
+    import sys
+    if sys.platform.startswith("linux"):
+        display = os.environ.get("DISPLAY", "")
+        if not display:
+            return {
+                "success": False,
+                "message": (
+                    f"⚠️  Server berjalan di Linux tanpa display (headless). "
+                    f"Tidak bisa membuka browser GUI di sini.\n\n"
+                    f"✅ Solusi: Gunakan OSAP Launcher di komputer lokal karyawan:\n"
+                    f"   1. Buka OSAP-Launcher.exe\n"
+                    f"   2. Login ke server\n"
+                    f"   3. Tab 'Cookies Sosmed' → pilih platform '{target_name}'\n"
+                    f"   4. Klik 'Login Browser Lokal & Kirim Cookie ke Server'"
+                )
+            }
 
     # Check if a setup-auth process is already running for this target
     existing_p = _active_setup_auth_procs.get(target_key)
@@ -968,7 +1333,7 @@ async def setup_platform_auth(target_key: str):
 
 
 @app.post("/api/upload-cookies/{target_key}")
-async def upload_platform_cookies(target_key: str, file: UploadFile = File(...)):
+async def upload_platform_cookies(target_key: str, file: UploadFile = File(...), current_user: dict = Depends(require_auth)):
     """Upload cookie file (.txt or .json) or storage_state for a specific target card."""
     cfg = get_config()
     profiles_dir = Path(cfg.PROFILES_DIR)
@@ -1142,7 +1507,7 @@ def _run_manual_publish_target(db_path: str, target_key: str):
             target_platforms=[target_key],
             db_path=db_path,
             auto_cleanup=True,
-            send_telegram=False,  # Manual card post → no Telegram notification
+            send_telegram=False,  # Manual card post â†’ no Telegram notification
         ))
     except (KeyboardInterrupt, SystemExit):
         pass
@@ -1157,14 +1522,14 @@ def _run_publish_all_target(db_path: str):
             target_platforms=None,
             db_path=db_path,
             auto_cleanup=True,
-            send_telegram=True,  # Scheduled/publish-all → send Telegram notification
+            send_telegram=True,  # Scheduled/publish-all â†’ send Telegram notification
         ))
     except (KeyboardInterrupt, SystemExit):
         pass
 
 
 @app.post("/api/pipeline/publish-all")
-async def trigger_publish_all():
+async def trigger_publish_all(current_user: dict = Depends(require_auth)):
     """Trigger JIT 1-video download, render with per-target watermark & anti-hash, and publish to all active targets."""
     cfg = get_config()
 
@@ -1234,7 +1599,7 @@ def _run_fetch_latest_posts_proc(db_path: str):
     from osap.modules.telegram_notifier import send_post_summary_to_telegram
 
     async def _do():
-        logger.info("[Manual Link Check] 🔍 Memulai scan link postingan terakhir di seluruh platform aktif...")
+        logger.info("[Manual Link Check] ðŸ” Memulai scan link postingan terakhir di seluruh platform aktif...")
         active_acc = get_active_account(db_path)
         all_targets = list_platform_targets(db_path)
         active_targets = [t for t in all_targets if t.get("enabled", 1) == 1]
@@ -1250,7 +1615,7 @@ def _run_fetch_latest_posts_proc(db_path: str):
             post_links=post_links,
             failed_platforms=None,
         )
-        logger.info("[Manual Link Check] ✓ Laporan berhasil dikirim ke Telegram!")
+        logger.info("[Manual Link Check] âœ“ Laporan berhasil dikirim ke Telegram!")
 
     try:
         asyncio.run(_do())
@@ -1261,7 +1626,7 @@ def _run_fetch_latest_posts_proc(db_path: str):
 
 
 @app.post("/api/fetch-latest-posts")
-async def trigger_fetch_latest_posts():
+async def trigger_fetch_latest_posts(current_user: dict = Depends(require_auth)):
     """Trigger background check of latest post links across all enabled platforms and report to Telegram."""
     cfg = get_config()
     p = multiprocessing.Process(
@@ -1324,7 +1689,7 @@ def get_recent_logs(max_lines: int = 50) -> List[Dict[str, str]]:
 
 
 @app.get("/api/logs/recent")
-async def get_recent_logs_endpoint(limit: int = Query(50, ge=1, le=200)):
+async def get_recent_logs_endpoint(limit: int = Query(50, ge=1, le=200), current_user: dict = Depends(require_auth)):
     """Fetch recent historical logs as JSON."""
     return {"logs": get_recent_logs(max_lines=limit)}
 
@@ -1407,9 +1772,9 @@ async def stream_logs(request: Request):
     return StreamingResponse(log_generator(), media_type="text/event-stream", headers=headers)
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # yt-dlp & YouTube Cookies Management API
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _get_ytdlp_version() -> str:
     """Detect the currently installed yt-dlp version."""
@@ -1426,7 +1791,7 @@ def _get_ytdlp_version() -> str:
 
 
 @app.get("/api/ytdlp/status")
-async def get_ytdlp_status():
+async def get_ytdlp_status(current_user: dict = Depends(require_auth)):
     """Return yt-dlp version, proxy config, and YouTube cookies status."""
     cfg = get_config()
     profiles_dir = Path(cfg.PROFILES_DIR)
@@ -1600,7 +1965,7 @@ async def check_proxy_endpoint(req: Optional[ProxyCheckRequest] = None):
 
 
 @app.post("/api/ytdlp/update")
-async def update_ytdlp_package():
+async def update_ytdlp_package(current_user: dict = Depends(require_admin)):
     """Update yt-dlp to the latest release via pip in the background."""
     old_version = _get_ytdlp_version()
     try:
@@ -1807,10 +2172,10 @@ async def test_ytdlp_url(req: YtdlpTestRequest):
                     "view_count": info.get("view_count"),
                 }
                 success = True
-                logs.append(f"✅ {st_name}: SUKSES! (Judul: {info.get('title')})")
+                logs.append(f"âœ… {st_name}: SUKSES! (Judul: {info.get('title')})")
                 break
         except Exception as exc:
-            logs.append(f"❌ {st_name}: GAGAL ({exc})")
+            logs.append(f"âŒ {st_name}: GAGAL ({exc})")
 
     return {
         "success": success,
@@ -1825,4 +2190,5 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("web.server:app", host="0.0.0.0", port=port, reload=False)
+
 

@@ -471,9 +471,17 @@ def log_error(
             )
 
 
-def get_stats(db_path: str | Path | None = None) -> dict:
+def get_stats(db_path: str | Path | None = None, account_id: int | None = None) -> dict:
     """
     Return an aggregate statistics snapshot of the current queue state.
+
+    Parameters
+    ----------
+    db_path:
+        Path to the SQLite database file.
+    account_id:
+        If provided, only count videos belonging to this account.
+        If None, count all videos (admin view).
 
     Returns
     -------
@@ -505,22 +513,37 @@ def get_stats(db_path: str | Path | None = None) -> dict:
         }
     """
     with _session(db_path) as conn:
+        acc_where = "WHERE account_id = ?" if account_id is not None else ""
+        acc_params = (account_id,) if account_id is not None else ()
+
         # Total video count
-        total: int = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
+        total: int = conn.execute(f"SELECT COUNT(*) FROM videos {acc_where}", acc_params).fetchone()[0]
 
         # Per-status breakdown
         status_rows = conn.execute(
-            "SELECT status, COUNT(*) AS cnt FROM videos GROUP BY status"
+            f"SELECT status, COUNT(*) AS cnt FROM videos {acc_where} GROUP BY status",
+            acc_params,
         ).fetchall()
         by_status: dict[str, int] = {row["status"]: row["cnt"] for row in status_rows}
 
-        # Per-platform per-status breakdown
-        platform_rows = conn.execute(
-            """SELECT platform, status, COUNT(*) AS cnt
-               FROM platform_uploads
-               GROUP BY platform, status
-               ORDER BY platform, status"""
-        ).fetchall()
+        # Per-platform per-status breakdown (only for this account's videos if filtered)
+        if account_id is not None:
+            platform_rows = conn.execute(
+                """SELECT pu.platform, pu.status, COUNT(*) AS cnt
+                   FROM platform_uploads pu
+                   JOIN videos v ON pu.video_id = v.id
+                   WHERE v.account_id = ?
+                   GROUP BY pu.platform, pu.status
+                   ORDER BY pu.platform, pu.status""",
+                (account_id,),
+            ).fetchall()
+        else:
+            platform_rows = conn.execute(
+                """SELECT platform, status, COUNT(*) AS cnt
+                   FROM platform_uploads
+                   GROUP BY platform, status
+                   ORDER BY platform, status"""
+            ).fetchall()
         platforms: list[dict] = [
             {"platform": r["platform"], "status": r["status"], "count": r["cnt"]}
             for r in platform_rows

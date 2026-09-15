@@ -1,4 +1,161 @@
 /**
+ * ─────────────────────────────────────────────
+ * OSAP Auth System
+ * Token stored in localStorage, sent as X-Auth-Token header on all API calls.
+ * ─────────────────────────────────────────────
+ */
+
+const AUTH_KEY = 'osap_auth_token';
+const USER_KEY = 'osap_auth_user';
+
+function getToken() {
+    return localStorage.getItem(AUTH_KEY);
+}
+
+function getCurrentUser() {
+    try {
+        return JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+    } catch { return null; }
+}
+
+function setAuthData(token, userInfo) {
+    localStorage.setItem(AUTH_KEY, token);
+    localStorage.setItem(USER_KEY, JSON.stringify(userInfo));
+}
+
+function clearAuthData() {
+    localStorage.removeItem(AUTH_KEY);
+    localStorage.removeItem(USER_KEY);
+}
+
+/**
+ * Authenticated fetch — automatically adds X-Auth-Token header.
+ * If response is 401, redirect to login.
+ */
+async function apiFetch(url, options = {}) {
+    const token = getToken();
+    const headers = {
+        ...(options.headers || {}),
+    };
+    if (token) {
+        headers['X-Auth-Token'] = token;
+    }
+    // Don't set Content-Type for FormData
+    if (!(options.body instanceof FormData) && !headers['Content-Type'] && options.body) {
+        headers['Content-Type'] = 'application/json';
+    }
+    const resp = await fetch(url, { ...options, headers });
+    if (resp.status === 401) {
+        clearAuthData();
+        showLoginOverlay();
+        throw new Error('Session expired. Please log in again.');
+    }
+    return resp;
+}
+
+function showLoginOverlay() {
+    const overlay = document.getElementById('login-overlay');
+    if (overlay) overlay.style.display = 'flex';
+}
+
+function hideLoginOverlay() {
+    const overlay = document.getElementById('login-overlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+async function doLogin() {
+    const username = document.getElementById('login-username')?.value?.trim();
+    const password = document.getElementById('login-password')?.value;
+    const errorEl = document.getElementById('login-error');
+    const btn = document.getElementById('login-btn');
+
+    if (!username || !password) {
+        if (errorEl) { errorEl.textContent = 'Username dan password wajib diisi.'; errorEl.style.display = 'block'; }
+        return;
+    }
+
+    if (btn) { btn.textContent = 'Memverifikasi...'; btn.disabled = true; }
+    if (errorEl) errorEl.style.display = 'none';
+
+    try {
+        const resp = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const data = await resp.json();
+        if (resp.ok && data.token) {
+            setAuthData(data.token, {
+                username: data.username,
+                account_id: data.account_id,
+                is_admin: data.is_admin
+            });
+            hideLoginOverlay();
+            updateUserBadge(data);
+            // Reinitialize dashboard
+            initDashboard();
+            showToast(`Selamat datang, ${data.username}! 🎉`, 'success');
+        } else {
+            if (errorEl) { errorEl.textContent = data.detail || 'Login gagal.'; errorEl.style.display = 'block'; }
+        }
+    } catch (err) {
+        if (errorEl) { errorEl.textContent = 'Koneksi error: ' + err.message; errorEl.style.display = 'block'; }
+    } finally {
+        if (btn) { btn.textContent = 'Masuk ke Dashboard'; btn.disabled = false; }
+    }
+}
+
+async function doLogout() {
+    const token = getToken();
+    if (token) {
+        try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (e) {}
+    }
+    clearAuthData();
+    showLoginOverlay();
+    // Clear user badge
+    const badge = document.getElementById('user-badge');
+    if (badge) badge.style.display = 'none';
+    showToast('Berhasil logout!', 'info');
+}
+
+function updateUserBadge(userInfo) {
+    const badge = document.getElementById('user-badge');
+    const nameEl = document.getElementById('user-badge-name');
+    if (badge && nameEl) {
+        nameEl.textContent = userInfo.username || 'User';
+        badge.style.display = 'inline-flex';
+    }
+}
+
+// Check auth on page load
+document.addEventListener('DOMContentLoaded', async () => {
+    const token = getToken();
+    if (!token) {
+        showLoginOverlay();
+        return; // Don't init dashboard, wait for login
+    }
+    // Verify token is still valid
+    try {
+        const resp = await fetch('/api/auth/me');
+        if (resp.ok) {
+            const user = await resp.json();
+            setAuthData(token, user);
+            hideLoginOverlay();
+            updateUserBadge(user);
+            // Normal dashboard init
+            initDashboard();
+        } else {
+            clearAuthData();
+            showLoginOverlay();
+            return;
+        }
+    } catch (e) {
+        showLoginOverlay();
+        return;
+    }
+});
+
+/**
  * OmniShorts Auto-Publisher (OSAP) — Frontend Controller
  * 3D Claymorphism Interactive Logic
  */
@@ -8,8 +165,9 @@ let isPipelineActive = false;
 let eventSource = null;
 
 
-// Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
+// Initialize when DOM is ready (auth check is done by the auth DOMContentLoaded above)
+// This runs AFTER auth check succeeds in the auth listener above
+function initDashboard() {
     initLucide();
     loadDashboardData();
     loadPlatformsData();
@@ -21,7 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(() => {
         loadDashboardData(true);
     }, 5000);
-});
+}
 
 /**
  * Initialize Lucide SVG icons safely
@@ -117,7 +275,7 @@ async function submitAddPlatformTarget() {
     }
 
     try {
-        const res = await fetch('/api/platform-targets', {
+        const res = await apiFetch('/api/platform-targets', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -148,7 +306,7 @@ async function submitAddPlatformTarget() {
  */
 async function loadDashboardData(silent = false) {
     try {
-        const res = await fetch('/api/status');
+        const res = await apiFetch('/api/status');
         if (!res.ok) throw new Error('Status endpoint error');
         const data = await res.json();
 
@@ -231,7 +389,7 @@ async function togglePipeline() {
     showToast(actionLabel, 'info', 2500);
 
     try {
-        const res = await fetch(endpoint, { method: 'POST' });
+        const res = await apiFetch(endpoint, { method: 'POST' });
         const data = await res.json();
         
         if (res.ok) {
@@ -250,7 +408,7 @@ async function togglePipeline() {
  */
 async function resetStuckJobs() {
     try {
-        const res = await fetch('/api/reset-stuck', { method: 'POST' });
+        const res = await apiFetch('/api/reset-stuck', { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
             showToast(data.message || 'Stuck jobs reset successfully', 'success');
@@ -276,7 +434,7 @@ async function loadVideos(page = 1) {
     if (!tbody) return;
 
     try {
-        const res = await fetch(`/api/videos?page=${page}&limit=10&status=${statusFilter}`);
+        const res = await apiFetch(`/api/videos?page=${page}&limit=10&status=${statusFilter}`);
 
         const data = await res.json();
 
@@ -365,7 +523,7 @@ async function submitIngest() {
     }
 
     try {
-        const res = await fetch('/api/ingest', {
+        const res = await apiFetch('/api/ingest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ urls: urlsText })
@@ -400,7 +558,7 @@ function setSchedulePreset(slotsText) {
 
 async function loadConfigData() {
     try {
-        const res = await fetch('/api/config');
+        const res = await apiFetch('/api/config');
         const data = await res.json();
 
         const yaml = data.yaml || {};
@@ -529,7 +687,7 @@ async function saveConfiguration() {
     };
 
     try {
-        const res = await fetch('/api/config', {
+        const res = await apiFetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -557,7 +715,7 @@ async function testTelegramConnection() {
     }
 
     try {
-        const res = await fetch('/api/telegram/test', {
+        const res = await apiFetch('/api/telegram/test', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ bot_token: token, chat_id: chatId })
@@ -608,7 +766,7 @@ async function loadPlatformsData() {
     if (!container) return;
 
     try {
-        const res = await fetch('/api/platforms');
+        const res = await apiFetch('/api/platforms');
         const data = await res.json();
 
         container.innerHTML = '';
@@ -715,7 +873,7 @@ function getPlatformIconSvg(id) {
 
 async function togglePlatformTarget(targetKey, enabled) {
     try {
-        const res = await fetch(`/api/platform-targets/${targetKey}`, {
+        const res = await apiFetch(`/api/platform-targets/${targetKey}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ enabled: enabled })
@@ -734,7 +892,7 @@ async function togglePlatformTarget(targetKey, enabled) {
 
 async function updateTargetWatermark(targetKey, newWatermark) {
     try {
-        const res = await fetch(`/api/platform-targets/${targetKey}`, {
+        const res = await apiFetch(`/api/platform-targets/${targetKey}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ watermark_text: newWatermark.trim() })
@@ -753,7 +911,7 @@ async function deletePlatformTarget(targetKey) {
     if (!confirm(`Apakah Anda yakin ingin menghapus kartu target '${targetKey}'?`)) return;
 
     try {
-        const res = await fetch(`/api/platform-targets/${targetKey}`, { method: 'DELETE' });
+        const res = await apiFetch(`/api/platform-targets/${targetKey}`, { method: 'DELETE' });
         const data = await res.json();
         if (res.ok) {
             showToast(data.message || `Kartu '${targetKey}' berhasil dihapus!`, 'success');
@@ -768,7 +926,7 @@ async function deletePlatformTarget(targetKey) {
 
 async function triggerSetupAuth(targetKey) {
     try {
-        const res = await fetch(`/api/setup-auth/${targetKey}`, { method: 'POST' });
+        const res = await apiFetch(`/api/setup-auth/${targetKey}`, { method: 'POST' });
         const data = await res.json();
         showToast(data.message || `Jendela auth dibuka untuk ${targetKey}`, 'info', 5000);
     } catch (err) {
@@ -786,7 +944,7 @@ async function uploadCookies(targetKey, inputElement) {
     showToast(`Mengunggah cookies untuk ${targetKey}...`, 'info', 2500);
 
     try {
-        const res = await fetch(`/api/upload-cookies/${targetKey}`, {
+        const res = await apiFetch(`/api/upload-cookies/${targetKey}`, {
             method: 'POST',
             body: formData
         });
@@ -813,7 +971,7 @@ async function uploadProfileZip(targetKey, inputElement) {
     showToast(`Mengunggah profil '${file.name}' (${sizeMb} MB)... Mohon tunggu ekstraksi...`, 'info', 10000);
 
     try {
-        const res = await fetch(`/api/upload-profile/${targetKey}`, {
+        const res = await apiFetch(`/api/upload-profile/${targetKey}`, {
             method: 'POST',
             body: formData
         });
@@ -840,7 +998,7 @@ async function triggerManualPost(targetKey, btnElement) {
     }
 
     try {
-        const res = await fetch(`/api/publish/${targetKey}`, { method: 'POST' });
+        const res = await apiFetch(`/api/publish/${targetKey}`, { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
             showToast(`🚀 ${data.message}`, 'success', 8000);
@@ -874,7 +1032,7 @@ async function triggerPublishAllPlatforms(btnElement) {
     }
 
     try {
-        const res = await fetch('/api/pipeline/publish-all', { method: 'POST' });
+        const res = await apiFetch('/api/pipeline/publish-all', { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
             showToast(`🚀 ${data.message}`, 'success', 8000);
@@ -906,7 +1064,7 @@ async function triggerFetchAllLatestLinks(btnElement) {
     showToast('🔍 Memulai scan link postingan terakhir dari semua platform... Pantau Live Logs dan Telegram!', 'info', 6000);
 
     try {
-        const res = await fetch('/api/fetch-latest-posts', { method: 'POST' });
+        const res = await apiFetch('/api/fetch-latest-posts', { method: 'POST' });
         const data = await res.json();
         if (res.ok && data.success) {
             showToast(`✓ ${data.message}`, 'success', 8000);
@@ -1006,7 +1164,7 @@ function setupLogStream() {
 
 async function fallbackPollLogs() {
     try {
-        const res = await fetch('/api/logs/recent?limit=40');
+        const res = await apiFetch('/api/logs/recent?limit=40');
         if (res.ok) {
             const data = await res.json();
             (data.logs || []).forEach(appendLogLine);
@@ -1044,7 +1202,7 @@ function escapeHtml(str) {
 
 async function loadYtdlpData() {
     try {
-        const res = await fetch('/api/ytdlp/status');
+        const res = await apiFetch('/api/ytdlp/status');
         if (!res.ok) return;
         const data = await res.json();
 
@@ -1124,7 +1282,7 @@ async function updateYtdlp(btn) {
     showToast('Sedang memperbarui yt-dlp...', 'info', 5000);
 
     try {
-        const res = await fetch('/api/ytdlp/update', { method: 'POST' });
+        const res = await apiFetch('/api/ytdlp/update', { method: 'POST' });
         const data = await res.json();
         if (consoleBox) {
             consoleBox.innerText = data.output || data.message || 'Selesai.';
@@ -1151,7 +1309,7 @@ async function uploadYtdlpCookieFile(input) {
 
     showToast(`Mengunggah cookies: ${file.name}...`, 'info', 3000);
     try {
-        const res = await fetch('/api/ytdlp/cookies/upload', {
+        const res = await apiFetch('/api/ytdlp/cookies/upload', {
             method: 'POST',
             body: formData,
         });
@@ -1178,7 +1336,7 @@ async function saveYtdlpCookieText() {
     showToast('Menyimpan cookies teks...', 'info', 3000);
 
     try {
-        const res = await fetch('/api/ytdlp/cookies/save-text', {
+        const res = await apiFetch('/api/ytdlp/cookies/save-text', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content }),
@@ -1199,7 +1357,7 @@ async function saveYtdlpCookieText() {
 async function deleteYtdlpCookies() {
     if (!confirm('Yakin ingin menghapus file cookies YouTube?')) return;
     try {
-        const res = await fetch('/api/ytdlp/cookies', { method: 'DELETE' });
+        const res = await apiFetch('/api/ytdlp/cookies', { method: 'DELETE' });
         const data = await res.json();
         showToast(data.message || 'Cookies berhasil dihapus', 'info', 3000);
         loadYtdlpData();
@@ -1224,7 +1382,7 @@ async function testYtdlpUrl(btn) {
     showToast('Menguji URL YouTube...', 'info', 3000);
 
     try {
-        const res = await fetch('/api/ytdlp/test', {
+        const res = await apiFetch('/api/ytdlp/test', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url }),
@@ -1263,7 +1421,7 @@ async function testProxyManual(btn) {
     showToast('Menguji koneksi proxy...', 'info', 3000);
 
     try {
-        const res = await fetch('/api/proxy/check', {
+        const res = await apiFetch('/api/proxy/check', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ proxy_url: proxyUrl || null }),
@@ -1308,7 +1466,7 @@ async function confirmClearQueue(scope = 'pending') {
     if (!confirm(confirmMsg)) return;
 
     try {
-        const res = await fetch('/api/queue/clear', {
+        const res = await apiFetch('/api/queue/clear', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ scope: scope }),
@@ -1329,7 +1487,7 @@ async function deleteVideoItem(videoId) {
     if (!confirm(`Hapus video #${videoId} dari antrian Gudang Konten?`)) return;
 
     try {
-        const res = await fetch(`/api/videos/${videoId}`, { method: 'DELETE' });
+        const res = await apiFetch(`/api/videos/${videoId}`, { method: 'DELETE' });
         const data = await res.json();
         if (res.ok) {
             showToast(data.message || `Video #${videoId} berhasil dihapus.`, 'success', 3000);
@@ -1356,7 +1514,7 @@ async function testProxyFromConfig() {
     }
 
     try {
-        const res = await fetch('/api/proxy/check', {
+        const res = await apiFetch('/api/proxy/check', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ proxy_url: proxyUrl || null }),
