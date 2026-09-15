@@ -755,6 +755,453 @@ class SinXLauncher(tk.Tk):
         tk.Button(pw_card, text="🔒  Simpan Password Baru", font=("Segoe UI", 9, "bold"), bg=CARD_BORDER, fg=TEXT, activebackground="#3b4b63", activeforeground=TEXT, relief="flat", cursor="hand2", pady=6, command=self.change_password).pack(fill="x")
 
     # ─────────────────────────────────────────────────────────────
+    # Logging & Console Feed
+    # ─────────────────────────────────────────────────────────────
+    def log(self, msg: str, color: str = None):
+        self.log_queue.put((msg, color))
+
+    def _start_log_consumer(self):
+        def _consume():
+            while True:
+                try:
+                    msg, color = self.log_queue.get(timeout=0.2)
+                    self.after(0, lambda m=msg, c=color: self._append_log(m, c))
+                except queue.Empty:
+                    pass
+                except Exception:
+                    pass
+        threading.Thread(target=_consume, daemon=True).start()
+
+    def _append_log(self, msg: str, color: str = None):
+        try:
+            self.log_box.configure(state="normal")
+            ts = time.strftime("%H:%M:%S")
+            tag = f"t_{ts}_{color or 'n'}"
+            self.log_box.insert("end", f"[{ts}] {msg}\n", tag)
+            if color:
+                self.log_box.tag_configure(tag, foreground=color)
+            if self.auto_scroll_var.get():
+                self.log_box.see("end")
+            self.log_box.configure(state="disabled")
+        except Exception:
+            pass
+
+    def clear_logs(self):
+        self.log_box.configure(state="normal")
+        self.log_box.delete("1.0", "end")
+        self.log_box.configure(state="disabled")
+
+    # ─────────────────────────────────────────────────────────────
+    # Status & Auth Session Handlers
+    # ─────────────────────────────────────────────────────────────
+    def set_status(self, text: str, ok: bool = False):
+        self.status_dot.configure(fg=SUCCESS if ok else DANGER)
+        self.status_lbl.configure(fg=SUCCESS if ok else TEXT_DIM, text=text)
+
+    def _set_logged_in(self, user: dict):
+        self.current_user = user
+        self.logout_btn.configure(state="normal")
+        self.login_btn.configure(state="disabled")
+        name = user.get("username", "?")
+        acc = user.get("account_id", "?")
+        admin = " [ADMIN]" if user.get("is_admin") else " [Karyawan]"
+
+        self.dash_user_lbl.configure(text=f"Akun: {name}{admin}")
+        self.dash_acc_badge.configure(text=f"Account ID: #{acc}")
+        self.set_status(f"Connected: {name}", ok=True)
+
+        self.load_user_settings()
+        self.load_my_videos()
+        self.refresh_dashboard_data()
+        self._start_sse_stream()
+
+    def _set_logged_out(self):
+        self.current_user = None
+        self.token = ""
+        self.logout_btn.configure(state="disabled")
+        self.login_btn.configure(state="normal")
+        self.dash_user_lbl.configure(text="Akun: Belum Terhubung")
+        self.dash_acc_badge.configure(text="Account ID: -")
+        self.set_status("Belum Login", ok=False)
+        self.sse_active = False
+
+    def do_login(self):
+        url = normalize_url(self.sv_url.get().strip())
+        user = self.sv_user.get().strip()
+        pw = self.sv_pass.get()
+        if not url or not user or not pw:
+            messagebox.showerror("Error", "Server URL, username, dan password wajib diisi.")
+            return
+
+        self.sv_url.set(url)
+        self.log(f"Menghubungkan ke server {url} sebagai '{user}'...")
+        self.login_btn.configure(state="disabled", text="Memverifikasi...")
+
+        def _do():
+            try:
+                data, code = api_post(url, "/api/auth/login", {"username": user, "password": pw})
+                if code == 200 and data.get("token"):
+                    self.token = data["token"]
+                    save_config(url, user, self.token)
+                    self.after(0, lambda: self._set_logged_in(data))
+                    self.after(0, lambda: self.log(f"Login sukses! Selamat datang, {data['username']}.", SUCCESS))
+                    self.after(0, lambda: self.nb.select(self.tab_dash))
+                else:
+                    err = data.get("detail", "Username atau password salah")
+                    self.after(0, lambda: self.log(f"Login gagal: {err}", DANGER))
+                    self.after(0, lambda: messagebox.showerror("Gagal Login", err))
+            except Exception as e:
+                self.after(0, lambda: self.log(f"Koneksi gagal: {e}", DANGER))
+                self.after(0, lambda: messagebox.showerror("Koneksi Error", f"Tidak dapat terhubung ke {url}:\n{e}"))
+            finally:
+                self.after(0, lambda: self.login_btn.configure(state="normal", text="🔑  Login ke Server"))
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def do_logout(self):
+        url = normalize_url(self.sv_url.get().strip())
+        if self.token:
+            try:
+                api_post(url, "/api/auth/logout", token=self.token)
+            except Exception:
+                pass
+        self.token = ""
+        save_config(url, self.sv_user.get(), "")
+        self._set_logged_out()
+        self.log("Logout berhasil.", TEXT_DIM)
+        self.nb.select(self.tab_login)
+
+    def _auto_login_if_token(self):
+        if not self.token:
+            return
+        url = normalize_url(self.cfg.get("server_url", ""))
+        if not url:
+            return
+        self.log("Memverifikasi sesi tersimpan di server...")
+        def _do():
+            try:
+                data, code = api_get(url, "/api/auth/me", self.token)
+                if code == 200:
+                    data["token"] = self.token
+                    self.after(0, lambda: self._set_logged_in(data))
+                    self.after(0, lambda: self.log(f"Sesi aktif: {data['username']}", SUCCESS))
+                else:
+                    self.token = ""
+                    self.after(0, lambda: self.log("Sesi kadaluarsa, silakan login ulang.", TEXT_DIM))
+            except Exception:
+                self.after(0, lambda: self.log("Server tidak dapat dijangkau saat startup.", DANGER))
+        threading.Thread(target=_do, daemon=True).start()
+
+    def change_password(self):
+        if not self.token:
+            messagebox.showerror("Error", "Silakan login terlebih dahulu.")
+            return
+        cur_p = self.sv_cur_pw.get()
+        new_p = self.sv_new_pw.get()
+        if not cur_p or not new_p:
+            messagebox.showerror("Error", "Password saat ini dan password baru wajib diisi.")
+            return
+        if len(new_p) < 6:
+            messagebox.showerror("Error", "Password baru minimal 6 karakter.")
+            return
+        url = normalize_url(self.sv_url.get().strip())
+        def _do():
+            try:
+                data, code = api_post(url, "/api/auth/change-password", {"current_password": cur_p, "new_password": new_p}, token=self.token)
+                if code == 200:
+                    self.after(0, lambda: messagebox.showinfo("Sukses", "Password berhasil diubah! Silakan login ulang."))
+                    self.after(0, self.do_logout)
+                else:
+                    err = data.get("detail", "Gagal mengubah password")
+                    self.after(0, lambda: messagebox.showerror("Gagal", err))
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("Error", str(e)))
+        threading.Thread(target=_do, daemon=True).start()
+
+    # ─────────────────────────────────────────────────────────────
+    # Dashboard & Pipeline Operations
+    # ─────────────────────────────────────────────────────────────
+    def open_dashboard(self):
+        url = normalize_url(self.sv_url.get().strip())
+        if not url:
+            return
+        full_url = f"{url}/?token={self.token}" if self.token else url
+        webbrowser.open(full_url)
+        self.log(f"Membuka browser dashboard: {url}", TEXT_DIM)
+
+    def refresh_dashboard_data(self):
+        if not self.token:
+            return
+        url = normalize_url(self.sv_url.get().strip())
+        def _do():
+            try:
+                data, code = api_get(url, "/api/status", self.token)
+                if code == 200:
+                    stats = data.get("queue_stats", {})
+                    sch = data.get("scheduler", {})
+                    
+                    by_st = stats.get("by_status", {})
+                    total_val = stats.get("total", 0)
+                    ready_val = stats.get("pending") if stats.get("pending") is not None else by_st.get("pending", 0)
+                    proc_val = stats.get("processing") if stats.get("processing") is not None else (by_st.get("downloading", 0) + by_st.get("rendering", 0) + by_st.get("uploading", 0))
+                    done_val = stats.get("done") if stats.get("done") is not None else (by_st.get("done", 0) + by_st.get("published", 0))
+                    failed_val = stats.get("failed") if stats.get("failed") is not None else (by_st.get("failed", 0) + by_st.get("error", 0))
+
+                    self.after(0, lambda: self.stat_total.configure(text=str(total_val)))
+                    self.after(0, lambda: self.stat_ready.configure(text=str(ready_val)))
+                    self.after(0, lambda: self.stat_proc.configure(text=str(proc_val)))
+                    self.after(0, lambda: self.stat_done.configure(text=str(done_val)))
+                    self.after(0, lambda: self.stat_failed.configure(text=str(failed_val)))
+
+                    next_slot = sch.get("next_slot", "-")
+                    rem = sch.get("remaining_seconds", 0)
+                    rem_str = f" ({rem // 3600}j {(rem % 3600) // 60}m lagi)" if rem > 0 else ""
+                    slots_str = ", ".join(sch.get("slots", []))
+                    tz_str = f"{sch.get('timezone', 'Asia/Jakarta')} ({sch.get('timezone_abbr', 'WIB')}) — Jam Server: {sch.get('current_time', '')}"
+
+                    self.after(0, lambda: self.dash_sch_next.configure(text=f"Jadwal Berikutnya: {next_slot}{rem_str}"))
+                    self.after(0, lambda: self.dash_sch_slots.configure(text=f"Jam Tayang Aktif: {slots_str}"))
+                    self.after(0, lambda: self.dash_sch_tz.configure(text=f"Timezone Acuan: {tz_str}"))
+            except Exception as e:
+                self.log(f"Gagal memuat statistik dashboard: {e}", TEXT_DIM)
+        threading.Thread(target=_do, daemon=True).start()
+
+    # ─────────────────────────────────────────────────────────────
+    # Gudang Konten Queue Management
+    # ─────────────────────────────────────────────────────────────
+    def submit_urls(self):
+        if not self.token:
+            messagebox.showerror("Error", "Silakan login terlebih dahulu.")
+            return
+        raw = self.url_text.get("1.0", "end").strip()
+        if not raw:
+            messagebox.showerror("Error", "Masukkan minimal 1 link video.")
+            return
+        url = normalize_url(self.sv_url.get().strip())
+        self.log("Menambahkan URL ke Gudang Konten...")
+        self.add_urls_btn.configure(state="disabled")
+        def _do():
+            try:
+                data, code = api_post(url, "/api/ingest", {"urls": raw}, token=self.token)
+                if code == 200:
+                    added = data.get("added", 0)
+                    msg = data.get("message", f"{added} video berhasil ditambahkan!")
+                    self.after(0, lambda: self.log(f"✓ {msg}", SUCCESS))
+                    self.after(0, lambda: messagebox.showinfo("Sukses", msg))
+                    self.after(0, lambda: self.url_text.delete("1.0", "end"))
+                    self.after(0, self.load_my_videos)
+                    self.after(0, self.refresh_dashboard_data)
+                else:
+                    err = data.get("detail", "Gagal input URLs")
+                    self.after(0, lambda: self.log(f"✗ {err}", DANGER))
+                    self.after(0, lambda: messagebox.showerror("Error", err))
+            except Exception as e:
+                self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
+                self.after(0, lambda: messagebox.showerror("Error", str(e)))
+            finally:
+                self.after(0, lambda: self.add_urls_btn.configure(state="normal"))
+        threading.Thread(target=_do, daemon=True).start()
+
+    def load_my_videos(self):
+        if not self.token:
+            return
+        url = normalize_url(self.sv_url.get().strip())
+        def _do():
+            try:
+                data, code = api_get(url, "/api/videos?limit=100", token=self.token)
+                if code == 200:
+                    videos = data.get("videos", [])
+                    def _update():
+                        for row in self.queue_tree.get_children():
+                            self.queue_tree.delete(row)
+                        for v in videos:
+                            vid_id = f"#{v.get('id', '?')}"
+                            st = (v.get("status") or "pending").upper()
+                            title = v.get("title") or v.get("url", "-")
+                            created = (v.get("created_at") or "")[:16]
+                            self.queue_tree.insert("", "end", values=(vid_id, st, title, created))
+                    self.after(0, _update)
+            except Exception as e:
+                self.log(f"Gagal memuat antrean video: {e}", TEXT_DIM)
+        threading.Thread(target=_do, daemon=True).start()
+
+    # ─────────────────────────────────────────────────────────────
+    # Config Akun & Proxy Handlers
+    # ─────────────────────────────────────────────────────────────
+    def load_user_settings(self):
+        if not self.token:
+            return
+        url = normalize_url(self.sv_url.get().strip())
+        def _do():
+            try:
+                data, code = api_get(url, "/api/user/settings", self.token)
+                if code == 200 and data.get("settings"):
+                    s = data["settings"]
+                    self.user_settings = s
+                    slots = s.get("schedule_slots") or ["12:00", "18:00", "21:00"]
+                    if isinstance(slots, list):
+                        slots = ", ".join(slots)
+                    self.after(0, lambda: self.sv_slots.set(str(slots)))
+                    self.after(0, lambda: self.sv_tz.set(str(s.get("timezone", "Asia/Jakarta"))))
+                    self.after(0, lambda: self.sv_pph.set(str(s.get("posts_per_hour", 2))))
+                    self.after(0, lambda: self.sv_delay.set(str(s.get("delay_between_platforms_sec", 30))))
+
+                    self.after(0, lambda: self.sv_zoom.set(str(s.get("ffmpeg_zoom", 1.05))))
+                    self.after(0, lambda: self.sv_speed.set(str(s.get("ffmpeg_speed", 1.05))))
+                    self.after(0, lambda: self.sv_noise.set(str(s.get("ffmpeg_noise", 3))))
+                    self.after(0, lambda: self.sv_contrast.set(str(s.get("ffmpeg_contrast", 1.05))))
+                    self.after(0, lambda: self.sv_saturation.set(str(s.get("ffmpeg_saturation", 1.08))))
+
+                    self.after(0, lambda: self.sv_wm_enabled.set(bool(s.get("watermark_enabled", 1))))
+                    self.after(0, lambda: self.sv_wm_text.set(str(s.get("watermark_text", ""))))
+                    self.after(0, lambda: self.sv_wm_size.set(str(s.get("watermark_font_size", 15))))
+                    self.after(0, lambda: self.sv_wm_opacity.set(str(s.get("watermark_opacity", 0.3))))
+                    self.after(0, lambda: self.sv_wm_color.set(str(s.get("watermark_color", "white"))))
+
+                    self.after(0, lambda: self.sv_tg_enabled.set(bool(s.get("telegram_enabled", 0))))
+                    self.after(0, lambda: self.sv_tg_token.set(str(s.get("telegram_bot_token", ""))))
+                    self.after(0, lambda: self.sv_tg_chatid.set(str(s.get("telegram_chat_id", ""))))
+
+                    self.after(0, lambda: self.sv_proxy_url.set(str(s.get("proxy_url", ""))))
+                    self.after(0, lambda: self.log("Pengaturan akun berhasil dimuat dari server.", SUCCESS))
+            except Exception as e:
+                self.log(f"Gagal memuat pengaturan akun: {e}", TEXT_DIM)
+        threading.Thread(target=_do, daemon=True).start()
+
+    def save_all_settings(self):
+        if not self.token:
+            messagebox.showerror("Error", "Silakan login terlebih dahulu.")
+            return
+        raw_slots = [s.strip() for s in self.sv_slots.get().split(",") if s.strip()]
+        payload = {
+            "schedule_slots": raw_slots,
+            "timezone": self.sv_tz.get().strip() or "Asia/Jakarta",
+            "posts_per_hour": int(self.sv_pph.get() or 2),
+            "delay_between_platforms_sec": int(self.sv_delay.get() or 30),
+            "ffmpeg_zoom": float(self.sv_zoom.get() or 1.05),
+            "ffmpeg_speed": float(self.sv_speed.get() or 1.05),
+            "ffmpeg_noise": int(self.sv_noise.get() or 3),
+            "ffmpeg_contrast": float(self.sv_contrast.get() or 1.05),
+            "ffmpeg_saturation": float(self.sv_saturation.get() or 1.08),
+            "watermark_enabled": bool(self.sv_wm_enabled.get()),
+            "watermark_text": self.sv_wm_text.get().strip(),
+            "watermark_font_size": int(self.sv_wm_size.get() or 15),
+            "watermark_opacity": float(self.sv_wm_opacity.get() or 0.3),
+            "watermark_color": self.sv_wm_color.get().strip() or "white",
+            "telegram_enabled": bool(self.sv_tg_enabled.get()),
+            "telegram_bot_token": self.sv_tg_token.get().strip(),
+            "telegram_chat_id": self.sv_tg_chatid.get().strip(),
+            "proxy_url": self.sv_proxy_url.get().strip(),
+        }
+
+        url = normalize_url(self.sv_url.get().strip())
+        self.log("Menyimpan semua konfigurasi akun ke server...")
+        def _do():
+            try:
+                data, code = api_post(url, "/api/user/settings", payload, token=self.token)
+                if code == 200:
+                    self.after(0, lambda: self.log("✓ Semua pengaturan berhasil disimpan ke server!", SUCCESS))
+                    self.after(0, lambda: messagebox.showinfo("Sukses", "Pengaturan akun berhasil disimpan!"))
+                    self.after(0, self.refresh_dashboard_data)
+                else:
+                    err = data.get("detail", "Gagal menyimpan pengaturan")
+                    self.after(0, lambda: self.log(f"✗ {err}", DANGER))
+                    self.after(0, lambda: messagebox.showerror("Gagal", err))
+            except Exception as e:
+                self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
+                self.after(0, lambda: messagebox.showerror("Error", str(e)))
+        threading.Thread(target=_do, daemon=True).start()
+
+    def test_telegram(self):
+        if not self.token:
+            messagebox.showerror("Error", "Login terlebih dahulu.")
+            return
+        token = self.sv_tg_token.get().strip()
+        chat_id = self.sv_tg_chatid.get().strip()
+        if not token or not chat_id:
+            messagebox.showerror("Error", "Bot Token dan Chat ID wajib diisi untuk test!")
+            return
+        url = normalize_url(self.sv_url.get().strip())
+        self.log("Mengirim test notifikasi ke Telegram...")
+        def _do():
+            try:
+                data, code = api_post(url, "/api/user/telegram/test", {"bot_token": token, "chat_id": chat_id}, token=self.token)
+                if code == 200:
+                    self.after(0, lambda: self.log("✓ Notifikasi Telegram berhasil terkirim!", SUCCESS))
+                    self.after(0, lambda: messagebox.showinfo("Berhasil", "Pesan test Telegram berhasil dikirim! Cek aplikasi Telegram lo."))
+                else:
+                    err = data.get("detail", "Gagal mengirim Telegram")
+                    self.after(0, lambda: self.log(f"✗ {err}", DANGER))
+                    self.after(0, lambda: messagebox.showerror("Gagal", err))
+            except Exception as e:
+                self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
+                self.after(0, lambda: messagebox.showerror("Error", str(e)))
+        threading.Thread(target=_do, daemon=True).start()
+
+    def test_proxy_connection(self):
+        target_proxy = self.sv_proxy_url.get().strip()
+        if not target_proxy:
+            self.proxy_status_lbl.configure(text="Direct Mode (Tanpa Proxy)", fg=TEXT_DIM)
+            messagebox.showinfo("Direct Mode", "Proxy URL kosong. Akun ini berjalan dalam Direct Mode (koneksi langsung).")
+            return
+        
+        self.proxy_status_lbl.configure(text="Menguji koneksi proxy...", fg=WARNING)
+        self.test_proxy_btn.configure(state="disabled")
+        url = normalize_url(self.sv_url.get().strip())
+        
+        def _do():
+            try:
+                data, code = api_post(url, "/api/proxy/check", {"proxy_url": target_proxy}, token=self.token)
+                msg = data.get("message", "")
+                is_ok = bool(data.get("reachable") or data.get("success") or data.get("status") == "online")
+                if is_ok:
+                    self.after(0, lambda: self.proxy_status_lbl.configure(text="✓ ONLINE", fg=SUCCESS))
+                    self.after(0, lambda: self.log(f"✓ {msg}", SUCCESS))
+                    self.after(0, lambda: messagebox.showinfo("Proxy Sukses", msg))
+                else:
+                    self.after(0, lambda: self.proxy_status_lbl.configure(text="✗ OFFLINE / GAGAL", fg=DANGER))
+                    self.after(0, lambda: self.log(f"✗ {msg}", DANGER))
+                    self.after(0, lambda: messagebox.showerror("Proxy Gagal", msg))
+            except Exception as e:
+                self.after(0, lambda: self.proxy_status_lbl.configure(text="✗ Error", fg=DANGER))
+                self.after(0, lambda: messagebox.showerror("Error", str(e)))
+            finally:
+                self.after(0, lambda: self.test_proxy_btn.configure(state="normal"))
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _start_sse_stream(self):
+        if self.sse_active or not self.token:
+            return
+        self.sse_active = True
+        url = normalize_url(self.sv_url.get().strip())
+        
+        def _stream():
+            while self.sse_active and self.token:
+                try:
+                    headers = {"X-Auth-Token": self.token, "Accept": "text/event-stream"}
+                    with requests.get(f"{url}/api/logs/stream", headers=headers, stream=True, timeout=60) as r:
+                        if r.status_code != 200:
+                            time.sleep(5)
+                            continue
+                        for line in r.iter_lines(decode_unicode=True):
+                            if not self.sse_active:
+                                break
+                            if line and line.startswith("data:"):
+                                raw_json = line[5:].strip()
+                                try:
+                                    item = json.loads(raw_json)
+                                    msg = item.get("message") or item.get("line") or str(item)
+                                    lvl = (item.get("level") or "").upper()
+                                    col = DANGER if "ERROR" in lvl or "FAIL" in lvl else (WARNING if "WARN" in lvl else None)
+                                    self.log(msg, col)
+                                except Exception:
+                                    self.log(raw_json)
+                except Exception:
+                    time.sleep(4)
+        threading.Thread(target=_stream, daemon=True).start()
+
+
+    # ─────────────────────────────────────────────────────────────
     # Actions & Handlers
     # ─────────────────────────────────────────────────────────────
     def get_selected_platform_key(self) -> str:
