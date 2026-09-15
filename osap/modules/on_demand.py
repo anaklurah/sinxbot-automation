@@ -133,7 +133,18 @@ async def run_jit_video_pipeline(
             logger.info(f"[JIT Pipeline] JIT Download for video #{vid_id} (Account #{account_id}) ({url})...")
 
             downloader = DownloadWorker(db_path=db_path)
-            dl_res = downloader._download_video(video)
+            try:
+                dl_res = await asyncio.wait_for(
+                    asyncio.to_thread(downloader._download_video, video),
+                    timeout=180.0
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"[JIT Pipeline] JIT Download timed out after 180s for video #{vid_id}")
+                dl_res = None
+            except Exception as e:
+                logger.error(f"[JIT Pipeline] JIT Download error for video #{vid_id}: {e}")
+                dl_res = None
+
             if not dl_res:
                 logger.error(f"[JIT Pipeline] Download failed for video #{vid_id}")
                 update_video(vid_id, {"status": "failed"}, db_path=db_path)
@@ -251,7 +262,8 @@ async def run_jit_video_pipeline(
         cache_key = (wm_text, wm_enabled)
         if cache_key not in rendered_cache:
             logger.info(f"[JIT Pipeline] Rendering video #{vid_id} with watermark: '{wm_text}' (active={wm_enabled}) for {target_name}...")
-            rendered_file = processor._render_video(
+            rendered_file = await asyncio.to_thread(
+                processor._render_video,
                 video,
                 watermark_text=wm_text,
                 watermark_enabled=wm_enabled,
