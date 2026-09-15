@@ -34,4 +34,5 @@ Thumbs.db
 launcher/build/
 launcher/dist/
 *.spec
+*.exe
 

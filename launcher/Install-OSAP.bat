@@ -11,10 +11,12 @@ echo [1/4] Menyiapkan direktori aplikasi: %INSTALL_DIR%
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 
 echo [2/4] Menyalin file aplikasi dan Icon...
-if exist "%~dp0OSAP-Launcher.exe" (
-    copy /y "%~dp0OSAP-Launcher.exe" "%INSTALL_DIR%\SinX-Launcher.exe" >nul 2>&1
-) else if exist "%~dp0SinX-Launcher.exe" (
+if exist "%~dp0SinX-Launcher.exe" (
     copy /y "%~dp0SinX-Launcher.exe" "%INSTALL_DIR%\SinX-Launcher.exe" >nul 2>&1
+) else if exist "%~dp0dist\SinX-Launcher.exe" (
+    copy /y "%~dp0dist\SinX-Launcher.exe" "%INSTALL_DIR%\SinX-Launcher.exe" >nul 2>&1
+) else if exist "%~dp0OSAP-Launcher.exe" (
+    copy /y "%~dp0OSAP-Launcher.exe" "%INSTALL_DIR%\SinX-Launcher.exe" >nul 2>&1
 ) else if exist "%~dp0dist\OSAP-Launcher.exe" (
     copy /y "%~dp0dist\OSAP-Launcher.exe" "%INSTALL_DIR%\SinX-Launcher.exe" >nul 2>&1
 )
