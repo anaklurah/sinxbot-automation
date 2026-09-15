@@ -226,6 +226,13 @@ async def lifespan(app: FastAPI):
     auth_module.init_auth_schema(cfg.DB_PATH)
     # Ensure at least one admin user exists so dashboard is never locked out
     auth_module.ensure_default_admin(cfg.DB_PATH)
+    # Recover any stuck jobs from previous abnormal exits
+    try:
+        recovered = reset_stuck(cfg.DB_PATH)
+        if recovered > 0:
+            logger.info(f"Auto-recovered {recovered} stuck job(s) on startup.")
+    except Exception as exc:
+        logger.debug(f"Reset stuck jobs note: {exc}")
     logger.info("OSAP Web Dashboard API starting up...")
     yield
     logger.info("OSAP Web Dashboard API shutting down...")
