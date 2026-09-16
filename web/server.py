@@ -1126,35 +1126,44 @@ async def delete_account_api(account_id: int, current_user: dict = Depends(requi
 async def list_platform_states(current_user: dict = Depends(require_auth)):
     """List all dynamic platform target cards, enabled status, watermark settings, and auth status."""
     cfg = get_config(reload=True)
-    from osap.db.queue import list_platform_targets
+    from osap.db.queue import list_platform_targets, get_account_settings
     targets = list_platform_targets(cfg.DB_PATH)
 
     profiles_dir = Path(cfg.PROFILES_DIR)
     persistent_platforms = {"youtube", "febspot"}
     result = []
 
+    acc_id = current_user.get("account_id")
+    is_employee = bool(acc_id and acc_id > 1)
+    target_profiles_dir = (profiles_dir / f"account_{acc_id}") if is_employee else profiles_dir
+
+    acc_settings = get_account_settings(acc_id, cfg.DB_PATH) if acc_id else {}
+    emp_wm = acc_settings.get("watermark_text", "") if is_employee else None
+
     for t in targets:
         t_key = t["target_key"]
         p_base = t["platform"]
         enabled = bool(t["enabled"])
 
-        # Check profile auth file/folder
+        # Check profile auth file/folder in the user's specific profile directory
         auth_status = False
-        storage_json = profiles_dir / f"{t_key}_storage.json"
-        cookies_txt = profiles_dir / f"{t_key}_cookies.txt"
-        cookies_json = profiles_dir / f"{t_key}_cookies.json"
-        prof_dir = profiles_dir / t_key
+        storage_json = target_profiles_dir / f"{t_key}_storage.json"
+        cookies_txt = target_profiles_dir / f"{t_key}_cookies.txt"
+        cookies_json = target_profiles_dir / f"{t_key}_cookies.json"
+        prof_dir = target_profiles_dir / t_key
 
         if storage_json.exists() or cookies_txt.exists() or cookies_json.exists() or (prof_dir.exists() and any(prof_dir.iterdir())):
             auth_status = True
         elif p_base in persistent_platforms:
-            base_dir = profiles_dir / p_base
-            base_storage = profiles_dir / f"{p_base}_storage.json"
+            base_dir = target_profiles_dir / p_base
+            base_storage = target_profiles_dir / f"{p_base}_storage.json"
             auth_status = (base_dir.exists() and any(base_dir.iterdir())) or base_storage.exists()
         else:
-            base_storage = profiles_dir / f"{p_base}_storage.json"
-            base_cookies = profiles_dir / f"{p_base}_cookies.txt"
+            base_storage = target_profiles_dir / f"{p_base}_storage.json"
+            base_cookies = target_profiles_dir / f"{p_base}_cookies.txt"
             auth_status = base_storage.exists() or base_cookies.exists()
+
+        wm_text = emp_wm if (is_employee and emp_wm is not None) else t.get("watermark_text", "")
 
         result.append({
             "id": t_key,
@@ -1162,7 +1171,7 @@ async def list_platform_states(current_user: dict = Depends(require_auth)):
             "platform": p_base,
             "name": t["name"],
             "enabled": enabled,
-            "watermark_text": t.get("watermark_text", ""),
+            "watermark_text": wm_text,
             "watermark_enabled": bool(t.get("watermark_enabled", 1)),
             "is_custom": bool(t.get("is_custom", 0)),
             "auth_status": "configured" if auth_status else "missing",
