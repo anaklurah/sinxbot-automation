@@ -30,9 +30,11 @@ Thumbs.db
 .vscode/
 .idea/
 
-# PyInstaller builds
+# PyInstaller builds & release archives
 launcher/build/
 launcher/dist/
 *.spec
 *.exe
+*.zip
+
 
