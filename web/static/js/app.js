@@ -984,19 +984,10 @@ async function loadPlatformsData() {
                         title="Ubah teks watermark khusus untuk akun ini (otomatis tersimpan)">
                 </div>
 
-                <div class="platform-card-footer">
-                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button class="btn-clay btn-clay-secondary btn-clay-sm" onclick="triggerSetupAuth('${p.target_key}')" title="Buka browser tampak untuk login manual">
-                            <i data-lucide="log-in"></i> Login Browser
-                        </button>
-                        <label class="btn-clay btn-clay-secondary btn-clay-sm" style="cursor: pointer; margin: 0;" title="Upload file cookie .json / .txt untuk akun ini">
-                            <i data-lucide="upload"></i> Cookie
-                            <input type="file" accept=".txt,.json" style="display: none;" onchange="uploadCookies('${p.target_key}', this)">
-                        </label>
-                        <label class="btn-clay btn-clay-secondary btn-clay-sm" style="cursor: pointer; margin: 0;" title="Upload arsip profil browser (.zip) dari Windows">
-                            <i data-lucide="archive"></i> Profile .zip
-                            <input type="file" accept=".zip" style="display: none;" onchange="uploadProfileZip('${p.target_key}', this)">
-                        </label>
+                <div class="platform-card-footer" style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+                    <div style="font-size: 0.72rem; color: var(--text-dim); display: flex; align-items: center; gap: 4px;" title="Upload cookies & profil aman dilakukan via Sin'X Launcher di PC Anda">
+                        <i data-lucide="shield-check" style="width: 13px; height: 13px; color: #6366f1;"></i>
+                        <span>Auth via Launcher</span>
                     </div>
                     <button class="btn-clay btn-clay-primary btn-clay-sm" ${!p.enabled ? 'disabled title="Nyalakan switch kartu ini terlebih dahulu"' : ''} onclick="triggerManualPost('${p.target_key}', this)">
                         <i data-lucide="send"></i> Post Now
