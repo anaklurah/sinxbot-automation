@@ -1704,9 +1704,12 @@ async function loadUsersData() {
                 ? `<span style="background: rgba(168,85,247,0.15); color: #c084fc; padding: 4px 10px; border-radius: 50px; font-size: 12px; font-weight: 700; border: 1px solid rgba(168,85,247,0.3);">Admin</span>`
                 : `<span style="background: rgba(16,185,129,0.15); color: #6ee7b7; padding: 4px 10px; border-radius: 50px; font-size: 12px; font-weight: 700; border: 1px solid rgba(16,185,129,0.3);">Karyawan</span>`;
             const dateStr = u.created_at ? u.created_at.substring(0, 19).replace('T', ' ') : '-';
-            const deleteBtn = u.username === 'admin'
-                ? `<span style="color: var(--text-dim); font-size: 12px;">Bawaan</span>`
-                : `<button class="btn-clay btn-clay-danger" onclick="deleteUser(${u.id}, '${u.username}')" style="padding: 4px 12px; font-size: 12px; cursor: pointer;">Hapus</button>`;
+            const actionBtns = `
+                <button class="btn-clay btn-clay-secondary" onclick="promptResetUserPassword(${u.id}, '${u.username}')" style="padding: 4px 10px; font-size: 12px; cursor: pointer; margin-right: 6px;" title="Ganti password user ini">🔑 Ganti Password</button>
+                ${u.username === 'admin'
+                    ? `<span style="color: var(--text-dim); font-size: 12px;">(Bawaan)</span>`
+                    : `<button class="btn-clay btn-clay-danger" onclick="deleteUser(${u.id}, '${u.username}')" style="padding: 4px 10px; font-size: 12px; cursor: pointer;">Hapus</button>`}
+            `;
 
             return `
                 <tr style="border-bottom: 1px solid var(--border-color);">
@@ -1716,7 +1719,7 @@ async function loadUsersData() {
                     <td style="padding: 12px 16px; color: var(--text-dim);">${u.account_id}</td>
                     <td style="padding: 12px 16px;">${roleBadge}</td>
                     <td style="padding: 12px 16px; color: var(--text-dim); font-size: 13px;">${dateStr}</td>
-                    <td style="padding: 12px 16px; text-align: right;">${deleteBtn}</td>
+                    <td style="padding: 12px 16px; text-align: right;">${actionBtns}</td>
                 </tr>
             `;
         }).join('');
@@ -1780,6 +1783,31 @@ async function deleteUser(userId, username) {
         showToast(`Error: ${err.message}`, 'error');
     }
 }
+
+async function promptResetUserPassword(userId, username) {
+    const newPass = prompt(`Masukkan password baru untuk '${username}' (minimal 6 karakter):`);
+    if (newPass === null) return;
+    if (!newPass || newPass.trim().length < 6) {
+        showToast('Password baru minimal 6 karakter!', 'error');
+        return;
+    }
+    try {
+        const res = await apiFetch(`/api/admin/users/${userId}/reset-password`, {
+            method: 'POST',
+            body: JSON.stringify({ new_password: newPass.trim() })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(data.message || `Password untuk '${username}' berhasil diubah!`, 'success');
+            await loadUsersData();
+        } else {
+            showToast(data.detail || 'Gagal mengubah password.', 'error');
+        }
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error');
+    }
+}
+
 
 
 

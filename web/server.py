@@ -446,6 +446,24 @@ async def delete_user_admin(user_id: int, current_user: dict = Depends(require_a
     return {"success": True, "message": "User berhasil dihapus."}
 
 
+class ResetPasswordAdminRequest(BaseModel):
+    new_password: str
+
+
+@app.post("/api/admin/users/{user_id}/reset-password")
+async def reset_user_password_admin(user_id: int, req: ResetPasswordAdminRequest, current_user: dict = Depends(require_admin)):
+    """[Admin] Reset password for any user directly."""
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password minimal 6 karakter.")
+    cfg = get_config()
+    success = auth_module.update_user_password(cfg.DB_PATH, user_id, req.new_password)
+    if not success:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    auth_module.revoke_all_user_sessions(cfg.DB_PATH, user_id)
+    return {"success": True, "message": "Password berhasil diubah. Sesi user telah di-reset."}
+
+
+
 
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Pydantic Schemas

@@ -674,6 +674,52 @@ def cmd_list_users(args):
 
 
 # ─────────────────────────────────────────────
+# Command: reset-password
+# ─────────────────────────────────────────────
+def cmd_reset_password(args):
+    """Reset a user's password directly from CLI."""
+    _ensure_env()
+    _init_db()
+    from osap.config import get_config
+    import osap.auth as auth_module
+
+    cfg = get_config()
+    auth_module.init_auth_schema(cfg.DB_PATH)
+
+    username = (args.username or "").strip()
+    if not username:
+        users = auth_module.list_users(cfg.DB_PATH)
+        if users:
+            console.print("[cyan]User terdaftar:[/cyan] " + ", ".join([f"[bold]{u['username']}[/bold] (ID={u['id']})" for u in users]))
+        username = input("Masukkan username yang ingin di-reset passwordnya: ").strip()
+
+    user = auth_module.get_user_by_username(cfg.DB_PATH, username)
+    if not user:
+        console.print(f"[bold red]Error:[/bold red] User '{username}' tidak ditemukan di database!")
+        users = auth_module.list_users(cfg.DB_PATH)
+        if users:
+            console.print("[yellow]User yang ada di sistem:[/yellow] " + ", ".join([u["username"] for u in users]))
+        return
+
+    password = args.password
+    if not password:
+        import getpass
+        password = getpass.getpass(f"Password baru untuk '{username}': ")
+    if len(password) < 6:
+        console.print("[bold red]Error:[/bold red] Password minimal 6 karakter.")
+        return
+
+    success = auth_module.update_user_password(cfg.DB_PATH, user["id"], password)
+    if success:
+        auth_module.revoke_all_user_sessions(cfg.DB_PATH, user["id"])
+        console.print(f"\n[bold green]✓ BERHASIL![/bold green] Password untuk user [bold cyan]{username}[/bold cyan] berhasil diubah.")
+        console.print("[dim]Semua sesi login lama telah di-revoke. Silakan login ulang dengan password baru ini.[/dim]\n")
+    else:
+        console.print(f"[bold red]Gagal mengubah password untuk '{username}'.[/bold red]")
+
+
+
+# ─────────────────────────────────────────────
 # Argument Parser
 # ─────────────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
@@ -733,6 +779,11 @@ def build_parser() -> argparse.ArgumentParser:
     # list-users
     subparsers.add_parser("list-users", help="List all registered users and account profiles")
 
+    # reset-password
+    p_reset = subparsers.add_parser("reset-password", help="Reset a user's password directly")
+    p_reset.add_argument("--username", "-u", help="Target username")
+    p_reset.add_argument("--password", "-p", help="New password (min 6 chars)")
+
     return parser
 
 
@@ -751,6 +802,7 @@ COMMANDS = {
     "fetch-posts": cmd_fetch_posts,
     "add-user": cmd_add_user,
     "list-users": cmd_list_users,
+    "reset-password": cmd_reset_password,
 }
 
 
