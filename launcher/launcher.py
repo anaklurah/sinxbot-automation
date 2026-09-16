@@ -2,14 +2,7 @@
 Sin'X Automation — Client Desktop Karyawan
 ==========================================
 Desktop client for Sin'X Automation (OmniShorts Auto-Publisher).
-Designed for employees and managers with dedicated cloud integration:
-- Modern sleek dark slate theme with responsive layout (fits all laptop & desktop screens)
-- Dashboard: Real-time stat cards, scheduler monitor, On-Demand Publish trigger, & Debug Screenshot viewer
-- Gudang Konten: Bulk URL ingest, interactive Treeview queue table with status badges, & queue clear tool
-- Config Akun: Smart Schedule, FFmpeg Anti-Hash, Middle-Left Watermark, Telegram Notifier, & Dedicated Proxy
-- Cookies & Browser: Upload cookie (.txt/.json), Upload full profile archive (.zip), & Local Browser extractor
-- Live Logs: Real-time colored SSE log stream directly from server with auto-reconnect
-- Account Security: Fast login persistence, logout, and change password
+Tabs: Dashboard, Cookies & Profil, Live Logs, Akun & Server.
 """
 
 import os
@@ -130,8 +123,8 @@ class SinXLauncher(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Sin'X Automation — Desktop Client")
-        self.geometry("860x720")
-        self.minsize(800, 600)
+        self.geometry("860x680")
+        self.minsize(800, 560)
         self.configure(bg=BG)
 
         self._set_app_icon()
@@ -196,31 +189,6 @@ class SinXLauncher(tk.Tk):
             arrowcolor=TEXT,
         )
 
-        # Treeview (Table)
-        style.configure(
-            "Treeview",
-            background=INPUT_BG,
-            foreground=TEXT,
-            fieldbackground=INPUT_BG,
-            rowheight=26,
-            font=("Segoe UI", 9),
-            borderwidth=0,
-        )
-        style.configure(
-            "Treeview.Heading",
-            background=CARD_BG,
-            foreground=TEXT_MUTED,
-            font=("Segoe UI", 9, "bold"),
-            padding=[6, 4],
-            borderwidth=1,
-            relief="flat",
-        )
-        style.map(
-            "Treeview",
-            background=[("selected", "#312e81")],
-            foreground=[("selected", "white")],
-        )
-
         # Scrollbar
         style.configure("Vertical.TScrollbar", background=CARD_BG, troughcolor=BG, borderwidth=0, arrowcolor=TEXT_DIM)
 
@@ -232,17 +200,14 @@ class SinXLauncher(tk.Tk):
         left_box = tk.Frame(hdr, bg=HEADER_BG)
         left_box.pack(side="left")
 
-        brand_lbl = tk.Label(left_box, text="⚡ SIN'X AUTOMATION", font=("Segoe UI", 14, "bold"), bg=HEADER_BG, fg=TEXT)
-        brand_lbl.pack(anchor="w")
-
-        sub_lbl = tk.Label(left_box, text="Multi-Platform Cloud Publishing • Client Karyawan", font=("Segoe UI", 8), bg=HEADER_BG, fg=TEXT_DIM)
-        sub_lbl.pack(anchor="w")
+        tk.Label(left_box, text="\u26a1 SIN'X AUTOMATION", font=("Segoe UI", 14, "bold"), bg=HEADER_BG, fg=TEXT).pack(anchor="w")
+        tk.Label(left_box, text="Multi-Platform Cloud Publishing \u2022 Client Karyawan", font=("Segoe UI", 8), bg=HEADER_BG, fg=TEXT_DIM).pack(anchor="w")
 
         # Right status badge pill
         self.right_pill = tk.Frame(hdr, bg=CARD_BG, bd=1, relief="solid", padx=10, pady=4)
         self.right_pill.pack(side="right")
 
-        self.status_dot = tk.Label(self.right_pill, text="●", font=("Segoe UI", 12), bg=CARD_BG, fg=DANGER)
+        self.status_dot = tk.Label(self.right_pill, text="\u25cf", font=("Segoe UI", 12), bg=CARD_BG, fg=DANGER)
         self.status_dot.pack(side="left", padx=(0, 5))
 
         self.status_lbl = tk.Label(self.right_pill, text="Offline / Belum Login", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT_DIM)
@@ -253,22 +218,16 @@ class SinXLauncher(tk.Tk):
         self.nb.pack(fill="both", expand=True, padx=10, pady=(6, 10))
 
         self.tab_dash = tk.Frame(self.nb, bg=BG)
-        self.tab_gudang = tk.Frame(self.nb, bg=BG)
-        self.tab_config = tk.Frame(self.nb, bg=BG)
         self.tab_cookies = tk.Frame(self.nb, bg=BG)
         self.tab_logs = tk.Frame(self.nb, bg=BG)
         self.tab_login = tk.Frame(self.nb, bg=BG)
 
-        self.nb.add(self.tab_dash, text="  📊 Dashboard  ")
-        self.nb.add(self.tab_gudang, text="  📦 Gudang Konten  ")
-        self.nb.add(self.tab_config, text="  ⚙️ Pengaturan  ")
-        self.nb.add(self.tab_cookies, text="  🍪 Cookies & Profil  ")
-        self.nb.add(self.tab_logs, text="  📜 Live Logs  ")
-        self.nb.add(self.tab_login, text="  🔑 Akun & Server  ")
+        self.nb.add(self.tab_dash,    text="  \U0001f4ca Dashboard  ")
+        self.nb.add(self.tab_cookies, text="  \U0001f36a Cookies & Profil  ")
+        self.nb.add(self.tab_logs,    text="  \U0001f4dc Live Logs  ")
+        self.nb.add(self.tab_login,   text="  \U0001f511 Akun & Server  ")
 
         self._build_dashboard_tab()
-        self._build_gudang_tab()
-        self._build_config_tab()
         self._build_cookies_tab()
         self._build_logs_tab()
         self._build_login_tab()
@@ -298,18 +257,18 @@ class SinXLauncher(tk.Tk):
         stats_box = tk.Frame(outer, bg=BG)
         stats_box.pack(fill="x", pady=(0, 10))
 
-        self.stat_total = self._create_stat_card(stats_box, "Total Video", "0", ACCENT, 0)
-        self.stat_ready = self._create_stat_card(stats_box, "Siap Post", "0", SUCCESS, 1)
-        self.stat_proc = self._create_stat_card(stats_box, "Diproses", "0", WARNING, 2)
-        self.stat_done = self._create_stat_card(stats_box, "Selesai", "0", ACCENT_CYAN, 3)
+        self.stat_total  = self._create_stat_card(stats_box, "Total Video", "0", ACCENT, 0)
+        self.stat_ready  = self._create_stat_card(stats_box, "Siap Post", "0", SUCCESS, 1)
+        self.stat_proc   = self._create_stat_card(stats_box, "Diproses", "0", WARNING, 2)
+        self.stat_done   = self._create_stat_card(stats_box, "Selesai", "0", ACCENT_CYAN, 3)
         self.stat_failed = self._create_stat_card(stats_box, "Gagal", "0", DANGER, 4)
 
         # Scheduler Monitor Card
         sch_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=10)
         sch_card.pack(fill="x", pady=(0, 10))
 
-        tk.Label(sch_card, text="⏰ Status Smart Prime-Time Scheduler", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 4))
-        
+        tk.Label(sch_card, text="\u23f0 Status Smart Prime-Time Scheduler", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 4))
+
         self.dash_sch_next = tk.Label(sch_card, text="Jadwal Berikutnya: Memuat status...", font=("Segoe UI", 9), bg=CARD_BG, fg=TEXT_DIM)
         self.dash_sch_next.pack(anchor="w", pady=1)
 
@@ -323,14 +282,14 @@ class SinXLauncher(tk.Tk):
         act_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=12)
         act_card.pack(fill="x", pady=(0, 6))
 
-        tk.Label(act_card, text="🚀 Tombol Operasional Cepat", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 8))
+        tk.Label(act_card, text="\U0001f680 Tombol Operasional Cepat", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 8))
 
         btn_row = tk.Frame(act_card, bg=CARD_BG)
         btn_row.pack(fill="x")
 
         # 1. On-Demand Publish
         self.btn_publish = tk.Button(
-            btn_row, text="🚀  Post Sekarang (On-Demand)", font=("Segoe UI", 9, "bold"),
+            btn_row, text="\U0001f680  Post Sekarang (On-Demand)", font=("Segoe UI", 9, "bold"),
             bg=ACCENT, fg="white", activebackground=ACCENT_HOVER, activeforeground="white",
             relief="flat", cursor="hand2", padx=12, pady=7, command=self.prompt_publish_now
         )
@@ -338,7 +297,7 @@ class SinXLauncher(tk.Tk):
 
         # 2. Debug Screenshot
         self.btn_screenshot = tk.Button(
-            btn_row, text="📸  Cek Screenshot Browser", font=("Segoe UI", 9, "bold"),
+            btn_row, text="\U0001f4f8  Cek Screenshot Browser", font=("Segoe UI", 9, "bold"),
             bg="#0f3460", fg="white", activebackground="#16213e", activeforeground="white",
             relief="flat", cursor="hand2", padx=12, pady=7, command=self.prompt_debug_screenshot
         )
@@ -346,7 +305,7 @@ class SinXLauncher(tk.Tk):
 
         # 3. Refresh Stats
         self.btn_refresh = tk.Button(
-            btn_row, text="🔄  Refresh Data", font=("Segoe UI", 9),
+            btn_row, text="\U0001f504  Refresh Data", font=("Segoe UI", 9),
             bg=CARD_BORDER, fg=TEXT, activebackground="#3b4b63", activeforeground=TEXT,
             relief="flat", cursor="hand2", padx=12, pady=7, command=self.refresh_dashboard_data
         )
@@ -354,7 +313,7 @@ class SinXLauncher(tk.Tk):
 
         # 4. Open Web Dashboard
         self.btn_web = tk.Button(
-            btn_row, text="🌐  Buka Web Dashboard", font=("Segoe UI", 9),
+            btn_row, text="\U0001f310  Buka Web Dashboard", font=("Segoe UI", 9),
             bg=CARD_BORDER, fg=TEXT, activebackground="#3b4b63", activeforeground=TEXT,
             relief="flat", cursor="hand2", padx=12, pady=7, command=self.open_dashboard
         )
@@ -371,257 +330,14 @@ class SinXLauncher(tk.Tk):
         return val_lbl
 
     # ─────────────────────────────────────────────────────────────
-    # Tab 2: Gudang Konten
-    # ─────────────────────────────────────────────────────────────
-    def _build_gudang_tab(self):
-        f = self.tab_gudang
-        outer = tk.Frame(f, bg=BG, padx=14, pady=10)
-        outer.pack(fill="both", expand=True)
-
-        tk.Label(outer, text="📥 Tambah Stok Video Baru", font=("Segoe UI", 11, "bold"), bg=BG, fg=TEXT).pack(anchor="w")
-        tk.Label(outer, text="Masukkan link video Shorts / Reels / TikTok (1 URL per baris):", font=("Segoe UI", 8), bg=BG, fg=TEXT_DIM).pack(anchor="w", pady=(1, 4))
-
-        self.url_text = scrolledtext.ScrolledText(outer, height=3, font=("Consolas", 9), bg=INPUT_BG, fg=TEXT,
-                                                 insertbackground=TEXT, relief="solid", bd=1)
-        self.url_text.pack(fill="x", pady=(0, 6))
-
-        btn_bar = tk.Frame(outer, bg=BG)
-        btn_bar.pack(fill="x", pady=(0, 8))
-
-        self.add_urls_btn = tk.Button(
-            btn_bar, text="📥  Tambah ke Gudang Konten", font=("Segoe UI", 9, "bold"),
-            bg=SUCCESS, fg="white", activebackground=SUCCESS_HOVER, activeforeground="white",
-            relief="flat", cursor="hand2", padx=12, pady=6, command=self.submit_urls
-        )
-        self.add_urls_btn.pack(side="left", padx=(0, 6))
-
-        self.refresh_queue_btn = tk.Button(
-            btn_bar, text="🔄  Refresh Tabel", font=("Segoe UI", 9),
-            bg=CARD_BG, fg=TEXT, activebackground=CARD_BORDER, activeforeground=TEXT,
-            relief="flat", cursor="hand2", padx=12, pady=6, command=self.load_my_videos
-        )
-        self.refresh_queue_btn.pack(side="left", padx=(0, 6))
-
-        self.clear_queue_btn = tk.Button(
-            btn_bar, text="🗑️  Bersihkan Antrean...", font=("Segoe UI", 9),
-            bg="#2d1b28", fg=DANGER, activebackground="#3d2235", activeforeground=DANGER,
-            relief="flat", cursor="hand2", padx=12, pady=6, command=self.prompt_clear_queue
-        )
-        self.clear_queue_btn.pack(side="right")
-
-        # Treeview Queue Table
-        tk.Label(outer, text="📋 Daftar Antrean Video Akun Lo di Server:", font=("Segoe UI", 10, "bold"), bg=BG, fg=TEXT).pack(anchor="w", pady=(4, 4))
-
-        tree_frame = tk.Frame(outer, bg=INPUT_BG, bd=1, relief="solid")
-        tree_frame.pack(fill="both", expand=True)
-
-        cols = ("id", "status", "title", "date")
-        self.queue_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", selectmode="browse")
-        
-        self.queue_tree.heading("id", text="ID")
-        self.queue_tree.heading("status", text="Status")
-        self.queue_tree.heading("title", text="Judul / Link Video")
-        self.queue_tree.heading("date", text="Tanggal Input")
-
-        self.queue_tree.column("id", width=55, minwidth=40, anchor="center")
-        self.queue_tree.column("status", width=105, minwidth=80, anchor="center")
-        self.queue_tree.column("title", width=480, minwidth=250, anchor="w")
-        self.queue_tree.column("date", width=140, minwidth=100, anchor="center")
-
-        tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=self.queue_tree.yview)
-        self.queue_tree.configure(yscrollcommand=tree_scroll.set)
-
-        self.queue_tree.pack(side="left", fill="both", expand=True)
-        tree_scroll.pack(side="right", fill="y")
-
-    # ─────────────────────────────────────────────────────────────
-    # Tab 3: Pengaturan Akun
-    # ─────────────────────────────────────────────────────────────
-    def _build_config_tab(self):
-        f = self.tab_config
-        canvas = tk.Canvas(f, bg=BG, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(f, orient="vertical", command=canvas.yview)
-        scroll_frame = tk.Frame(canvas, bg=BG)
-
-        scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
-        canvas.configure(xscrollcommand=None, yscrollcommand=scrollbar.set)
-
-        canvas.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=8)
-        scrollbar.pack(side="right", fill="y", pady=8)
-
-        # 1. Smart Schedule
-        s1 = tk.LabelFrame(scroll_frame, text=" ⏰ 1. Smart Schedule & Jam Posting ", font=("Segoe UI", 10, "bold"),
-                           bg=CARD_BG, fg=TEXT, bd=1, relief="solid", padx=12, pady=10)
-        s1.pack(fill="x", padx=6, pady=(0, 10))
-
-        tk.Label(s1, text="Jam Posting / Prime-Time Slots (pisahkan dengan koma):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
-        self.sv_slots = tk.StringVar(value="12:00, 18:00, 21:00")
-        tk.Entry(s1, textvariable=self.sv_slots, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, insertbackground=TEXT, relief="solid", bd=1).pack(fill="x", pady=(2, 6))
-
-        p_row = tk.Frame(s1, bg=CARD_BG)
-        p_row.pack(fill="x", pady=(0, 6))
-        tk.Button(p_row, text="Preset: 3x (12, 18, 21)", font=("Segoe UI", 8), bg=BG, fg=TEXT_DIM, relief="flat",
-                  command=lambda: self.sv_slots.set("12:00, 18:00, 21:00")).pack(side="left", padx=(0, 4))
-        tk.Button(p_row, text="Preset: 4x (09, 13, 17, 21)", font=("Segoe UI", 8), bg=BG, fg=TEXT_DIM, relief="flat",
-                  command=lambda: self.sv_slots.set("09:00, 13:00, 17:00, 21:00")).pack(side="left", padx=4)
-        tk.Button(p_row, text="Preset: 5x (08, 11, 14, 17, 20)", font=("Segoe UI", 8), bg=BG, fg=TEXT_DIM, relief="flat",
-                  command=lambda: self.sv_slots.set("08:00, 11:00, 14:00, 17:00, 20:00")).pack(side="left", padx=4)
-
-        tk.Label(s1, text="Timezone Acuan:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
-        self.sv_tz = tk.StringVar(value="Asia/Jakarta")
-        tz_box = ttk.Combobox(s1, textvariable=self.sv_tz, values=["Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura", "UTC"], state="readonly")
-        tz_box.pack(fill="x", pady=(2, 6))
-
-        r_row = tk.Frame(s1, bg=CARD_BG)
-        r_row.pack(fill="x")
-        r_col1 = tk.Frame(r_row, bg=CARD_BG)
-        r_col1.pack(side="left", fill="x", expand=True, padx=(0, 4))
-        tk.Label(r_col1, text="Maks Post/Jam:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
-        self.sv_pph = tk.StringVar(value="2")
-        tk.Entry(r_col1, textvariable=self.sv_pph, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x")
-
-        r_col2 = tk.Frame(r_row, bg=CARD_BG)
-        r_col2.pack(side="left", fill="x", expand=True, padx=(4, 0))
-        tk.Label(r_col2, text="Delay Antar Platform (detik):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
-        self.sv_delay = tk.StringVar(value="30")
-        tk.Entry(r_col2, textvariable=self.sv_delay, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x")
-
-        # 2. FFmpeg Anti-Hash Filters
-        s2 = tk.LabelFrame(scroll_frame, text=" 🛡️ 2. FFmpeg Anti-Hash Filters (Anti-Deteksi Konten Duplikat) ", font=("Segoe UI", 10, "bold"),
-                           bg=CARD_BG, fg=TEXT, bd=1, relief="solid", padx=12, pady=10)
-        s2.pack(fill="x", padx=6, pady=(0, 10))
-
-        grid2 = tk.Frame(s2, bg=CARD_BG)
-        grid2.pack(fill="x")
-        grid2.columnconfigure(0, weight=1)
-        grid2.columnconfigure(1, weight=1)
-
-        c1 = tk.Frame(grid2, bg=CARD_BG)
-        c1.grid(row=0, column=0, sticky="ew", padx=(0, 4), pady=2)
-        tk.Label(c1, text="Zoom Crop (1.05 = 5%):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
-        self.sv_zoom = tk.StringVar(value="1.05")
-        tk.Entry(c1, textvariable=self.sv_zoom, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x")
-
-        c2 = tk.Frame(grid2, bg=CARD_BG)
-        c2.grid(row=0, column=1, sticky="ew", padx=(4, 0), pady=2)
-        tk.Label(c2, text="Speed Factor (1.05 = 5%):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
-        self.sv_speed = tk.StringVar(value="1.05")
-        tk.Entry(c2, textvariable=self.sv_speed, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x")
-
-        c3 = tk.Frame(grid2, bg=CARD_BG)
-        c3.grid(row=1, column=0, sticky="ew", padx=(0, 4), pady=4)
-        tk.Label(c3, text="Noise Amount (1 - 5):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
-        self.sv_noise = tk.StringVar(value="3")
-        tk.Entry(c3, textvariable=self.sv_noise, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x")
-
-        c4 = tk.Frame(grid2, bg=CARD_BG)
-        c4.grid(row=1, column=1, sticky="ew", padx=(4, 0), pady=4)
-        tk.Label(c4, text="Contrast Multiplier:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
-        self.sv_contrast = tk.StringVar(value="1.05")
-        tk.Entry(c4, textvariable=self.sv_contrast, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x")
-
-        tk.Label(s2, text="Saturation Multiplier (contoh: 1.08):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", pady=(2, 0))
-        self.sv_saturation = tk.StringVar(value="1.08")
-        tk.Entry(s2, textvariable=self.sv_saturation, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x")
-
-        # 3. Watermark Setup
-        s3 = tk.LabelFrame(scroll_frame, text=" 🏷️ 3. Video Watermark Otomatis (Sisi Kiri-Tengah) ", font=("Segoe UI", 10, "bold"),
-                           bg=CARD_BG, fg=TEXT, bd=1, relief="solid", padx=12, pady=10)
-        s3.pack(fill="x", padx=6, pady=(0, 10))
-
-        self.sv_wm_enabled = tk.BooleanVar(value=True)
-        tk.Checkbutton(s3, text="Aktifkan Watermark Otomatis", variable=self.sv_wm_enabled, font=("Segoe UI", 9, "bold"),
-                       bg=CARD_BG, fg=TEXT, selectcolor=ACCENT, activebackground=CARD_BG, activeforeground=TEXT).pack(anchor="w")
-
-        tk.Label(s3, text="Teks Watermark (contoh: @channel_lo):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", pady=(4, 0))
-        self.sv_wm_text = tk.StringVar(value="")
-        tk.Entry(s3, textvariable=self.sv_wm_text, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x")
-
-        wm_grid = tk.Frame(s3, bg=CARD_BG)
-        wm_grid.pack(fill="x", pady=4)
-        wm_grid.columnconfigure(0, weight=1)
-        wm_grid.columnconfigure(1, weight=1)
-        wm_grid.columnconfigure(2, weight=1)
-
-        wm1 = tk.Frame(wm_grid, bg=CARD_BG)
-        wm1.grid(row=0, column=0, sticky="ew", padx=(0, 3))
-        tk.Label(wm1, text="Font Size:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
-        self.sv_wm_size = tk.StringVar(value="15")
-        tk.Entry(wm1, textvariable=self.sv_wm_size, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x")
-
-        wm2 = tk.Frame(wm_grid, bg=CARD_BG)
-        wm2.grid(row=0, column=1, sticky="ew", padx=3)
-        tk.Label(wm2, text="Opacity (0.1 - 1.0):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
-        self.sv_wm_opacity = tk.StringVar(value="0.3")
-        tk.Entry(wm2, textvariable=self.sv_wm_opacity, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x")
-
-        wm3 = tk.Frame(wm_grid, bg=CARD_BG)
-        wm3.grid(row=0, column=2, sticky="ew", padx=(3, 0))
-        tk.Label(wm3, text="Warna:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
-        self.sv_wm_color = tk.StringVar(value="white")
-        tk.Entry(wm3, textvariable=self.sv_wm_color, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x")
-
-        # 4. Telegram Notification
-        s4 = tk.LabelFrame(scroll_frame, text=" 🔔 4. Notifikasi Bot Telegram Pribadi ", font=("Segoe UI", 10, "bold"),
-                           bg=CARD_BG, fg=TEXT, bd=1, relief="solid", padx=12, pady=10)
-        s4.pack(fill="x", padx=6, pady=(0, 10))
-
-        self.sv_tg_enabled = tk.BooleanVar(value=False)
-        tk.Checkbutton(s4, text="Aktifkan Notifikasi Posting ke Telegram", variable=self.sv_tg_enabled,
-                       font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT, selectcolor=ACCENT,
-                       activebackground=CARD_BG, activeforeground=TEXT).pack(anchor="w")
-
-        tk.Label(s4, text="Bot Token (dari @BotFather):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", pady=(4, 0))
-        self.sv_tg_token = tk.StringVar(value="")
-        tk.Entry(s4, textvariable=self.sv_tg_token, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x")
-
-        tk.Label(s4, text="Chat ID (dari @userinfobot):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", pady=(4, 0))
-        self.sv_tg_chatid = tk.StringVar(value="")
-        tk.Entry(s4, textvariable=self.sv_tg_chatid, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x")
-
-        tk.Button(s4, text="🔔  Test Kirim Notifikasi Telegram", font=("Segoe UI", 8, "bold"), bg=CARD_BORDER, fg=TEXT,
-                  activebackground="#3b4b63", activeforeground=TEXT, relief="flat", cursor="hand2", padx=10, pady=5,
-                  command=self.test_telegram).pack(anchor="w", pady=(6, 0))
-
-        # 5. Dedicated Proxy Setup
-        s5 = tk.LabelFrame(scroll_frame, text=" 🌐 5. Dedicated Proxy Setup (Per-Karyawan) ", font=("Segoe UI", 10, "bold"),
-                           bg=CARD_BG, fg=TEXT, bd=1, relief="solid", padx=12, pady=10)
-        s5.pack(fill="x", padx=6, pady=(0, 14))
-
-        tk.Label(s5, text="Proxy URL (HTTP/HTTPS/SOCKS5):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
-        self.sv_proxy_url = tk.StringVar(value="")
-        tk.Entry(s5, textvariable=self.sv_proxy_url, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT,
-                 insertbackground=TEXT, relief="solid", bd=1).pack(fill="x", pady=(2, 4))
-        tk.Label(s5, text="Contoh: http://user:pass@ip:port atau socks5://ip:port. Kosongkan = Direct Mode.",
-                 font=("Segoe UI", 8, "italic"), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
-
-        p_test_row = tk.Frame(s5, bg=CARD_BG)
-        p_test_row.pack(fill="x", pady=(6, 0))
-
-        self.test_proxy_btn = tk.Button(p_test_row, text="🌐  Test Koneksi Proxy", font=("Segoe UI", 8, "bold"),
-                                        bg=CARD_BORDER, fg=TEXT, activebackground="#3b4b63", activeforeground=TEXT,
-                                        relief="flat", cursor="hand2", padx=10, pady=5, command=self.test_proxy_connection)
-        self.test_proxy_btn.pack(side="left", padx=(0, 8))
-
-        self.proxy_status_lbl = tk.Label(p_test_row, text="", font=("Segoe UI", 8, "bold"), bg=CARD_BG, fg=TEXT_DIM)
-        self.proxy_status_lbl.pack(side="left")
-
-        # Save Button
-        save_btn = tk.Button(scroll_frame, text="💾  SIMPAN SEMUA PENGATURAN AKUN SAYA",
-                             font=("Segoe UI", 11, "bold"), bg=ACCENT, fg="white", activebackground=ACCENT_HOVER,
-                             relief="flat", cursor="hand2", pady=10, command=self.save_all_settings)
-        save_btn.pack(fill="x", padx=6, pady=(0, 20))
-
-    # ─────────────────────────────────────────────────────────────
-    # Tab 4: Cookies & Profil
+    # Tab 2: Cookies & Profil
     # ─────────────────────────────────────────────────────────────
     def _build_cookies_tab(self):
         f = self.tab_cookies
         outer = tk.Frame(f, bg=BG, padx=18, pady=14)
         outer.pack(fill="both", expand=True)
 
-        tk.Label(outer, text="🍪 Kelola Cookies & Sesi Login Sosmed", font=("Segoe UI", 12, "bold"), bg=BG, fg=TEXT).pack(anchor="w")
+        tk.Label(outer, text="\U0001f36a Kelola Cookies & Sesi Login Sosmed", font=("Segoe UI", 12, "bold"), bg=BG, fg=TEXT).pack(anchor="w")
         tk.Label(outer, text="Upload file cookie atau sesi browser ke server agar bot dapat mempublikasikan video lo:", font=("Segoe UI", 8), bg=BG, fg=TEXT_DIM).pack(anchor="w", pady=(1, 10))
 
         # Platform selector
@@ -644,7 +360,7 @@ class SinXLauncher(tk.Tk):
         tk.Label(up_card, text="Metode 1: Upload File Cookies / Storage State", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
         tk.Label(up_card, text="Export cookies dari browser lokal lo memakai ekstensi 'Cookie-Editor' atau 'Get cookies.txt LOCALLY':", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", pady=(1, 6))
 
-        tk.Button(up_card, text="📂  Upload File Cookie (.json / .txt)", font=("Segoe UI", 9, "bold"),
+        tk.Button(up_card, text="\U0001f4c2  Upload File Cookie (.json / .txt)", font=("Segoe UI", 9, "bold"),
                   bg=ACCENT, fg="white", activebackground=ACCENT_HOVER, relief="flat", cursor="hand2",
                   padx=12, pady=7, command=self.upload_cookie_file).pack(fill="x", pady=(0, 8))
 
@@ -653,7 +369,7 @@ class SinXLauncher(tk.Tk):
         tk.Label(up_card, text="Metode 2: Upload Full Profil Browser (.zip)", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
         tk.Label(up_card, text="Upload arsip ZIP folder profil browser yang sudah login (misal youtube.zip):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", pady=(1, 6))
 
-        tk.Button(up_card, text="📦  Upload Folder Profil Browser (.zip)", font=("Segoe UI", 9, "bold"),
+        tk.Button(up_card, text="\U0001f4e6  Upload Folder Profil Browser (.zip)", font=("Segoe UI", 9, "bold"),
                   bg="#1e3a5f", fg="white", activebackground="#2a4a75", relief="flat", cursor="hand2",
                   padx=12, pady=7, command=self.upload_profile_zip).pack(fill="x")
 
@@ -664,12 +380,12 @@ class SinXLauncher(tk.Tk):
         tk.Label(loc_card, text="Metode 3: Login Otomatis via Browser Lokal (Edge / Chrome)", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
         tk.Label(loc_card, text="Buka jendela browser Edge/Chrome di PC lokal lo untuk login manual & kirim cookies otomatis ke server:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", pady=(1, 6))
 
-        tk.Button(loc_card, text="🖥️  Buka Browser Lokal & Ekstrak Cookie", font=("Segoe UI", 9, "bold"),
+        tk.Button(loc_card, text="\U0001f5a5\ufe0f  Buka Browser Lokal & Ekstrak Cookie", font=("Segoe UI", 9, "bold"),
                   bg="#0f3460", fg="white", activebackground="#16213e", relief="flat", cursor="hand2",
                   padx=12, pady=7, command=self.do_local_browser_login).pack(fill="x")
 
     # ─────────────────────────────────────────────────────────────
-    # Tab 5: Live Logs
+    # Tab 3: Live Logs
     # ─────────────────────────────────────────────────────────────
     def _build_logs_tab(self):
         f = self.tab_logs
@@ -679,17 +395,17 @@ class SinXLauncher(tk.Tk):
         hdr_log = tk.Frame(outer, bg=BG)
         hdr_log.pack(fill="x", pady=(0, 6))
 
-        tk.Label(hdr_log, text="📜 Live Server Logs (SSE Stream)", font=("Segoe UI", 11, "bold"), bg=BG, fg=TEXT).pack(side="left")
+        tk.Label(hdr_log, text="\U0001f4dc Live Server Logs (SSE Stream)", font=("Segoe UI", 11, "bold"), bg=BG, fg=TEXT).pack(side="left")
 
         self.auto_scroll_var = tk.BooleanVar(value=True)
         tk.Checkbutton(hdr_log, text="Auto-scroll", variable=self.auto_scroll_var, font=("Segoe UI", 8),
                        bg=BG, fg=TEXT_DIM, selectcolor=CARD_BG, activebackground=BG, activeforeground=TEXT).pack(side="right", padx=(8, 0))
 
-        tk.Button(hdr_log, text="🔄  Hubungkan Ulang", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM,
+        tk.Button(hdr_log, text="\U0001f504  Hubungkan Ulang", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM,
                   activebackground=CARD_BORDER, activeforeground=TEXT, relief="flat", cursor="hand2",
                   padx=8, pady=3, command=self._start_sse_stream).pack(side="right", padx=(4, 0))
 
-        tk.Button(hdr_log, text="🧹  Bersihkan", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM,
+        tk.Button(hdr_log, text="\U0001f9f9  Bersihkan", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM,
                   activebackground=CARD_BORDER, activeforeground=TEXT, relief="flat", cursor="hand2",
                   padx=8, pady=3, command=self.clear_logs).pack(side="right")
 
@@ -701,7 +417,7 @@ class SinXLauncher(tk.Tk):
         self.log_box.pack(fill="both", expand=True)
 
     # ─────────────────────────────────────────────────────────────
-    # Tab 6: Akun & Server
+    # Tab 4: Akun & Server
     # ─────────────────────────────────────────────────────────────
     def _build_login_tab(self):
         f = self.tab_login
@@ -712,7 +428,7 @@ class SinXLauncher(tk.Tk):
         srv_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=12)
         srv_card.pack(fill="x", pady=(0, 12))
 
-        tk.Label(srv_card, text="🌐 URL Server Dedicated Sin'X Automation", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
+        tk.Label(srv_card, text="\U0001f310 URL Server Dedicated Sin'X Automation", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
         self.sv_url = tk.StringVar(value=self.cfg["server_url"])
         tk.Entry(srv_card, textvariable=self.sv_url, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, insertbackground=TEXT, relief="solid", bd=1).pack(fill="x", pady=(4, 2))
         tk.Label(srv_card, text="Format: https://server.kntl.cc atau http://ip-vps:8080", font=("Segoe UI", 8, "italic"), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
@@ -732,7 +448,7 @@ class SinXLauncher(tk.Tk):
         btn_box = tk.Frame(c_card, bg=CARD_BG)
         btn_box.pack(fill="x")
 
-        self.login_btn = tk.Button(btn_box, text="🔑  Login ke Server", font=("Segoe UI", 9, "bold"), bg=ACCENT, fg="white", activebackground=ACCENT_HOVER, activeforeground="white", relief="flat", cursor="hand2", padx=14, pady=7, command=self.do_login)
+        self.login_btn = tk.Button(btn_box, text="\U0001f511  Login ke Server", font=("Segoe UI", 9, "bold"), bg=ACCENT, fg="white", activebackground=ACCENT_HOVER, activeforeground="white", relief="flat", cursor="hand2", padx=14, pady=7, command=self.do_login)
         self.login_btn.pack(side="left", fill="x", expand=True, padx=(0, 6))
 
         self.logout_btn = tk.Button(btn_box, text="Keluar / Logout", font=("Segoe UI", 9), bg=CARD_BORDER, fg=TEXT_DIM, activebackground="#3b4b63", activeforeground=TEXT, relief="flat", cursor="hand2", padx=12, pady=7, command=self.do_logout, state="disabled")
@@ -742,8 +458,8 @@ class SinXLauncher(tk.Tk):
         pw_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=12)
         pw_card.pack(fill="x")
 
-        tk.Label(pw_card, text="🔒 Ganti Password Akun Lo", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 6))
-        
+        tk.Label(pw_card, text="\U0001f512 Ganti Password Akun Lo", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 6))
+
         tk.Label(pw_card, text="Password Saat Ini:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
         self.sv_cur_pw = tk.StringVar()
         tk.Entry(pw_card, textvariable=self.sv_cur_pw, show="*", font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x", pady=(1, 6))
@@ -752,7 +468,7 @@ class SinXLauncher(tk.Tk):
         self.sv_new_pw = tk.StringVar()
         tk.Entry(pw_card, textvariable=self.sv_new_pw, show="*", font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x", pady=(1, 8))
 
-        tk.Button(pw_card, text="🔒  Simpan Password Baru", font=("Segoe UI", 9, "bold"), bg=CARD_BORDER, fg=TEXT, activebackground="#3b4b63", activeforeground=TEXT, relief="flat", cursor="hand2", pady=6, command=self.change_password).pack(fill="x")
+        tk.Button(pw_card, text="\U0001f512  Simpan Password Baru", font=("Segoe UI", 9, "bold"), bg=CARD_BORDER, fg=TEXT, activebackground="#3b4b63", activeforeground=TEXT, relief="flat", cursor="hand2", pady=6, command=self.change_password).pack(fill="x")
 
     # ─────────────────────────────────────────────────────────────
     # Logging & Console Feed
@@ -810,8 +526,6 @@ class SinXLauncher(tk.Tk):
         self.dash_acc_badge.configure(text=f"Account ID: #{acc}")
         self.set_status(f"Connected: {name}", ok=True)
 
-        self.load_user_settings()
-        self.load_my_videos()
         self.refresh_dashboard_data()
         self._start_sse_stream()
 
@@ -854,7 +568,7 @@ class SinXLauncher(tk.Tk):
                 self.after(0, lambda: self.log(f"Koneksi gagal: {e}", DANGER))
                 self.after(0, lambda: messagebox.showerror("Koneksi Error", f"Tidak dapat terhubung ke {url}:\n{e}"))
             finally:
-                self.after(0, lambda: self.login_btn.configure(state="normal", text="🔑  Login ke Server"))
+                self.after(0, lambda: self.login_btn.configure(state="normal", text="\U0001f511  Login ke Server"))
 
         threading.Thread(target=_do, daemon=True).start()
 
@@ -939,13 +653,13 @@ class SinXLauncher(tk.Tk):
                 if code == 200:
                     stats = data.get("queue_stats", {})
                     sch = data.get("scheduler", {})
-                    
+
                     by_st = stats.get("by_status", {})
-                    total_val = stats.get("total", 0)
-                    ready_val = stats.get("pending") if stats.get("pending") is not None else by_st.get("pending", 0)
-                    proc_val = stats.get("processing") if stats.get("processing") is not None else (by_st.get("downloading", 0) + by_st.get("rendering", 0) + by_st.get("uploading", 0))
-                    done_val = stats.get("done") if stats.get("done") is not None else (by_st.get("done", 0) + by_st.get("published", 0))
-                    failed_val = stats.get("failed") if stats.get("failed") is not None else (by_st.get("failed", 0) + by_st.get("error", 0))
+                    total_val  = stats.get("total", 0)
+                    ready_val  = stats.get("pending")  if stats.get("pending")  is not None else by_st.get("pending", 0)
+                    proc_val   = stats.get("processing") if stats.get("processing") is not None else (by_st.get("downloading", 0) + by_st.get("rendering", 0) + by_st.get("uploading", 0))
+                    done_val   = stats.get("done")    if stats.get("done")    is not None else (by_st.get("done", 0) + by_st.get("published", 0))
+                    failed_val = stats.get("failed")  if stats.get("failed")  is not None else (by_st.get("failed", 0) + by_st.get("error", 0))
 
                     self.after(0, lambda: self.stat_total.configure(text=str(total_val)))
                     self.after(0, lambda: self.stat_ready.configure(text=str(ready_val)))
@@ -957,7 +671,7 @@ class SinXLauncher(tk.Tk):
                     rem = sch.get("remaining_seconds", 0)
                     rem_str = f" ({rem // 3600}j {(rem % 3600) // 60}m lagi)" if rem > 0 else ""
                     slots_str = ", ".join(sch.get("slots", []))
-                    tz_str = f"{sch.get('timezone', 'Asia/Jakarta')} ({sch.get('timezone_abbr', 'WIB')}) — Jam Server: {sch.get('current_time', '')}"
+                    tz_str = f"{sch.get('timezone', 'Asia/Jakarta')} ({sch.get('timezone_abbr', 'WIB')}) \u2014 Jam Server: {sch.get('current_time', '')}"
 
                     self.after(0, lambda: self.dash_sch_next.configure(text=f"Jadwal Berikutnya: {next_slot}{rem_str}"))
                     self.after(0, lambda: self.dash_sch_slots.configure(text=f"Jam Tayang Aktif: {slots_str}"))
@@ -967,242 +681,7 @@ class SinXLauncher(tk.Tk):
         threading.Thread(target=_do, daemon=True).start()
 
     # ─────────────────────────────────────────────────────────────
-    # Gudang Konten Queue Management
-    # ─────────────────────────────────────────────────────────────
-    def submit_urls(self):
-        if not self.token:
-            messagebox.showerror("Error", "Silakan login terlebih dahulu.")
-            return
-        raw = self.url_text.get("1.0", "end").strip()
-        if not raw:
-            messagebox.showerror("Error", "Masukkan minimal 1 link video.")
-            return
-        url = normalize_url(self.sv_url.get().strip())
-        self.log("Menambahkan URL ke Gudang Konten...")
-        self.add_urls_btn.configure(state="disabled")
-        def _do():
-            try:
-                data, code = api_post(url, "/api/ingest", {"urls": raw}, token=self.token)
-                if code == 200:
-                    added = data.get("added", 0)
-                    msg = data.get("message", f"{added} video berhasil ditambahkan!")
-                    self.after(0, lambda: self.log(f"✓ {msg}", SUCCESS))
-                    self.after(0, lambda: messagebox.showinfo("Sukses", msg))
-                    self.after(0, lambda: self.url_text.delete("1.0", "end"))
-                    self.after(0, self.load_my_videos)
-                    self.after(0, self.refresh_dashboard_data)
-                else:
-                    err = data.get("detail", "Gagal input URLs")
-                    self.after(0, lambda: self.log(f"✗ {err}", DANGER))
-                    self.after(0, lambda: messagebox.showerror("Error", err))
-            except Exception as e:
-                self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
-                self.after(0, lambda: messagebox.showerror("Error", str(e)))
-            finally:
-                self.after(0, lambda: self.add_urls_btn.configure(state="normal"))
-        threading.Thread(target=_do, daemon=True).start()
-
-    def load_my_videos(self):
-        if not self.token:
-            return
-        url = normalize_url(self.sv_url.get().strip())
-        def _do():
-            try:
-                data, code = api_get(url, "/api/videos?limit=100", token=self.token)
-                if code == 200:
-                    videos = data.get("videos", [])
-                    def _update():
-                        for row in self.queue_tree.get_children():
-                            self.queue_tree.delete(row)
-                        for v in videos:
-                            vid_id = f"#{v.get('id', '?')}"
-                            st = (v.get("status") or "pending").upper()
-                            title = v.get("title") or v.get("url", "-")
-                            created = (v.get("created_at") or "")[:16]
-                            self.queue_tree.insert("", "end", values=(vid_id, st, title, created))
-                    self.after(0, _update)
-            except Exception as e:
-                self.log(f"Gagal memuat antrean video: {e}", TEXT_DIM)
-        threading.Thread(target=_do, daemon=True).start()
-
-    # ─────────────────────────────────────────────────────────────
-    # Config Akun & Proxy Handlers
-    # ─────────────────────────────────────────────────────────────
-    def load_user_settings(self):
-        if not self.token:
-            return
-        url = normalize_url(self.sv_url.get().strip())
-        def _do():
-            try:
-                data, code = api_get(url, "/api/user/settings", self.token)
-                if code == 200 and data.get("settings"):
-                    s = data["settings"]
-                    self.user_settings = s
-                    slots = s.get("schedule_slots") or ["12:00", "18:00", "21:00"]
-                    if isinstance(slots, list):
-                        slots = ", ".join(slots)
-                    self.after(0, lambda: self.sv_slots.set(str(slots)))
-                    self.after(0, lambda: self.sv_tz.set(str(s.get("timezone", "Asia/Jakarta"))))
-                    self.after(0, lambda: self.sv_pph.set(str(s.get("posts_per_hour", 2))))
-                    self.after(0, lambda: self.sv_delay.set(str(s.get("delay_between_platforms_sec", 30))))
-
-                    self.after(0, lambda: self.sv_zoom.set(str(s.get("ffmpeg_zoom", 1.05))))
-                    self.after(0, lambda: self.sv_speed.set(str(s.get("ffmpeg_speed", 1.05))))
-                    self.after(0, lambda: self.sv_noise.set(str(s.get("ffmpeg_noise", 3))))
-                    self.after(0, lambda: self.sv_contrast.set(str(s.get("ffmpeg_contrast", 1.05))))
-                    self.after(0, lambda: self.sv_saturation.set(str(s.get("ffmpeg_saturation", 1.08))))
-
-                    self.after(0, lambda: self.sv_wm_enabled.set(bool(s.get("watermark_enabled", 1))))
-                    self.after(0, lambda: self.sv_wm_text.set(str(s.get("watermark_text", ""))))
-                    self.after(0, lambda: self.sv_wm_size.set(str(s.get("watermark_font_size", 15))))
-                    self.after(0, lambda: self.sv_wm_opacity.set(str(s.get("watermark_opacity", 0.3))))
-                    self.after(0, lambda: self.sv_wm_color.set(str(s.get("watermark_color", "white"))))
-
-                    self.after(0, lambda: self.sv_tg_enabled.set(bool(s.get("telegram_enabled", 0))))
-                    self.after(0, lambda: self.sv_tg_token.set(str(s.get("telegram_bot_token", ""))))
-                    self.after(0, lambda: self.sv_tg_chatid.set(str(s.get("telegram_chat_id", ""))))
-
-                    self.after(0, lambda: self.sv_proxy_url.set(str(s.get("proxy_url", ""))))
-                    self.after(0, lambda: self.log("Pengaturan akun berhasil dimuat dari server.", SUCCESS))
-            except Exception as e:
-                self.log(f"Gagal memuat pengaturan akun: {e}", TEXT_DIM)
-        threading.Thread(target=_do, daemon=True).start()
-
-    def save_all_settings(self):
-        if not self.token:
-            messagebox.showerror("Error", "Silakan login terlebih dahulu.")
-            return
-        raw_slots = [s.strip() for s in self.sv_slots.get().split(",") if s.strip()]
-        payload = {
-            "schedule_slots": raw_slots,
-            "timezone": self.sv_tz.get().strip() or "Asia/Jakarta",
-            "posts_per_hour": int(self.sv_pph.get() or 2),
-            "delay_between_platforms_sec": int(self.sv_delay.get() or 30),
-            "ffmpeg_zoom": float(self.sv_zoom.get() or 1.05),
-            "ffmpeg_speed": float(self.sv_speed.get() or 1.05),
-            "ffmpeg_noise": int(self.sv_noise.get() or 3),
-            "ffmpeg_contrast": float(self.sv_contrast.get() or 1.05),
-            "ffmpeg_saturation": float(self.sv_saturation.get() or 1.08),
-            "watermark_enabled": bool(self.sv_wm_enabled.get()),
-            "watermark_text": self.sv_wm_text.get().strip(),
-            "watermark_font_size": int(self.sv_wm_size.get() or 15),
-            "watermark_opacity": float(self.sv_wm_opacity.get() or 0.3),
-            "watermark_color": self.sv_wm_color.get().strip() or "white",
-            "telegram_enabled": bool(self.sv_tg_enabled.get()),
-            "telegram_bot_token": self.sv_tg_token.get().strip(),
-            "telegram_chat_id": self.sv_tg_chatid.get().strip(),
-            "proxy_url": self.sv_proxy_url.get().strip(),
-        }
-
-        url = normalize_url(self.sv_url.get().strip())
-        self.log("Menyimpan semua konfigurasi akun ke server...")
-        def _do():
-            try:
-                data, code = api_post(url, "/api/user/settings", payload, token=self.token)
-                if code == 200:
-                    self.after(0, lambda: self.log("✓ Semua pengaturan berhasil disimpan ke server!", SUCCESS))
-                    self.after(0, lambda: messagebox.showinfo("Sukses", "Pengaturan akun berhasil disimpan!"))
-                    self.after(0, self.refresh_dashboard_data)
-                else:
-                    err = data.get("detail", "Gagal menyimpan pengaturan")
-                    self.after(0, lambda: self.log(f"✗ {err}", DANGER))
-                    self.after(0, lambda: messagebox.showerror("Gagal", err))
-            except Exception as e:
-                self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
-                self.after(0, lambda: messagebox.showerror("Error", str(e)))
-        threading.Thread(target=_do, daemon=True).start()
-
-    def test_telegram(self):
-        if not self.token:
-            messagebox.showerror("Error", "Login terlebih dahulu.")
-            return
-        token = self.sv_tg_token.get().strip()
-        chat_id = self.sv_tg_chatid.get().strip()
-        if not token or not chat_id:
-            messagebox.showerror("Error", "Bot Token dan Chat ID wajib diisi untuk test!")
-            return
-        url = normalize_url(self.sv_url.get().strip())
-        self.log("Mengirim test notifikasi ke Telegram...")
-        def _do():
-            try:
-                data, code = api_post(url, "/api/user/telegram/test", {"bot_token": token, "chat_id": chat_id}, token=self.token)
-                if code == 200:
-                    self.after(0, lambda: self.log("✓ Notifikasi Telegram berhasil terkirim!", SUCCESS))
-                    self.after(0, lambda: messagebox.showinfo("Berhasil", "Pesan test Telegram berhasil dikirim! Cek aplikasi Telegram lo."))
-                else:
-                    err = data.get("detail", "Gagal mengirim Telegram")
-                    self.after(0, lambda: self.log(f"✗ {err}", DANGER))
-                    self.after(0, lambda: messagebox.showerror("Gagal", err))
-            except Exception as e:
-                self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
-                self.after(0, lambda: messagebox.showerror("Error", str(e)))
-        threading.Thread(target=_do, daemon=True).start()
-
-    def test_proxy_connection(self):
-        target_proxy = self.sv_proxy_url.get().strip()
-        if not target_proxy:
-            self.proxy_status_lbl.configure(text="Direct Mode (Tanpa Proxy)", fg=TEXT_DIM)
-            messagebox.showinfo("Direct Mode", "Proxy URL kosong. Akun ini berjalan dalam Direct Mode (koneksi langsung).")
-            return
-        
-        self.proxy_status_lbl.configure(text="Menguji koneksi proxy...", fg=WARNING)
-        self.test_proxy_btn.configure(state="disabled")
-        url = normalize_url(self.sv_url.get().strip())
-        
-        def _do():
-            try:
-                data, code = api_post(url, "/api/proxy/check", {"proxy_url": target_proxy}, token=self.token)
-                msg = data.get("message", "")
-                is_ok = bool(data.get("reachable") or data.get("success") or data.get("status") == "online")
-                if is_ok:
-                    self.after(0, lambda: self.proxy_status_lbl.configure(text="✓ ONLINE", fg=SUCCESS))
-                    self.after(0, lambda: self.log(f"✓ {msg}", SUCCESS))
-                    self.after(0, lambda: messagebox.showinfo("Proxy Sukses", msg))
-                else:
-                    self.after(0, lambda: self.proxy_status_lbl.configure(text="✗ OFFLINE / GAGAL", fg=DANGER))
-                    self.after(0, lambda: self.log(f"✗ {msg}", DANGER))
-                    self.after(0, lambda: messagebox.showerror("Proxy Gagal", msg))
-            except Exception as e:
-                self.after(0, lambda: self.proxy_status_lbl.configure(text="✗ Error", fg=DANGER))
-                self.after(0, lambda: messagebox.showerror("Error", str(e)))
-            finally:
-                self.after(0, lambda: self.test_proxy_btn.configure(state="normal"))
-        threading.Thread(target=_do, daemon=True).start()
-
-    def _start_sse_stream(self):
-        if self.sse_active or not self.token:
-            return
-        self.sse_active = True
-        url = normalize_url(self.sv_url.get().strip())
-        
-        def _stream():
-            while self.sse_active and self.token:
-                try:
-                    headers = {"X-Auth-Token": self.token, "Accept": "text/event-stream"}
-                    with requests.get(f"{url}/api/logs/stream", headers=headers, stream=True, timeout=60) as r:
-                        if r.status_code != 200:
-                            time.sleep(5)
-                            continue
-                        for line in r.iter_lines(decode_unicode=True):
-                            if not self.sse_active:
-                                break
-                            if line and line.startswith("data:"):
-                                raw_json = line[5:].strip()
-                                try:
-                                    item = json.loads(raw_json)
-                                    msg = item.get("message") or item.get("line") or str(item)
-                                    lvl = (item.get("level") or "").upper()
-                                    col = DANGER if "ERROR" in lvl or "FAIL" in lvl else (WARNING if "WARN" in lvl else None)
-                                    self.log(msg, col)
-                                except Exception:
-                                    self.log(raw_json)
-                except Exception:
-                    time.sleep(4)
-        threading.Thread(target=_stream, daemon=True).start()
-
-
-    # ─────────────────────────────────────────────────────────────
-    # Actions & Handlers
+    # On-Demand Publish & Debug Screenshot
     # ─────────────────────────────────────────────────────────────
     def get_selected_platform_key(self) -> str:
         label = self.sv_platform_name.get()
@@ -1216,7 +695,6 @@ class SinXLauncher(tk.Tk):
             messagebox.showerror("Error", "Silakan login ke server terlebih dahulu.")
             return
 
-        # Modal dialog to choose target
         dlg = tk.Toplevel(self)
         dlg.title("Post Sekarang (On-Demand)")
         dlg.geometry("380x280")
@@ -1225,10 +703,10 @@ class SinXLauncher(tk.Tk):
         dlg.transient(self)
         dlg.grab_set()
 
-        tk.Label(dlg, text="🚀 Publikasikan 1 Video Sekarang", font=("Segoe UI", 11, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", padx=16, pady=(16, 4))
+        tk.Label(dlg, text="\U0001f680 Publikasikan 1 Video Sekarang", font=("Segoe UI", 11, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", padx=16, pady=(16, 4))
         tk.Label(dlg, text="Pilih platform tujuan distribusi video lo:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", padx=16, pady=(0, 10))
 
-        choices = [("ALL", "⭐ Semua Platform Aktif Sekaligus")] + PLATFORMS
+        choices = [("ALL", "\u2b50 Semua Platform Aktif Sekaligus")] + PLATFORMS
         sel_var = tk.StringVar(value="youtube")
 
         opt_frame = tk.Frame(dlg, bg=CARD_BG)
@@ -1238,8 +716,7 @@ class SinXLauncher(tk.Tk):
         cb.set("YouTube (Shorts/Studio)")
         cb.pack(fill="x", pady=6)
 
-        msg_lbl = tk.Label(opt_frame, text="Proses download JIT, render anti-hash & watermark akan langsung berjalan!", font=("Segoe UI", 8, "italic"), bg=CARD_BG, fg=ACCENT_CYAN, wraplength=340, justify="left")
-        msg_lbl.pack(fill="x", pady=6)
+        tk.Label(opt_frame, text="Proses download JIT, render anti-hash & watermark akan langsung berjalan!", font=("Segoe UI", 8, "italic"), bg=CARD_BG, fg=ACCENT_CYAN, wraplength=340, justify="left").pack(fill="x", pady=6)
 
         btn_box = tk.Frame(dlg, bg=CARD_BG, padx=16, pady=12)
         btn_box.pack(fill="x")
@@ -1251,7 +728,6 @@ class SinXLauncher(tk.Tk):
                 if n == chosen_label:
                     target_key = k
                     break
-
             dlg.destroy()
             self._trigger_publish(target_key)
 
@@ -1265,22 +741,22 @@ class SinXLauncher(tk.Tk):
         def _worker():
             try:
                 if target_key == "ALL":
-                    self.log("🚀 Memulai publikasi On-Demand ke SEMUA target platform aktif...", ACCENT_CYAN)
+                    self.log("\U0001f680 Memulai publikasi On-Demand ke SEMUA target platform aktif...", ACCENT_CYAN)
                     data, code = api_post(url, "/api/pipeline/publish-all", token=self.token)
                 else:
-                    self.log(f"🚀 Memulai publikasi On-Demand untuk platform '{target_key}'...", ACCENT_CYAN)
+                    self.log(f"\U0001f680 Memulai publikasi On-Demand untuk platform '{target_key}'...", ACCENT_CYAN)
                     data, code = api_post(url, f"/api/publish/{target_key}", token=self.token)
 
                 if code == 200:
                     msg = data.get("message", "Publikasi dimulai!")
-                    self.after(0, lambda: self.log(f"✓ {msg}", SUCCESS))
+                    self.after(0, lambda: self.log(f"\u2713 {msg}", SUCCESS))
                     self.after(0, self.refresh_dashboard_data)
                 else:
                     err = data.get("detail", "Gagal memicu publikasi")
-                    self.after(0, lambda: self.log(f"✗ Gagal: {err}", DANGER))
+                    self.after(0, lambda: self.log(f"\u2717 Gagal: {err}", DANGER))
                     self.after(0, lambda: messagebox.showerror("Gagal", err))
             except Exception as e:
-                self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
+                self.after(0, lambda: self.log(f"\u2717 Error: {e}", DANGER))
                 self.after(0, lambda: messagebox.showerror("Error", str(e)))
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -1290,7 +766,6 @@ class SinXLauncher(tk.Tk):
             messagebox.showerror("Error", "Silakan login terlebih dahulu.")
             return
 
-        # Modal to pick platform screenshot
         dlg = tk.Toplevel(self)
         dlg.title("Cek Screenshot Debug")
         dlg.geometry("360x220")
@@ -1299,7 +774,7 @@ class SinXLauncher(tk.Tk):
         dlg.transient(self)
         dlg.grab_set()
 
-        tk.Label(dlg, text="📸 Lihat Screenshot Browser Headless", font=("Segoe UI", 11, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", padx=16, pady=(16, 4))
+        tk.Label(dlg, text="\U0001f4f8 Lihat Screenshot Browser Headless", font=("Segoe UI", 11, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", padx=16, pady=(16, 4))
         tk.Label(dlg, text="Pilih platform untuk melihat tangkapan layar browser terakhir:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", padx=16, pady=(0, 10))
 
         cb = ttk.Combobox(dlg, values=[p[1] for p in PLATFORMS], state="readonly", font=("Segoe UI", 9))
@@ -1325,62 +800,9 @@ class SinXLauncher(tk.Tk):
         tk.Button(btn_box, text="Buka Screenshot di Browser", font=("Segoe UI", 9, "bold"), bg=ACCENT, fg="white", relief="flat", cursor="hand2", padx=12, pady=6, command=_open).pack(side="left", fill="x", expand=True, padx=(0, 6))
         tk.Button(btn_box, text="Tutup", font=("Segoe UI", 9), bg=CARD_BORDER, fg=TEXT_DIM, relief="flat", cursor="hand2", padx=10, pady=6, command=dlg.destroy).pack(side="right")
 
-    def prompt_clear_queue(self):
-        if not self.token:
-            messagebox.showerror("Error", "Silakan login terlebih dahulu.")
-            return
-
-        dlg = tk.Toplevel(self)
-        dlg.title("Bersihkan Antrean Konten")
-        dlg.geometry("380x240")
-        dlg.minsize(360, 220)
-        dlg.configure(bg=CARD_BG)
-        dlg.transient(self)
-        dlg.grab_set()
-
-        tk.Label(dlg, text="🗑️ Bersihkan Antrean Gudang Konten", font=("Segoe UI", 11, "bold"), bg=CARD_BG, fg=DANGER).pack(anchor="w", padx=16, pady=(16, 4))
-        tk.Label(dlg, text="Pilih cakupan pembersihan video lo di server:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", padx=16, pady=(0, 10))
-
-        scopes = [
-            ("pending", "1. Hapus Video Pending (Belum diproses saja)"),
-            ("failed", "2. Hapus Video Gagal (Yang statusnya error)"),
-            ("all", "⚠️ 3. Reset Total (Hapus semua antrean & riwayat)"),
-        ]
-        sel_scope = tk.StringVar(value="pending")
-
-        for val, desc in scopes:
-            tk.Radiobutton(dlg, text=desc, variable=sel_scope, value=val, font=("Segoe UI", 8),
-                           bg=CARD_BG, fg=TEXT, selectcolor=ACCENT, activebackground=CARD_BG, activeforeground=TEXT).pack(anchor="w", padx=20, pady=2)
-
-        btn_box = tk.Frame(dlg, bg=CARD_BG, padx=16, pady=12)
-        btn_box.pack(fill="x")
-
-        def _do_clear():
-            scope = sel_scope.get()
-            dlg.destroy()
-            url = normalize_url(self.sv_url.get().strip())
-            self.log(f"Membersihkan antrean video ({scope})...")
-            def _worker():
-                try:
-                    data, code = api_post(url, "/api/queue/clear", {"scope": scope}, token=self.token)
-                    if code == 200:
-                        msg = data.get("message", "Antrean berhasil dibersihkan!")
-                        self.after(0, lambda: self.log(f"✓ {msg}", SUCCESS))
-                        self.after(0, lambda: messagebox.showinfo("Berhasil", msg))
-                        self.after(0, self.load_my_videos)
-                        self.after(0, self.refresh_dashboard_data)
-                    else:
-                        err = data.get("detail", "Gagal membersihkan antrean")
-                        self.after(0, lambda: self.log(f"✗ Gagal: {err}", DANGER))
-                        self.after(0, lambda: messagebox.showerror("Gagal", err))
-                except Exception as e:
-                    self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
-                    self.after(0, lambda: messagebox.showerror("Error", str(e)))
-            threading.Thread(target=_worker, daemon=True).start()
-
-        tk.Button(btn_box, text="Bersihkan Sekarang", font=("Segoe UI", 9, "bold"), bg=DANGER, fg="white", relief="flat", cursor="hand2", padx=12, pady=6, command=_do_clear).pack(side="left", fill="x", expand=True, padx=(0, 6))
-        tk.Button(btn_box, text="Batal", font=("Segoe UI", 9), bg=CARD_BORDER, fg=TEXT_DIM, relief="flat", cursor="hand2", padx=10, pady=6, command=dlg.destroy).pack(side="right")
-
+    # ─────────────────────────────────────────────────────────────
+    # Cookies & Profile Upload
+    # ─────────────────────────────────────────────────────────────
     def upload_profile_zip(self):
         if not self.token:
             messagebox.showerror("Error", "Silakan login terlebih dahulu.")
@@ -1401,14 +823,14 @@ class SinXLauncher(tk.Tk):
                     data, code = api_post(server_url, f"/api/upload-profile/{target_key}", token=self.token, files=files)
                 if code == 200:
                     msg = data.get("message", "Profil berhasil diunggah!")
-                    self.after(0, lambda: self.log(f"✓ {msg}", SUCCESS))
+                    self.after(0, lambda: self.log(f"\u2713 {msg}", SUCCESS))
                     self.after(0, lambda: messagebox.showinfo("Berhasil!", f"{msg}\nSesi login browser '{target_key}' aktif di server."))
                 else:
                     err = data.get("detail", "Gagal upload profil zip")
-                    self.after(0, lambda: self.log(f"✗ {err}", DANGER))
+                    self.after(0, lambda: self.log(f"\u2717 {err}", DANGER))
                     self.after(0, lambda: messagebox.showerror("Gagal", err))
             except Exception as e:
-                self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
+                self.after(0, lambda: self.log(f"\u2717 Error: {e}", DANGER))
                 self.after(0, lambda: messagebox.showerror("Error", str(e)))
         threading.Thread(target=_do, daemon=True).start()
 
@@ -1433,14 +855,14 @@ class SinXLauncher(tk.Tk):
                     data, code = api_post(server_url, f"/api/upload-cookies/{target_key}", token=self.token, files=files)
                 if code == 200:
                     msg = data.get("message", "Cookies berhasil diupload!")
-                    self.after(0, lambda: self.log(f"✓ {msg}", SUCCESS))
+                    self.after(0, lambda: self.log(f"\u2713 {msg}", SUCCESS))
                     self.after(0, lambda: messagebox.showinfo("Berhasil!", f"{msg}\nPlatform '{target_key}' siap digunakan."))
                 else:
                     err = data.get("detail", "Upload gagal")
-                    self.after(0, lambda: self.log(f"✗ {err}", DANGER))
+                    self.after(0, lambda: self.log(f"\u2717 {err}", DANGER))
                     self.after(0, lambda: messagebox.showerror("Gagal", err))
             except Exception as e:
-                self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
+                self.after(0, lambda: self.log(f"\u2717 Error: {e}", DANGER))
                 self.after(0, lambda: messagebox.showerror("Error", str(e)))
         threading.Thread(target=_do, daemon=True).start()
 
@@ -1467,7 +889,7 @@ class SinXLauncher(tk.Tk):
             if not HAS_PLAYWRIGHT:
                 self.after(0, lambda: messagebox.showinfo(
                     "Gunakan Upload Cookies / Profil ZIP",
-                    "💡 Solusi Paling Cepat & Aman:\n"
+                    "\U0001f4a1 Solusi Paling Cepat & Aman:\n"
                     "1. Buka browser Chrome/Edge biasa, login ke sosmed Anda.\n"
                     "2. Gunakan ekstensi 'Cookie-Editor' atau 'Get cookies.txt LOCALLY'.\n"
                     "3. Klik tombol 'Upload File Cookie' atau 'Upload Profil Browser (.zip)' di atas."
@@ -1506,7 +928,7 @@ class SinXLauncher(tk.Tk):
                     self.after(0, lambda: self.log("Tidak ada cookies yang berhasil diekstrak.", DANGER))
                     return
 
-                self.after(0, lambda: self.log(f"✓ {len(cookies)} cookies diekstrak. Mengupload ke server...", SUCCESS))
+                self.after(0, lambda: self.log(f"\u2713 {len(cookies)} cookies diekstrak. Mengupload ke server...", SUCCESS))
                 server_url = normalize_url(self.sv_url.get().strip())
                 tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w")
                 json.dump(cookies, tmp)
@@ -1519,16 +941,50 @@ class SinXLauncher(tk.Tk):
 
                 if code == 200:
                     msg = data.get("message", "Cookies berhasil diupload!")
-                    self.after(0, lambda: self.log(f"✓ {msg}", SUCCESS))
+                    self.after(0, lambda: self.log(f"\u2713 {msg}", SUCCESS))
                     self.after(0, lambda: messagebox.showinfo("Berhasil!", f"{msg}\nPlatform '{target_key}' siap digunakan!"))
                 else:
                     err = data.get("detail", "Upload cookies gagal")
-                    self.after(0, lambda: self.log(f"✗ {err}", DANGER))
+                    self.after(0, lambda: self.log(f"\u2717 {err}", DANGER))
                     self.after(0, lambda: messagebox.showerror("Error", err))
             except Exception as e:
-                self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
+                self.after(0, lambda: self.log(f"\u2717 Error: {e}", DANGER))
                 self.after(0, lambda: messagebox.showerror("Gagal Membuka Browser", str(e)))
         threading.Thread(target=_do, daemon=True).start()
+
+    # ─────────────────────────────────────────────────────────────
+    # SSE Live Log Stream
+    # ─────────────────────────────────────────────────────────────
+    def _start_sse_stream(self):
+        if self.sse_active or not self.token:
+            return
+        self.sse_active = True
+        url = normalize_url(self.sv_url.get().strip())
+
+        def _stream():
+            while self.sse_active and self.token:
+                try:
+                    headers = {"X-Auth-Token": self.token, "Accept": "text/event-stream"}
+                    with requests.get(f"{url}/api/logs/stream", headers=headers, stream=True, timeout=60) as r:
+                        if r.status_code != 200:
+                            time.sleep(5)
+                            continue
+                        for line in r.iter_lines(decode_unicode=True):
+                            if not self.sse_active:
+                                break
+                            if line and line.startswith("data:"):
+                                raw_json = line[5:].strip()
+                                try:
+                                    item = json.loads(raw_json)
+                                    msg = item.get("message") or item.get("line") or str(item)
+                                    lvl = (item.get("level") or "").upper()
+                                    col = DANGER if "ERROR" in lvl or "FAIL" in lvl else (WARNING if "WARN" in lvl else None)
+                                    self.log(msg, col)
+                                except Exception:
+                                    self.log(raw_json)
+                except Exception:
+                    time.sleep(4)
+        threading.Thread(target=_stream, daemon=True).start()
 
 
 if __name__ == "__main__":
