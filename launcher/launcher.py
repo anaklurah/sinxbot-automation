@@ -84,7 +84,7 @@ def load_config() -> dict:
     cfg = configparser.ConfigParser()
     if CONFIG_PATH.exists():
         cfg.read(str(CONFIG_PATH), encoding="utf-8")
-    raw_url = cfg.get("app", "server_url", fallback="https://server.kntl.cc")
+    raw_url = cfg.get("app", "server_url", fallback="https://auto.kntl.cc")
     return {
         "server_url": normalize_url(raw_url),
         "username": cfg.get("app", "username", fallback=""),
@@ -431,7 +431,7 @@ class SinXLauncher(tk.Tk):
         tk.Label(srv_card, text="\U0001f310 URL Server Dedicated Sin'X Automation", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
         self.sv_url = tk.StringVar(value=self.cfg["server_url"])
         tk.Entry(srv_card, textvariable=self.sv_url, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, insertbackground=TEXT, relief="solid", bd=1).pack(fill="x", pady=(4, 2))
-        tk.Label(srv_card, text="Format: https://server.kntl.cc atau http://ip-vps:8080", font=("Segoe UI", 8, "italic"), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
+        tk.Label(srv_card, text="Format: https://auto.kntl.cc atau http://ip-vps:8080", font=("Segoe UI", 8, "italic"), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
 
         # Credentials Card
         c_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=12)
