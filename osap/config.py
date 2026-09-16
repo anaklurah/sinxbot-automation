@@ -133,7 +133,7 @@ class Config:
     WORKERS_DOWNLOADER: int = 2
 
     #: Run Playwright browser in headless mode (True) or visible GUI mode (False).
-    HEADLESS: bool = False
+    HEADLESS: bool = True
 
     # ------------------------------------------------------------------
     # FFmpeg processing parameters
@@ -451,7 +451,7 @@ def get_config(*, reload: bool = False) -> Config:
         ),
         HEADLESS=_parse_bool(
             os.environ.get("HEADLESS"),
-            default=bool(_nested_get(yaml_data, "browser", "headless", default=False)),
+            default=bool(_nested_get(yaml_data, "browser", "headless", default=True)),
         ),
 
         # FFmpeg — keys aligned with config.yaml naming convention

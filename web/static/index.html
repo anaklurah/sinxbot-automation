@@ -612,28 +612,31 @@
                     </div>
 
                     <div class="clay-form-group">
-                        <label>Execution Mode</label>
+                        <label>Execution Mode (Default: Headless Mode)</label>
                         <select id="cfg-browser-headless" class="clay-select">
-                            <option value="false">Non-Headless (Tampak - Jendela Browser Terbuka)</option>
-                            <option value="true">Headless Mode (Latar Belakang - Sembunyi)</option>
+                            <option value="true" selected>Headless Mode (Latar Belakang - Sembunyi - Rekomendasi Linux/VPS)</option>
+                            <option value="false">Non-Headless (Tampak - Butuh Desktop GUI/X11)</option>
                         </select>
-                        <span class="help-text">Pilih 'Non-Headless' untuk melihat otomatisasi Playwright berjalan langsung di layar desktop Anda.</span>
+                        <span class="help-text">Di Linux VPS, wajib menggunakan 'Headless Mode' agar browser bot dapat berjalan mulus di latar belakang tanpa display fisik.</span>
                     </div>
                 </div>
 
                 <!-- 4. DeepSeek AI Captions -->
-                <div class="clay-card">
-                    <div class="clay-card-header">
+                <div class="clay-card" id="card-deepseek-ai">
+                    <div class="clay-card-header" style="display: flex; justify-content: space-between; align-items: center;">
                         <h3 class="clay-card-title">
                             <i data-lucide="sparkles"></i>
                             <span>DeepSeek AI Generator</span>
                         </h3>
+                        <span id="badge-deepseek-lock" class="badge-clay" style="display: none; font-size: 0.75rem; color: #f59e0b; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); padding: 4px 8px;">
+                            <i data-lucide="lock" style="width: 12px; height: 12px;"></i> Khusus Admin
+                        </span>
                     </div>
 
                     <div class="clay-form-group">
                         <label>DeepSeek API Key</label>
                         <input type="text" id="cfg-deepseek-key" class="clay-input" placeholder="sk-...">
-                        <span class="help-text">API key untuk generate judul viral, deskripsi, & hashtag.</span>
+                        <span class="help-text" id="help-deepseek-key">API key untuk generate judul viral, deskripsi, & hashtag. Hanya Admin Utama yang dapat mengubah.</span>
                     </div>
 
                     <div class="clay-form-group">

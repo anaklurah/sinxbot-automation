@@ -133,6 +133,31 @@ function updateUserBadge(userInfo) {
     if (usersTabBtn) {
         usersTabBtn.style.display = userInfo && userInfo.is_admin ? 'inline-flex' : 'none';
     }
+
+    // Lock/unlock DeepSeek AI settings for non-admin
+    const isAdmin = Boolean(userInfo && userInfo.is_admin);
+    const deepseekInput = document.getElementById('cfg-deepseek-key');
+    const deepseekModel = document.getElementById('cfg-deepseek-model');
+    const badgeLock = document.getElementById('badge-deepseek-lock');
+    const helpDeepseek = document.getElementById('help-deepseek-key');
+
+    if (deepseekInput) {
+        deepseekInput.disabled = !isAdmin;
+        if (!isAdmin) {
+            deepseekInput.placeholder = '🔒 Terkunci (Hanya Admin Utama yang dapat mengatur API DeepSeek)';
+        }
+    }
+    if (deepseekModel) {
+        deepseekModel.disabled = !isAdmin;
+    }
+    if (badgeLock) {
+        badgeLock.style.display = isAdmin ? 'none' : 'inline-flex';
+    }
+    if (helpDeepseek) {
+        helpDeepseek.textContent = isAdmin 
+            ? 'API key untuk generate judul viral, deskripsi, & hashtag.' 
+            : 'API key dikelola secara terpusat oleh Admin Utama (Karyawan tidak dapat mengubah).';
+    }
 }
 
 // Check auth on page load
@@ -666,7 +691,7 @@ async function loadConfigData() {
 
         const isHeadless = env.HEADLESS !== undefined 
             ? (env.HEADLESS === true || env.HEADLESS === 'true') 
-            : (yaml.browser?.headless || false);
+            : (yaml.browser?.headless !== undefined ? yaml.browser.headless : true);
         document.getElementById('cfg-browser-headless').value = isHeadless ? 'true' : 'false';
 
         document.getElementById('cfg-ffmpeg-zoom').value = yaml.ffmpeg?.zoom_factor || 1.10;
@@ -683,17 +708,36 @@ async function loadConfigData() {
         document.getElementById('cfg-watermark-text').value = env.WATERMARK_TEXT || yaml.watermark?.text || 'SINXBOT';
         document.getElementById('cfg-watermark-size').value = env.WATERMARK_FONT_SIZE || yaml.watermark?.font_size || 20;
 
+        // DeepSeek AI Captions (Admin Only Editing)
+        const u = getCurrentUser();
+        const isAdmin = Boolean(u && u.is_admin);
         const deepseekInput = document.getElementById('cfg-deepseek-key');
+        const deepseekModel = document.getElementById('cfg-deepseek-model');
+        const badgeLock = document.getElementById('badge-deepseek-lock');
+        const helpDeepseek = document.getElementById('help-deepseek-key');
+
         if (deepseekInput) {
             deepseekInput.value = '';
-            if (env.DEEPSEEK_HAS_KEY) {
-                deepseekInput.placeholder = `(Tersimpan: ${env.DEEPSEEK_API_KEY_MASKED}) - Biarkan kosong jika tidak diubah`;
+            if (!isAdmin) {
+                deepseekInput.disabled = true;
+                deepseekInput.placeholder = '🔒 Terkunci (Hanya Admin Utama yang dapat mengatur API DeepSeek)';
+                if (deepseekModel) deepseekModel.disabled = true;
+                if (badgeLock) badgeLock.style.display = 'inline-flex';
+                if (helpDeepseek) helpDeepseek.textContent = 'API key dikelola secara terpusat oleh Admin Utama.';
             } else {
-                deepseekInput.placeholder = 'sk-... (masukkan API key baru)';
+                deepseekInput.disabled = false;
+                if (deepseekModel) deepseekModel.disabled = false;
+                if (badgeLock) badgeLock.style.display = 'none';
+                if (env.DEEPSEEK_HAS_KEY) {
+                    deepseekInput.placeholder = `(Tersimpan: ${env.DEEPSEEK_API_KEY_MASKED}) - Biarkan kosong jika tidak diubah`;
+                } else {
+                    deepseekInput.placeholder = 'sk-... (masukkan API key baru)';
+                }
+                if (helpDeepseek) helpDeepseek.textContent = 'API key untuk generate judul viral, deskripsi, & hashtag.';
             }
         }
-        const deepseekModel = document.getElementById('cfg-deepseek-model');
         if (deepseekModel) deepseekModel.value = env.DEEPSEEK_MODEL || 'deepseek-chat';
+
 
         // Telegram settings
         const isTgEnabled = env.TELEGRAM_ENABLED !== undefined
