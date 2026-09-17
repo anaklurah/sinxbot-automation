@@ -837,10 +837,24 @@ class SinXLauncher(tk.Tk):
         except Exception:
             pass
 
+    def _clear_local_box(self):
+        try:
+            self.log_box.configure(state="normal")
+            self.log_box.delete("1.0", "end")
+            self.log_box.configure(state="disabled")
+        except Exception:
+            pass
+
     def clear_logs(self):
-        self.log_box.configure(state="normal")
-        self.log_box.delete("1.0", "end")
-        self.log_box.configure(state="disabled")
+        self._clear_local_box()
+        url = normalize_url(self.sv_url.get().strip())
+        if self.token and url:
+            def _do():
+                try:
+                    api_post(url, "/api/logs/clear", token=self.token)
+                except Exception:
+                    pass
+            threading.Thread(target=_do, daemon=True).start()
 
     # ─────────────────────────────────────────────────────────────
     # Status & Auth Session Handlers
@@ -1342,6 +1356,8 @@ class SinXLauncher(tk.Tk):
                                 raw_json = line[5:].strip()
                                 try:
                                     item = json.loads(raw_json)
+                                    if item.get("action") == "clear":
+                                        self.after(0, self._clear_local_box)
                                     msg = item.get("message") or item.get("line") or str(item)
                                     lvl = (item.get("level") or "").upper()
                                     col = DANGER if "ERROR" in lvl or "FAIL" in lvl else (WARNING if "WARN" in lvl else None)

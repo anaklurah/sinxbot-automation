@@ -2002,6 +2002,22 @@ async def get_recent_logs_endpoint(limit: int = Query(50, ge=1, le=200), current
     return {"logs": get_recent_logs(max_lines=limit)}
 
 
+@app.post("/api/logs/clear")
+async def clear_logs_endpoint(current_user: dict = Depends(require_auth)):
+    """Truncates the server log file (osap.log) and resets live backlogs."""
+    log_file = Path(__file__).resolve().parent.parent / "osap.log"
+    try:
+        if log_file.exists():
+            with open(log_file, "w", encoding="utf-8") as f:
+                f.truncate(0)
+        username = current_user.get("username", "user")
+        logger.info(f"Log server dibersihkan oleh {username}.")
+        return {"success": True, "message": "Log server berhasil dibersihkan"}
+    except Exception as e:
+        logger.error(f"Gagal membersihkan log: {e}")
+        raise HTTPException(status_code=500, detail=f"Gagal membersihkan log: {e}")
+
+
 @app.get("/api/logs/stream")
 async def stream_logs(request: Request):
     """
@@ -2053,6 +2069,14 @@ async def stream_logs(request: Request):
                                     had_new_lines = True
                         elif curr_size < last_pos:
                             last_pos = 0
+                            clear_evt = {
+                                "timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
+                                "level": "INFO",
+                                "name": "system",
+                                "message": "--- Log server telah dibersihkan ---",
+                                "action": "clear"
+                            }
+                            yield f"data: {json.dumps(clear_evt)}\n\n"
                     except Exception:
                         pass
 

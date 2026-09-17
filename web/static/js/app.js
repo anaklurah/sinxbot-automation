@@ -1298,6 +1298,11 @@ function setupLogStream() {
     eventSource.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
+            if (data && data.action === 'clear') {
+                const term = document.getElementById('terminal-log');
+                if (term) term.innerHTML = '';
+                seenLogSignatures.clear();
+            }
             appendLogLine(data);
         } catch (e) {
             console.error("SSE parse error", e);
@@ -1329,11 +1334,20 @@ async function fallbackPollLogs() {
     } catch (e) {}
 }
 
-function clearLogs() {
+async function clearLogs() {
     const term = document.getElementById('terminal-log');
     if (term) term.innerHTML = '';
     seenLogSignatures.clear();
-    showToast('Terminal logs cleared', 'info', 2000);
+    try {
+        const res = await apiFetch('/api/logs/clear', { method: 'POST' });
+        if (res && res.ok) {
+            showToast('Log server & terminal berhasil dibersihkan', 'success', 2500);
+        } else {
+            showToast('Terminal logs cleared', 'info', 2000);
+        }
+    } catch (e) {
+        showToast('Terminal logs cleared', 'info', 2000);
+    }
 }
 
 
