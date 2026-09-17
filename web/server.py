@@ -2,6 +2,8 @@
 OmniShorts Auto-Publisher (OSAP) â€” Web Dashboard Backend (FastAPI)
 """
 
+from __future__ import annotations
+
 import asyncio
 import datetime
 import logging

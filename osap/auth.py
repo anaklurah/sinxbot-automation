@@ -9,6 +9,8 @@ Provides simple token-based authentication for the Web Dashboard.
 - Admin flag: first account (id=1) is always admin
 """
 
+from __future__ import annotations
+
 import hashlib
 import os
 import secrets
@@ -16,7 +18,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from osap.utils.logger import get_logger
 
