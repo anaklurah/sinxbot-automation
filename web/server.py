@@ -758,6 +758,77 @@ async def download_launcher_binary():
     )
 
 
+@app.get("/api/launcher/installer")
+async def download_installer_binary():
+    """Direct download endpoint for install.exe (Enterprise All-in-One Installer)."""
+    candidates = [
+        PROJECT_ROOT / "downloads" / "install.exe",
+        PROJECT_ROOT / "launcher" / "dist" / "install.exe",
+    ]
+    for p in candidates:
+        if p.exists() and p.is_file() and p.stat().st_size > 0:
+            return FileResponse(
+                str(p),
+                media_type="application/octet-stream",
+                filename="install.exe",
+                headers={"Content-Disposition": "attachment; filename=install.exe"}
+            )
+    raise HTTPException(
+        status_code=404,
+        detail="File installer install.exe belum tersedia di server. Hubungi administrator."
+    )
+
+
+@app.get("/api/admin/installer/status")
+async def get_installer_status(current_user: dict = Depends(require_admin)):
+    """Check availability and metadata of install.exe on server."""
+    import datetime
+    candidates = [
+        PROJECT_ROOT / "downloads" / "install.exe",
+        PROJECT_ROOT / "launcher" / "dist" / "install.exe",
+    ]
+    for p in candidates:
+        if p.exists() and p.is_file() and p.stat().st_size > 0:
+            st = p.stat()
+            return {
+                "available": True,
+                "filename": "install.exe",
+                "size_mb": round(st.st_size / (1024 * 1024), 2),
+                "last_modified": datetime.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            }
+    return {"available": False, "filename": "install.exe"}
+
+
+@app.post("/api/admin/installer/upload")
+async def upload_installer_admin(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_admin),
+):
+    """Allow Super Admin to upload or replace install.exe directly from Web Dashboard."""
+    if not file.filename.lower().endswith(".exe"):
+        raise HTTPException(status_code=400, detail="Hanya file .exe yang diperbolehkan.")
+
+    downloads_dir = PROJECT_ROOT / "downloads"
+    downloads_dir.mkdir(parents=True, exist_ok=True)
+    target_path = downloads_dir / "install.exe"
+
+    contents = await file.read()
+    if len(contents) < 1000:
+        raise HTTPException(status_code=400, detail="File terlalu kecil / korup.")
+
+    with open(target_path, "wb") as f:
+        f.write(contents)
+
+    size_mb = round(len(contents) / (1024 * 1024), 2)
+    logger.info(f"[Admin] Super Admin '{current_user['username']}' mengunggah install.exe ({size_mb} MB)")
+    return {
+        "success": True,
+        "filename": "install.exe",
+        "size_mb": size_mb,
+        "message": f"install.exe ({size_mb} MB) berhasil diunggah ke server!",
+    }
+
+
 @app.get("/api/admin/launcher/status")
 async def get_launcher_binary_status(current_user: dict = Depends(require_admin)):
     """Check availability, size, and last modified timestamp of desktop binary on server."""

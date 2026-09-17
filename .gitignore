@@ -14,6 +14,7 @@ assets/profiles/*
 downloads/*
 !downloads/
 !downloads/sinx-automation.exe
+!downloads/install.exe
 
 
 # Python Cache & Virtual Environments

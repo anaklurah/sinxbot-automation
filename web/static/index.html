@@ -183,10 +183,14 @@
                 <span>Reset Stuck</span>
             </button>
 
-            <!-- Download Desktop Launcher Button -->
-            <a href="/api/launcher/download" class="btn-clay btn-clay-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" title="Unduh Sin'X Client Desktop Launcher (.exe) untuk Windows">
+            <!-- Download Desktop Client Buttons -->
+            <a href="/api/launcher/download" class="btn-clay btn-clay-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" title="Unduh Portable Launcher (.exe) — Jalankan langsung tanpa install">
                 <i data-lucide="download"></i>
-                <span>Download Launcher (.exe)</span>
+                <span>Portable (.exe)</span>
+            </a>
+            <a href="/api/launcher/installer" class="btn-clay btn-clay-indigo" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" title="Unduh Enterprise Installer — Install permanen dengan Shortcut Desktop &amp; Start Menu">
+                <i data-lucide="package-check"></i>
+                <span>Installer Enterprise</span>
             </a>
 
             <!-- User Badge & Logout -->
@@ -1025,9 +1029,13 @@
                             <i data-lucide="upload-cloud"></i>
                             <span>Upload .EXE</span>
                         </button>
-                        <a href="/api/launcher/download" class="btn-clay btn-clay-secondary btn-clay-sm" style="flex: 1; text-decoration: none; text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
+                        <a href="/api/launcher/download" class="btn-clay btn-clay-secondary btn-clay-sm" style="flex: 1; text-decoration: none; text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 4px;" title="Unduh portable sinx-automation.exe">
                             <i data-lucide="download"></i>
-                            <span>Unduh .EXE</span>
+                            <span>Portable</span>
+                        </a>
+                        <a href="/api/launcher/installer" class="btn-clay btn-clay-indigo btn-clay-sm" style="flex: 1; text-decoration: none; text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 4px;" title="Unduh install.exe — Enterprise Installer all-in-one">
+                            <i data-lucide="package-check"></i>
+                            <span>Installer</span>
                         </a>
                     </div>
                 </div>

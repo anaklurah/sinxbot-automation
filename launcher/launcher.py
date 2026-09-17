@@ -23,14 +23,165 @@ try:
 except ImportError:
     requests = None
 
-try:
-    import playwright
-    from playwright.sync_api import sync_playwright
-    HAS_PLAYWRIGHT = True
-except Exception:
-    HAS_PLAYWRIGHT = False
+import socket
+import struct
+import base64
+import random
+import subprocess
+import threading
+import urllib.parse
+import urllib.request
 
 import webview
+
+
+# ---------------------------------------------------------------------------
+# Native CDP WebSocket client — zero external dependencies
+# ---------------------------------------------------------------------------
+
+class NativeCDPClient:
+    """
+    Minimalist Chrome DevTools Protocol client using only Python stdlib.
+    Connects to a running Chrome/Edge browser via WebSocket and can
+    extract cookies (Storage.getCookies) without Playwright or Selenium.
+    """
+
+    def __init__(self, ws_url: str, timeout: float = 10.0):
+        self._ws_url = ws_url
+        self._timeout = timeout
+        self._sock: socket.socket | None = None
+        self._msg_id = 1
+        self._lock = threading.Lock()
+
+    def connect(self):
+        url = self._ws_url.replace("ws://", "")
+        host_port, path = url.split("/", 1)
+        host, port = host_port.split(":")
+        self._host = host
+        self._port = int(port)
+        self._path = path
+
+        self._sock = socket.create_connection((host, self._port), timeout=self._timeout)
+        key = base64.b64encode(os.urandom(16)).decode("ascii")
+        headers = (
+            f"GET /{self._path} HTTP/1.1\r\n"
+            f"Host: {host}:{self._port}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n\r\n"
+        )
+        self._sock.sendall(headers.encode("utf-8"))
+        resp = self._sock.recv(4096)
+        if b"101" not in resp:
+            raise ConnectionError(f"WebSocket handshake gagal: {resp[:200]}")
+
+    def close(self):
+        try:
+            if self._sock:
+                self._sock.close()
+        except Exception:
+            pass
+        self._sock = None
+
+    def _send_frame(self, payload: bytes):
+        """Send a masked WebSocket text frame."""
+        frame = bytearray([0x81])  # FIN + opcode text
+        length = len(payload)
+        mask = os.urandom(4)
+        if length <= 125:
+            frame.append(0x80 | length)
+        elif length <= 65535:
+            frame.extend([0x80 | 126, (length >> 8) & 0xFF, length & 0xFF])
+        else:
+            frame.append(0x80 | 127)
+            frame.extend(struct.pack(">Q", length))
+        frame.extend(mask)
+        frame.extend(bytes(b ^ mask[i % 4] for i, b in enumerate(payload)))
+        self._sock.sendall(frame)
+
+    def _recv_frame(self) -> bytes:
+        """Read one WebSocket frame and return the unmasked payload."""
+        header = self._recv_exact(2)
+        b1 = header[1]
+        length = b1 & 0x7F
+        if length == 126:
+            length = struct.unpack(">H", self._recv_exact(2))[0]
+        elif length == 127:
+            length = struct.unpack(">Q", self._recv_exact(8))[0]
+        is_masked = (b1 & 0x80) != 0
+        mask = self._recv_exact(4) if is_masked else b""
+        data = self._recv_exact(length)
+        if is_masked:
+            data = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
+        return data
+
+    def _recv_exact(self, n: int) -> bytes:
+        buf = b""
+        while len(buf) < n:
+            chunk = self._sock.recv(n - len(buf))
+            if not chunk:
+                raise EOFError("Koneksi CDP terputus.")
+            buf += chunk
+        return buf
+
+    def send_command(self, method: str, params: dict | None = None, wait_for_result: bool = True) -> dict:
+        with self._lock:
+            msg_id = self._msg_id
+            self._msg_id += 1
+        payload = json.dumps({"id": msg_id, "method": method, "params": params or {}}).encode("utf-8")
+        self._send_frame(payload)
+        if not wait_for_result:
+            return {}
+        deadline = time.time() + self._timeout
+        while time.time() < deadline:
+            self._sock.settimeout(max(0.5, deadline - time.time()))
+            try:
+                raw = self._recv_frame()
+                msg = json.loads(raw.decode("utf-8", errors="ignore"))
+                if msg.get("id") == msg_id:
+                    return msg.get("result", {})
+            except socket.timeout:
+                break
+            except Exception:
+                break
+        return {}
+
+
+def _find_edge_or_chrome() -> str | None:
+    """Returns the path to Edge or Chrome executable on the current machine."""
+    candidates = [
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    # fallback: try PATH
+    for name in ("msedge", "msedge.exe", "chrome", "chrome.exe"):
+        import shutil
+        p = shutil.which(name)
+        if p:
+            return p
+    return None
+
+
+def _get_cdp_page(port: int, timeout: float = 10.0) -> dict | None:
+    """Polls the CDP /json/list endpoint and returns first page entry."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=2) as resp:
+                pages = json.loads(resp.read().decode("utf-8"))
+                pages = [p for p in pages if p.get("type") == "page"]
+                if pages:
+                    return pages[0]
+        except Exception:
+            pass
+        time.sleep(0.4)
+    return None
 
 APP_VERSION = "1.3.0"
 
@@ -461,77 +612,110 @@ class LauncherApi:
             return {"success": False, "error": str(e)}
 
     def launch_local_browser(self, platform: str, target_key: str) -> dict:
-        """Launches local Chrome/Edge browser for interactive login, then captures cookies."""
+        """
+        Opens Edge/Chrome natively with CDP remote-debugging, waits for the user
+        to complete login, then extracts all cookies via CDP Storage.getCookies and
+        uploads them to the server. Zero third-party dependencies.
+        """
         url = self._cfg.get("server_url", "")
         token = self._cfg.get("token", "")
         if not url or not token:
             return {"success": False, "error": "Silakan login terlebih dahulu."}
 
-        if not HAS_PLAYWRIGHT:
+        browser_path = _find_edge_or_chrome()
+        if not browser_path:
             return {
                 "success": False,
-                "error": "Playwright belum terpasang di runtime. Gunakan ekstensi 'Cookie-Editor' di browser biasa, lalu klik 'Upload File Cookie' atau 'Upload Profil (.zip)'."
+                "error": (
+                    "Browser tidak ditemukan. Pastikan Microsoft Edge atau Google Chrome "
+                    "terinstall, atau gunakan opsi 'Upload File Cookie' / 'Upload Profil (.zip)'."
+                )
             }
 
         target = target_key.strip() or platform.strip() or "youtube"
         url_map = {
-            "youtube": "https://accounts.google.com",
-            "instagram": "https://www.instagram.com/accounts/login/",
-            "tiktok": "https://www.tiktok.com/login",
-            "facebook": "https://www.facebook.com/login",
-            "twitter": "https://twitter.com/i/flow/login",
+            "youtube":      "https://accounts.google.com",
+            "instagram":    "https://www.instagram.com/accounts/login/",
+            "tiktok":       "https://www.tiktok.com/login",
+            "facebook":     "https://www.facebook.com/login",
+            "twitter":      "https://twitter.com/i/flow/login",
             "twitter_nsfw": "https://twitter.com/i/flow/login",
-            "upscrolled": "https://upscrolled.com/login",
-            "febspot": "https://www.febspot.com/login",
+            "upscrolled":   "https://upscrolled.com/login",
+            "febspot":      "https://www.febspot.com/login",
         }
         login_url = url_map.get(platform, f"https://{platform}.com")
 
+        # Pick a random free port for remote debugging
+        dbg_port = random.randint(9222, 9399)
+        temp_dir = tempfile.mkdtemp(prefix="sinx_browser_")
+
+        cmd = [
+            browser_path,
+            f"--remote-debugging-port={dbg_port}",
+            f"--user-data-dir={temp_dir}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-blink-features=AutomationControlled",
+            "--disable-infobars",
+            f"--window-size=1280,800",
+        ]
+
+        # Inject proxy if configured
+        if self._cfg.get("proxy_enabled") and self._cfg.get("proxy_url"):
+            p_url = self._cfg.get("proxy_url", "").strip()
+            if p_url:
+                cmd.append(f"--proxy-server={p_url}")
+
+        cmd.append(login_url)
+
         try:
-            with sync_playwright() as p:
-                browser = None
-                for ch in ("msedge", "chrome", None):
-                    try:
-                        browser = p.chromium.launch(
-                            channel=ch, headless=False,
-                            args=["--disable-blink-features=AutomationControlled"]
-                        ) if ch else p.chromium.launch(
-                            headless=False,
-                            args=["--disable-blink-features=AutomationControlled"]
-                        )
-                        if browser:
-                            break
-                    except Exception:
-                        continue
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            return {"success": False, "error": f"Gagal membuka browser: {e}"}
 
-                if not browser:
-                    return {"success": False, "error": "Tidak dapat membuka browser Microsoft Edge atau Google Chrome."}
+        try:
+            # Wait for CDP endpoint to be ready
+            page_info = _get_cdp_page(dbg_port, timeout=15.0)
+            if not page_info:
+                proc.terminate()
+                return {"success": False, "error": "Browser gagal start (CDP endpoint tidak tersedia)."}
 
-                context_args = {"viewport": {"width": 1280, "height": 720}}
-                if self._cfg.get("proxy_enabled") and self._cfg.get("proxy_url"):
-                    p_url = self._cfg.get("proxy_url", "").strip()
-                    if p_url:
-                        pw_proxy = format_playwright_proxy(p_url)
-                        if pw_proxy:
-                            context_args["proxy"] = pw_proxy
-
-                context = browser.new_context(**context_args)
-                page = context.new_page()
-                page.goto(login_url)
+            # Poll cookies every 3 seconds while browser is alive
+            # Once the user closes the browser window, we capture all cookies.
+            last_cookies: list = []
+            while True:
+                if proc.poll() is not None:
+                    # Browser was closed by user
+                    break
 
                 try:
-                    page.wait_for_event("close", timeout=300_000)
+                    page_info = _get_cdp_page(dbg_port, timeout=3.0)
+                    if page_info and page_info.get("webSocketDebuggerUrl"):
+                        cdp = NativeCDPClient(page_info["webSocketDebuggerUrl"], timeout=5.0)
+                        cdp.connect()
+                        result = cdp.send_command("Storage.getCookies")
+                        cdp.close()
+                        cookies = result.get("cookies", [])
+                        if cookies:
+                            last_cookies = cookies
                 except Exception:
                     pass
 
-                cookies = context.cookies()
-                context.close()
-                browser.close()
+                time.sleep(3)
 
-            if not cookies:
-                return {"success": False, "error": "Tidak ada cookies yang diekstrak dari browser."}
+            # Clean up temp dir (best effort)
+            try:
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
 
+            if not last_cookies:
+                return {"success": False, "error": "Tidak ada cookies yang berhasil diekstrak. Pastikan Anda sudah login sebelum menutup browser."}
+
+            # Upload cookies to server
             tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w", encoding="utf-8")
-            json.dump(cookies, tmp)
+            json.dump(last_cookies, tmp)
             tmp.close()
 
             with open(tmp.name, "rb") as fh:
@@ -540,10 +724,16 @@ class LauncherApi:
             os.unlink(tmp.name)
 
             if code == 200:
-                return {"success": True, "message": f"{len(cookies)} cookies berhasil diunggah! Target '{target}' siap."}
+                return {"success": True, "message": f"{len(last_cookies)} cookies berhasil diunggah! Target '{target}' siap digunakan."}
             return {"success": False, "error": data.get("detail", "Gagal mengunggah cookies ke server.")}
+
         except Exception as e:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
             return {"success": False, "error": f"Error browser login: {str(e)}"}
+
 
     def check_updates(self, manual: bool = False) -> dict:
         """Checks for newer version on the server."""
