@@ -1,0 +1,419 @@
+﻿<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sin'X Automation — Desktop Client</title>
+    <link rel="stylesheet" href="clay.css">
+    <link rel="stylesheet" href="style.css">
+    <script src="lucide.min.js"></script>
+</head>
+<body>
+
+    <!-- ═══════════════════════════════════════
+         App Header & Top Navbar
+    ═══════════════════════════════════════ -->
+    <header class="app-header">
+        <div class="brand-container">
+            <div class="brand-icon">
+                <i data-lucide="layers"></i>
+            </div>
+            <div>
+                <div class="brand-title">Sin'X Launcher</div>
+                <div class="brand-sub">Desktop Enterprise Client &bull; v1.3.0</div>
+            </div>
+        </div>
+
+        <div class="header-right">
+            <!-- Server Status Pill -->
+            <div class="status-pill" id="header-status-pill">
+                <span class="status-dot" id="status-dot"></span>
+                <span id="status-text">Disconnected</span>
+            </div>
+
+            <!-- Navbar Logout Button (Visible only when logged in) -->
+            <button id="btn-nav-logout" class="btn-nav-logout" onclick="doLogout()">
+                <i data-lucide="log-out"></i>
+                <span>Logout</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- ═══════════════════════════════════════
+         Segmented Navigation Bar (Visible only when logged in)
+    ═══════════════════════════════════════ -->
+    <div class="nav-bar-container" id="nav-bar-container">
+        <nav class="segmented-nav">
+            <button class="nav-tab-btn active" id="tab-btn-dash" onclick="switchTab('dash', this)">
+                <i data-lucide="layout-dashboard"></i>
+                <span>Dashboard</span>
+            </button>
+            <button class="nav-tab-btn" id="tab-btn-cookies" onclick="switchTab('cookies', this)">
+                <i data-lucide="key-round"></i>
+                <span>Cookies & Profil</span>
+            </button>
+            <button class="nav-tab-btn" id="tab-btn-logs" onclick="switchTab('logs', this)">
+                <i data-lucide="terminal"></i>
+                <span>Live Logs</span>
+            </button>
+            <button class="nav-tab-btn" id="tab-btn-settings" onclick="switchTab('settings', this)">
+                <i data-lucide="sliders"></i>
+                <span>Pengaturan</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         Main Content Viewport
+    ═══════════════════════════════════════ -->
+    <main class="main-viewport">
+
+        <!-- ─────────────────────────────────────────────
+             AUTH GATE: Login Screen (Shown when logged out)
+        ───────────────────────────────────────────── -->
+        <div id="auth-gate-page">
+            <div class="auth-card">
+                <div class="auth-icon-wrap">
+                    <i data-lucide="shield-check"></i>
+                </div>
+                <h2 class="auth-title">Sin'X Client Login</h2>
+                <p class="auth-desc">Masuk dengan kredensial server Sin'X Automation untuk membuka akses kontrol desktop bot.</p>
+
+                <div class="form-group">
+                    <label class="form-label">SERVER URL</label>
+                    <input type="text" id="auth-server-url" class="form-input" placeholder="https://auto.kntl.cc" value="https://auto.kntl.cc">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">USERNAME</label>
+                    <input type="text" id="auth-username" class="form-input" placeholder="Masukkan username karyawan / admin" autocomplete="username">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">PASSWORD</label>
+                    <input type="password" id="auth-password" class="form-input" placeholder="Masukkan password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+                </div>
+
+                <button class="btn-primary-clay" id="btn-do-login" onclick="doLogin()">
+                    <i data-lucide="log-in"></i>
+                    <span>Masuk ke Desktop Control</span>
+                </button>
+
+                <div style="margin-top: 20px; font-size: 0.75rem; color: var(--text-dim, #64748b);">
+                    Default akun admin: <code>admin</code> / <code>admin123</code> &bull; Hubungi Super Admin jika belum memiliki akses.
+                </div>
+            </div>
+        </div>
+
+        <!-- ─────────────────────────────────────────────
+             TAB 1: DASHBOARD
+        ───────────────────────────────────────────── -->
+        <section id="view-dash" class="tab-page">
+            <!-- 5 KPI Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card total">
+                    <div class="stat-val" id="stat-total">0</div>
+                    <div class="stat-label">Total Antrian</div>
+                </div>
+                <div class="stat-card ready">
+                    <div class="stat-val" id="stat-ready">0</div>
+                    <div class="stat-label">Siap Post</div>
+                </div>
+                <div class="stat-card proc">
+                    <div class="stat-val" id="stat-proc">0</div>
+                    <div class="stat-label">Sedang Jalan</div>
+                </div>
+                <div class="stat-card done">
+                    <div class="stat-val" id="stat-done">0</div>
+                    <div class="stat-label">Tuntas Terbit</div>
+                </div>
+                <div class="stat-card fail">
+                    <div class="stat-val" id="stat-fail">0</div>
+                    <div class="stat-label">Gagal Post</div>
+                </div>
+            </div>
+
+            <!-- Prime-Time Schedule & Status Card -->
+            <div class="card-clay">
+                <div class="card-header-row">
+                    <div class="card-title-wrap">
+                        <i data-lucide="clock"></i>
+                        <span class="card-title">Jadwal Prime-Time Scheduler</span>
+                    </div>
+                    <span style="font-size: 0.8rem; color: #10b981; font-weight: 700;">Worker Aktif</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px; font-size: 0.88rem; color: var(--text-muted, #cbd5e1);">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <i data-lucide="calendar" style="width: 16px; height: 16px; color: #6366f1;"></i>
+                        <span id="dash-sch-next">Jadwal Berikutnya: Menghubungi server...</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <i data-lucide="list-ordered" style="width: 16px; height: 16px; color: #06b6d4;"></i>
+                        <span id="dash-sch-slots">Jam Tayang Aktif: -</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <i data-lucide="globe" style="width: 16px; height: 16px; color: #a855f7;"></i>
+                        <span id="dash-sch-tz">Timezone Acuan: -</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Action Row -->
+            <div class="card-clay">
+                <div class="card-header-row">
+                    <div class="card-title-wrap">
+                        <i data-lucide="zap"></i>
+                        <span class="card-title">Aksi Cepat Sistem</span>
+                    </div>
+                </div>
+                <div class="actions-row">
+                    <button class="btn-clay btn-clay-secondary" onclick="refreshDashboardData()">
+                        <i data-lucide="refresh-cw"></i>
+                        <span>Refresh Data</span>
+                    </button>
+                    <button class="btn-clay btn-clay-primary" onclick="openPublishModal()">
+                        <i data-lucide="send"></i>
+                        <span>Post On-Demand</span>
+                    </button>
+                    <button class="btn-clay btn-clay-blue" onclick="openScreenshotModal()">
+                        <i data-lucide="camera"></i>
+                        <span>Cek Screenshot</span>
+                    </button>
+                    <button class="btn-clay btn-clay-emerald" onclick="downloadLatestExe()">
+                        <i data-lucide="download"></i>
+                        <span>Unduh Update EXE</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ─────────────────────────────────────────────
+             TAB 2: COOKIES & PROFIL
+        ───────────────────────────────────────────── -->
+        <section id="view-cookies" class="tab-page">
+            <div class="card-clay">
+                <div class="card-header-row">
+                    <div class="card-title-wrap">
+                        <i data-lucide="key-round"></i>
+                        <span class="card-title">Target Platform & Otentikasi Akun</span>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label">PLATFORM MEDIA SOSIAL</label>
+                        <select id="sel-cookie-platform" class="form-input" onchange="onPlatformChange()">
+                            <option value="youtube">YouTube (Shorts/Studio)</option>
+                            <option value="instagram">Instagram (Reels)</option>
+                            <option value="tiktok">TikTok</option>
+                            <option value="facebook">Facebook (Reels)</option>
+                            <option value="twitter">Twitter / X</option>
+                            <option value="twitter_nsfw">Twitter NSFW</option>
+                            <option value="upscrolled">Upscrolled</option>
+                            <option value="febspot">Febspot</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label">CUSTOM TARGET KEY (OPSIONAL)</label>
+                        <input type="text" id="input-cookie-target" class="form-input" placeholder="Default: sesuai platform terpilih">
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;">
+                    <button class="btn-clay btn-clay-primary" onclick="startLocalBrowserLogin()" style="padding: 14px 12px;">
+                        <i data-lucide="chrome"></i>
+                        <span>Buka Browser Login</span>
+                    </button>
+
+                    <button class="btn-clay btn-clay-blue" onclick="pickAndUploadCookieFile()" style="padding: 14px 12px;">
+                        <i data-lucide="file-code"></i>
+                        <span>Upload File Cookie</span>
+                    </button>
+
+                    <button class="btn-clay btn-clay-emerald" onclick="pickAndUploadProfileZip()" style="padding: 14px 12px;">
+                        <i data-lucide="archive"></i>
+                        <span>Upload Profil (.zip)</span>
+                    </button>
+                </div>
+
+                <!-- Info Guide Card -->
+                <div style="background: rgba(15, 23, 42, 0.6); border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 14px; padding: 14px 18px; font-size: 0.82rem; color: var(--text-muted, #94a3b8); line-height: 1.6;">
+                    <div style="font-weight: 700; color: #cbd5e1; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                        <i data-lucide="info" style="width: 15px; height: 15px; color: #38bdf8;"></i>
+                        <span>Panduan Manajemen Sesi Browser:</span>
+                    </div>
+                    <div>&bull; <strong>Upload File Cookie:</strong> Mendukung format JSON (ekstensi Chrome <em>Cookie-Editor</em>) atau Netscape TXT.</div>
+                    <div>&bull; <strong>Upload Profil ZIP:</strong> Mengunggah direktori User Data browser Chromium yang telah login lengkap dengan fingerprint anti-deteksi.</div>
+                    <div>&bull; <strong>Browser Login:</strong> Membuka browser lokal Anda secara langsung untuk login otomatis dan mengekstrak cookies ke server.</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ─────────────────────────────────────────────
+             TAB 3: LIVE LOGS
+        ───────────────────────────────────────────── -->
+        <section id="view-logs" class="tab-page">
+            <div class="card-clay" style="padding-bottom: 12px;">
+                <div class="card-header-row" style="margin-bottom: 10px;">
+                    <div class="card-title-wrap">
+                        <i data-lucide="terminal"></i>
+                        <span class="card-title">Realtime Server Worker Logs</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; cursor: pointer; color: var(--text-muted, #94a3b8);">
+                            <input type="checkbox" id="chk-log-autoscroll" checked>
+                            <span>Auto Scroll</span>
+                        </label>
+                        <button class="btn-clay btn-clay-secondary" onclick="clearLiveLogs()" style="padding: 4px 12px; font-size: 0.78rem;">
+                            <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+                            <span>Clear Logs</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="log-terminal" class="terminal-window">
+                    <div class="log-line">
+                        <span class="log-time">[SYSTEM]</span>
+                        <span class="log-level-INFO">Menghubungkan ke log stream server...</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ─────────────────────────────────────────────
+             TAB 4: PENGATURAN
+        ───────────────────────────────────────────── -->
+        <section id="view-settings" class="tab-page">
+            <div class="card-clay">
+                <div class="card-header-row">
+                    <div class="card-title-wrap">
+                        <i data-lucide="sliders"></i>
+                        <span class="card-title">Konfigurasi Klien & Server</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">SERVER URL AKTIF</label>
+                    <input type="text" id="setting-server-url" class="form-input" placeholder="https://auto.kntl.cc">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">LOGIN USERNAME</label>
+                    <input type="text" id="setting-username" class="form-input" readonly style="opacity: 0.7; cursor: not-allowed;">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">VERSI CLIENT DESKTOP</label>
+                    <input type="text" class="form-input" value="v1.3.0 (Enterprise PyWebView Edition)" readonly style="opacity: 0.7; cursor: not-allowed;">
+                </div>
+
+                <div style="display: flex; gap: 12px; margin-top: 20px;">
+                    <button class="btn-clay btn-clay-primary" onclick="saveSettings()" style="flex: 1;">
+                        <i data-lucide="save"></i>
+                        <span>Simpan Perubahan</span>
+                    </button>
+                    <button class="btn-clay btn-clay-secondary" onclick="checkUpdates(true)" style="flex: 1;">
+                        <i data-lucide="sparkles"></i>
+                        <span>Cek Update Terbaru</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ═══════════════════════════════════════
+         MODAL: On-Demand Publish
+    ═══════════════════════════════════════ -->
+    <div class="modal-overlay" id="modal-publish">
+        <div class="modal-card">
+            <div class="card-header-row">
+                <div class="card-title-wrap">
+                    <i data-lucide="rocket"></i>
+                    <span class="card-title">Post Video On-Demand</span>
+                </div>
+                <button onclick="closeModal('modal-publish')" style="background: none; border: none; color: #94a3b8; cursor: pointer;">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted, #94a3b8); margin-bottom: 16px;">
+                Pilih platform tujuan untuk segera memicu posting 1 video dari antrian bot tanpa menunggu jadwal scheduler:
+            </p>
+            <div class="form-group">
+                <label class="form-label">TARGET PLATFORM</label>
+                <select id="sel-modal-publish-target" class="form-input">
+                    <option value="ALL">⭐ Semua Platform Aktif Sekaligus</option>
+                    <option value="youtube">YouTube (Shorts/Studio)</option>
+                    <option value="instagram">Instagram (Reels)</option>
+                    <option value="tiktok">TikTok</option>
+                    <option value="facebook">Facebook (Reels)</option>
+                    <option value="twitter">Twitter / X</option>
+                    <option value="twitter_nsfw">Twitter NSFW</option>
+                    <option value="upscrolled">Upscrolled</option>
+                    <option value="febspot">Febspot</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 24px;">
+                <button class="btn-clay btn-clay-primary" onclick="confirmPublishNow()" style="flex: 2;">
+                    <i data-lucide="send"></i>
+                    <span>Mulai Posting Sekarang</span>
+                </button>
+                <button class="btn-clay btn-clay-secondary" onclick="closeModal('modal-publish')" style="flex: 1;">
+                    Batal
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         MODAL: Debug Screenshot
+    ═══════════════════════════════════════ -->
+    <div class="modal-overlay" id="modal-screenshot">
+        <div class="modal-card">
+            <div class="card-header-row">
+                <div class="card-title-wrap">
+                    <i data-lucide="camera"></i>
+                    <span class="card-title">Cek Screenshot Browser Headless</span>
+                </div>
+                <button onclick="closeModal('modal-screenshot')" style="background: none; border: none; color: #94a3b8; cursor: pointer;">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted, #94a3b8); margin-bottom: 16px;">
+                Lihat tangkapan layar browser server secara langsung untuk memeriksa status login atau proses posting bot:
+            </p>
+            <div class="form-group">
+                <label class="form-label">PLATFORM</label>
+                <select id="sel-modal-screenshot-platform" class="form-input">
+                    <option value="youtube">YouTube</option>
+                    <option value="instagram">Instagram</option>
+                    <option value="tiktok">TikTok</option>
+                    <option value="facebook">Facebook</option>
+                    <option value="twitter">Twitter / X</option>
+                    <option value="twitter_nsfw">Twitter NSFW</option>
+                    <option value="upscrolled">Upscrolled</option>
+                    <option value="febspot">Febspot</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 24px;">
+                <button class="btn-clay btn-clay-blue" onclick="confirmOpenScreenshot()" style="flex: 2;">
+                    <i data-lucide="external-link"></i>
+                    <span>Buka Screenshot di Browser</span>
+                </button>
+                <button class="btn-clay btn-clay-secondary" onclick="closeModal('modal-screenshot')" style="flex: 1;">
+                    Batal
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Toasts -->
+    <div id="toast-container"></div>
+
+    <script src="app.js"></script>
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>

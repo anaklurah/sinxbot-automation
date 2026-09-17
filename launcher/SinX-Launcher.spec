@@ -1,4 +1,4 @@
-# -*- mode: python ; coding: utf-8 -*-
+﻿# -*- mode: python ; coding: utf-8 -*-
 
 a = Analysis(
     ['launcher.py'],
@@ -8,19 +8,19 @@ a = Analysis(
         ('icon.ico', '.'),
         ('icon.png', '.'),
         ('logo.png', '.'),
+        ('ui', 'ui'),
     ],
     hiddenimports=[
         'requests',
-        'tkinter',
-        'tkinter.ttk',
-        'tkinter.filedialog',
-        'tkinter.messagebox',
-        'tkinter.scrolledtext',
+        'webview',
+        'clr',
+        'pythonnet',
+        'clr_loader',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['tkinter'],
     noarchive=False,
     optimize=0,
 )
