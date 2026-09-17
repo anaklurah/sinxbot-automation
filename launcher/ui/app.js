@@ -72,6 +72,7 @@ function setAuthenticatedState(isAuth) {
     const authGate = document.getElementById('auth-gate-page');
     const navBar = document.getElementById('nav-bar-container');
     const btnLogout = document.getElementById('btn-nav-logout');
+    const btnWebapp = document.getElementById('btn-nav-webapp');
     const statusDot = document.getElementById('status-dot');
     const statusText = document.getElementById('status-text');
 
@@ -79,6 +80,7 @@ function setAuthenticatedState(isAuth) {
         authGate.style.display = 'none';
         navBar.style.display = 'block';
         btnLogout.style.display = 'flex';
+        if (btnWebapp) btnWebapp.style.display = 'inline-flex';
         statusDot.className = 'status-dot online';
         statusText.innerText = currentConfig.username ? `${currentConfig.username} (Online)` : 'Connected';
 
@@ -96,6 +98,7 @@ function setAuthenticatedState(isAuth) {
         authGate.style.display = 'flex';
         navBar.style.display = 'none';
         btnLogout.style.display = 'none';
+        if (btnWebapp) btnWebapp.style.display = 'none';
         statusDot.className = 'status-dot';
         statusText.innerText = 'Disconnected';
 
@@ -554,6 +557,19 @@ async function downloadLatestExe() {
         await window.pywebview.api.download_latest_exe();
     } catch (e) {
         showToast('Error download: ' + e, 'error');
+    }
+}
+
+async function openWebApp() {
+    showToast('Membuka Web Dashboard di browser...', 'info');
+    try {
+        const res = await window.pywebview.api.open_web_dashboard();
+        if (res && !res.success) {
+            showToast(res.error || 'Gagal membuka Web Dashboard', 'error');
+        }
+    } catch (e) {
+        console.error('openWebApp error:', e);
+        showToast('Error buka web dashboard: ' + e, 'error');
     }
 }
 

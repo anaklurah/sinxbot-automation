@@ -31,6 +31,12 @@
                 <span id="status-text">Disconnected</span>
             </div>
 
+            <!-- Navbar Open WebApp Button (Visible only when logged in) -->
+            <button id="btn-nav-webapp" class="btn-nav-webapp" onclick="openWebApp()" title="Buka Web Dashboard di Browser">
+                <i data-lucide="globe"></i>
+                <span>Buka Webapp</span>
+            </button>
+
             <!-- Navbar Logout Button (Visible only when logged in) -->
             <button id="btn-nav-logout" class="btn-nav-logout" onclick="doLogout()">
                 <i data-lucide="log-out"></i>
@@ -179,6 +185,10 @@
                         <i data-lucide="camera"></i>
                         <span>Cek Screenshot</span>
                     </button>
+                    <button class="btn-clay btn-clay-indigo" onclick="openWebApp()">
+                        <i data-lucide="globe"></i>
+                        <span>Buka Web Dashboard</span>
+                    </button>
                     <button class="btn-clay btn-clay-emerald" onclick="downloadLatestExe()">
                         <i data-lucide="download"></i>
                         <span>Unduh Update EXE</span>
@@ -311,11 +321,15 @@
                 <div style="display: flex; gap: 12px; margin-top: 20px;">
                     <button class="btn-clay btn-clay-primary" onclick="saveSettings()" style="flex: 1;">
                         <i data-lucide="save"></i>
-                        <span>Simpan Perubahan Server</span>
+                        <span>Simpan Perubahan</span>
+                    </button>
+                    <button class="btn-clay btn-clay-blue" onclick="openWebApp()" style="flex: 1;">
+                        <i data-lucide="external-link"></i>
+                        <span>Buka Web Dashboard</span>
                     </button>
                     <button class="btn-clay btn-clay-secondary" onclick="checkUpdates(true)" style="flex: 1;">
                         <i data-lucide="sparkles"></i>
-                        <span>Cek Update Terbaru</span>
+                        <span>Cek Update</span>
                     </button>
                 </div>
             </div>

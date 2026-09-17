@@ -228,6 +228,16 @@ class LauncherApi:
         self._cfg = load_config()
         return {"success": True}
 
+    def open_web_dashboard(self) -> dict:
+        """Opens server web dashboard in default browser with active auth token."""
+        url = self._cfg.get("server_url", "https://auto.kntl.cc").rstrip("/")
+        token = self._cfg.get("token", "")
+        if not url:
+            url = "https://auto.kntl.cc"
+        target_url = f"{url}/?token={token}" if token else url
+        webbrowser.open(target_url)
+        return {"success": True, "url": target_url}
+
     def save_server_url(self, server_url: str) -> dict:
         """Saves updated server URL."""
         url = normalize_url(server_url)
