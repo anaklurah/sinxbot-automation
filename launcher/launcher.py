@@ -1,15 +1,19 @@
 """
-Sin'X Automation — Client Desktop Karyawan
-==========================================
+Sin'X Automation — Client Desktop Karyawan (Modern Enterprise UI)
+=================================================================
 Desktop client for Sin'X Automation (OmniShorts Auto-Publisher).
-Tabs: Dashboard, Cookies & Profil, Live Logs, Akun & Server.
+Features modern Windows 11 rounded corners, native dark title bar,
+sleek segmented pill navigation, rounded action buttons, and elevated cards.
 """
+
+from __future__ import annotations
 
 import os
 import sys
 import json
 import time
 import queue
+import ctypes
 import threading
 import webbrowser
 import configparser
@@ -32,17 +36,19 @@ except Exception:
 APP_VERSION = "1.3.0"
 
 # ─────────────────────────────────────────────────────────────
-# Theme Colors (Modern Slate & Clay Aesthetic)
+# Theme Colors (Modern Slate & Indigo Enterprise Palette)
 # ─────────────────────────────────────────────────────────────
 BG = "#0b0f19"              # Deep Midnight Slate
-CARD_BG = "#151e2e"         # Elevated Slate Card
-CARD_BORDER = "#222f44"     # Subtle border
+CARD_BG = "#131b2e"         # Elevated Slate Card
+CARD_BORDER = "#1f2d44"     # Subtle Border
+CARD_HOVER = "#18233c"      # Hover state for card
 HEADER_BG = "#0f172a"       # Slate 900
-INPUT_BG = "#0a0e17"        # Inset dark input
-INPUT_BORDER = "#29374d"    # Input outline
+INPUT_BG = "#080c14"        # Inset dark input
+INPUT_BORDER = "#223147"    # Input outline
 
 ACCENT = "#6366f1"          # Modern Indigo 500
 ACCENT_HOVER = "#4f46e5"    # Indigo 600
+ACCENT_ACTIVE = "#4338ca"   # Indigo 700
 ACCENT_CYAN = "#06b6d4"     # Cyan 500
 ACCENT_PURPLE = "#a855f7"   # Purple 500
 SUCCESS = "#10b981"         # Emerald 500
@@ -65,6 +71,27 @@ PLATFORMS = [
     ("febspot", "Febspot"),
 ]
 
+
+def apply_windows_dark_mode(window: tk.Tk | tk.Toplevel):
+    """Enables native Windows 10/11 dark title bar, rounded window corners, and matching caption color."""
+    try:
+        window.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(window.winfo_id()) or window.winfo_id()
+        # DWMWA_USE_IMMERSIVE_DARK_MODE = 20 (Windows 10 20H1+ & Windows 11)
+        dark_mode = ctypes.c_int(1)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(dark_mode), ctypes.sizeof(dark_mode))
+
+        # DWMWA_WINDOW_CORNER_PREFERENCE = 33 (2 = DWMWCP_ROUND)
+        corner_pref = ctypes.c_int(2)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(corner_pref), ctypes.sizeof(corner_pref))
+
+        # DWMWA_CAPTION_COLOR = 35 (hex #0b0f19 in BGR: 0x00190F0B)
+        caption_color = ctypes.c_int(0x00190F0B)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 35, ctypes.byref(caption_color), ctypes.sizeof(caption_color))
+    except Exception:
+        pass
+
+
 def normalize_url(url: str) -> str:
     """Safely normalizes server URL by removing double schemes and trailing slashes."""
     if not url:
@@ -78,9 +105,11 @@ def normalize_url(url: str) -> str:
         url = "https://" + url
     return url.rstrip("/")
 
+
 CONFIG_DIR = Path.home() / ".osap_launcher"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_PATH = CONFIG_DIR / "config.ini"
+
 
 def load_config() -> dict:
     cfg = configparser.ConfigParser()
@@ -93,12 +122,14 @@ def load_config() -> dict:
         "token": cfg.get("auth", "token", fallback=""),
     }
 
+
 def save_config(server_url: str, username: str, token: str = ""):
     cfg = configparser.ConfigParser()
     cfg["app"] = {"server_url": normalize_url(server_url), "username": username}
     cfg["auth"] = {"token": token}
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         cfg.write(f)
+
 
 def api_get(server_url: str, path: str, token: str = "", timeout: int = 15) -> tuple:
     if requests is None:
@@ -107,6 +138,7 @@ def api_get(server_url: str, path: str, token: str = "", timeout: int = 15) -> t
     headers = {"X-Auth-Token": token} if token else {}
     r = requests.get(f"{base}{path}", headers=headers, timeout=timeout)
     return r.json(), r.status_code
+
 
 def api_post(server_url: str, path: str, data: dict = None, token: str = "", files=None, timeout: int = 20) -> tuple:
     if requests is None:
@@ -121,14 +153,208 @@ def api_post(server_url: str, path: str, data: dict = None, token: str = "", fil
     return r.json(), r.status_code
 
 
+# ─────────────────────────────────────────────────────────────
+# Modern UI Component: Rounded Canvas Button
+# ─────────────────────────────────────────────────────────────
+class RoundedButton(tk.Canvas):
+    """
+    Sleek anti-aliased pill / rounded rectangle button with smooth hover,
+    active press feedback, clean typography, and hand cursor.
+    """
+    def __init__(
+        self, parent, text: str = "", command=None,
+        bg_color: str = ACCENT, fg_color: str = "#ffffff",
+        hover_color: str = ACCENT_HOVER, active_color: str = ACCENT_ACTIVE,
+        radius: int = 10, font: tuple = ("Segoe UI", 9, "bold"),
+        height: int = 36, width: int = 120, state: str = "normal",
+        outline: str = "", **kwargs
+    ):
+        parent_bg = kwargs.pop("parent_bg", parent.cget("bg") if hasattr(parent, "cget") else BG)
+        super().__init__(parent, height=height, width=width, bg=parent_bg, highlightthickness=0, bd=0, **kwargs)
+        self.text = text
+        self.command = command
+        self.bg_color = bg_color
+        self.fg_color = fg_color
+        self.hover_color = hover_color
+        self.active_color = active_color
+        self.radius = radius
+        self.font = font
+        self.state_val = state
+        self.outline = outline
+        self.is_pressed = False
+
+        self.bind("<Configure>", self._on_resize)
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<Button-1>", self._on_click)
+        self.bind("<ButtonRelease-1>", self._on_release)
+        self.configure(cursor="hand2" if state != "disabled" else "")
+
+    def _draw(self, w: int, h: int, fill_color: str):
+        self.delete("all")
+        if w < 4 or h < 4:
+            return
+        r = min(self.radius, w // 2, h // 2)
+        pts = [
+            2 + r, 2,  2 + r, 2,  w - 2 - r, 2,  w - 2 - r, 2,  w - 2, 2,
+            w - 2, 2 + r,  w - 2, 2 + r,  w - 2, h - 2 - r,  w - 2, h - 2 - r,  w - 2, h - 2,
+            w - 2 - r, h - 2,  w - 2 - r, h - 2,  2 + r, h - 2,  2 + r, h - 2,  2, h - 2,
+            2, h - 2 - r,  2, h - 2 - r,  2, 2 + r,  2, 2 + r,  2, 2
+        ]
+        self.create_polygon(pts, smooth=True, fill=fill_color, outline=self.outline)
+        fg = self.fg_color if self.state_val != "disabled" else "#64748b"
+        self.create_text(w // 2, h // 2, text=self.text, fill=fg, font=self.font)
+
+    def _on_resize(self, event):
+        self._draw(event.width, event.height, self.bg_color)
+
+    def _on_enter(self, _e):
+        if self.state_val != "disabled" and not self.is_pressed:
+            self._draw(self.winfo_width(), self.winfo_height(), self.hover_color)
+
+    def _on_leave(self, _e):
+        self.is_pressed = False
+        if self.state_val != "disabled":
+            self._draw(self.winfo_width(), self.winfo_height(), self.bg_color)
+
+    def _on_click(self, _e):
+        if self.state_val != "disabled":
+            self.is_pressed = True
+            self._draw(self.winfo_width(), self.winfo_height(), self.active_color)
+
+    def _on_release(self, _e):
+        if self.state_val != "disabled":
+            self.is_pressed = False
+            self._draw(self.winfo_width(), self.winfo_height(), self.hover_color)
+            if self.command:
+                self.command()
+
+    def set_text(self, text: str):
+        self.text = text
+        self._draw(self.winfo_width(), self.winfo_height(), self.bg_color)
+
+    def set_state(self, state: str):
+        self.state_val = state
+        self.configure(cursor="hand2" if state != "disabled" else "")
+        self._draw(self.winfo_width(), self.winfo_height(), self.bg_color)
+
+
+# ─────────────────────────────────────────────────────────────
+# Modern UI Component: Elevated Card Container
+# ─────────────────────────────────────────────────────────────
+def create_modern_card(parent, padx: int = 16, pady: int = 14, **kwargs) -> tuple[tk.Frame, tk.Frame]:
+    """Creates a modern elevated slate card with a subtle border and generous padding."""
+    outer = tk.Frame(parent, bg=CARD_BORDER, padx=1, pady=1, **kwargs)
+    inner = tk.Frame(outer, bg=CARD_BG, padx=padx, pady=pady)
+    inner.pack(fill="both", expand=True)
+    return outer, inner
+
+
+def create_modern_entry(parent, textvariable=None, show=None, font=("Segoe UI", 9), **kwargs):
+    """Creates an inset dark entry field that smoothly highlights its border on focus."""
+    wrapper = tk.Frame(parent, bg=INPUT_BORDER, padx=1, pady=1)
+    inner = tk.Frame(wrapper, bg=INPUT_BG, padx=10, pady=7)
+    inner.pack(fill="both", expand=True)
+    entry = tk.Entry(
+        inner, textvariable=textvariable, show=show, font=font,
+        bg=INPUT_BG, fg=TEXT, insertbackground=TEXT, relief="flat", bd=0, **kwargs
+    )
+    entry.pack(fill="both", expand=True)
+
+    def on_focus_in(_e):
+        wrapper.configure(bg=ACCENT)
+
+    def on_focus_out(_e):
+        wrapper.configure(bg=INPUT_BORDER)
+
+    entry.bind("<FocusIn>", on_focus_in)
+    entry.bind("<FocusOut>", on_focus_out)
+    return wrapper, entry
+
+
+# ─────────────────────────────────────────────────────────────
+# Modern UI Component: Segmented Nav Bar (Top Pill Tabs)
+# ─────────────────────────────────────────────────────────────
+class ModernSegmentedNav(tk.Frame):
+    """Horizontal segmented pill tab bar replacing boxy standard notebook tabs."""
+    def __init__(self, parent, tabs: list[tuple[str, str]], on_select, bg=HEADER_BG, **kwargs):
+        super().__init__(parent, bg=bg, **kwargs)
+        self.tabs = tabs
+        self.on_select = on_select
+        self.buttons: list[RoundedButton] = []
+        self.active_idx = 0
+
+        border_box = tk.Frame(self, bg=CARD_BORDER, padx=1, pady=1)
+        border_box.pack(fill="x")
+        self.container = tk.Frame(border_box, bg="#0d1424", padx=5, pady=5)
+        self.container.pack(fill="x")
+
+        for idx, (icon, title) in enumerate(tabs):
+            btn = RoundedButton(
+                self.container,
+                text=f"{icon}  {title}",
+                command=lambda i=idx: self.select(i),
+                bg_color=ACCENT if idx == 0 else "#0d1424",
+                fg_color="#ffffff" if idx == 0 else TEXT_DIM,
+                hover_color=ACCENT_HOVER if idx == 0 else "#19243b",
+                radius=8,
+                height=34,
+                width=170,
+                parent_bg="#0d1424",
+                font=("Segoe UI", 9, "bold" if idx == 0 else "normal"),
+            )
+            btn.pack(side="left", padx=3, fill="x", expand=True)
+            self.buttons.append(btn)
+
+    def select(self, idx: int):
+        self.active_idx = idx
+        for i, b in enumerate(self.buttons):
+            if i == idx:
+                b.bg_color = ACCENT
+                b.fg_color = "#ffffff"
+                b.hover_color = ACCENT_HOVER
+                b.font = ("Segoe UI", 9, "bold")
+            else:
+                b.bg_color = "#0d1424"
+                b.fg_color = TEXT_DIM
+                b.hover_color = "#19243b"
+                b.font = ("Segoe UI", 9, "normal")
+            b._draw(b.winfo_width(), b.winfo_height(), b.bg_color)
+        self.on_select(idx)
+
+
+# ─────────────────────────────────────────────────────────────
+# Notebook Compatibility Adapter
+# ─────────────────────────────────────────────────────────────
+class NotebookAdapter:
+    """Provides a `.select(tab_frame)` interface for backward compatibility."""
+    def __init__(self, launcher: 'SinXLauncher'):
+        self.launcher = launcher
+
+    def select(self, target_tab):
+        if target_tab == self.launcher.tab_dash:
+            self.launcher.nav_bar.select(0)
+        elif target_tab == self.launcher.tab_cookies:
+            self.launcher.nav_bar.select(1)
+        elif target_tab == self.launcher.tab_logs:
+            self.launcher.nav_bar.select(2)
+        elif target_tab == self.launcher.tab_login:
+            self.launcher.nav_bar.select(3)
+
+
+# ─────────────────────────────────────────────────────────────
+# Main Application Window
+# ─────────────────────────────────────────────────────────────
 class SinXLauncher(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Sin'X Automation — Desktop Client")
-        self.geometry("860x680")
-        self.minsize(800, 560)
+        self.geometry("900x710")
+        self.minsize(860, 600)
         self.configure(bg=BG)
 
+        # Apply native Windows 11 rounded corners & dark title bar
+        apply_windows_dark_mode(self)
         self._set_app_icon()
 
         self.cfg = load_config()
@@ -138,17 +364,19 @@ class SinXLauncher(tk.Tk):
         self.sse_active = False
         self.log_queue = queue.Queue()
 
-        self._setup_styles()
+        self._setup_ttk_styles()
         self._build_header()
-        self._build_notebook()
+        self._build_tabs()
+
+        self.nb = NotebookAdapter(self)
         self._start_log_consumer()
         self._auto_login_if_token()
         self.after(1500, lambda: self.check_for_updates(manual=False))
 
     def _set_app_icon(self):
         try:
-            exe_dir = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
-            bundle_dir = getattr(sys, '_MEIPASS', None)
+            exe_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
+            bundle_dir = getattr(sys, "_MEIPASS", None)
             candidates = [
                 exe_dir / "icon.ico",
                 Path(__file__).parent / "icon.ico",
@@ -161,27 +389,11 @@ class SinXLauncher(tk.Tk):
         except Exception:
             pass
 
-    def _setup_styles(self):
+    def _setup_ttk_styles(self):
         style = ttk.Style(self)
         style.theme_use("default")
 
-        # Notebook tabs
-        style.configure("TNotebook", background=BG, borderwidth=0)
-        style.configure(
-            "TNotebook.Tab",
-            background=CARD_BG,
-            foreground=TEXT_DIM,
-            padding=[14, 8],
-            font=("Segoe UI", 9, "bold"),
-            borderwidth=0,
-        )
-        style.map(
-            "TNotebook.Tab",
-            background=[("selected", ACCENT), ("active", "#22334f")],
-            foreground=[("selected", "white"), ("active", TEXT)],
-        )
-
-        # Combobox
+        # Combobox styling
         style.configure(
             "TCombobox",
             background=INPUT_BG,
@@ -190,146 +402,197 @@ class SinXLauncher(tk.Tk):
             darkcolor=INPUT_BORDER,
             lightcolor=INPUT_BORDER,
             arrowcolor=TEXT,
+            bordercolor=INPUT_BORDER,
+            padding=4,
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", INPUT_BG)],
+            foreground=[("readonly", TEXT)],
         )
 
-        # Scrollbar
-        style.configure("Vertical.TScrollbar", background=CARD_BG, troughcolor=BG, borderwidth=0, arrowcolor=TEXT_DIM)
+        # Separator
+        style.configure("TSeparator", background=CARD_BORDER)
 
     def _build_header(self):
-        hdr = tk.Frame(self, bg=HEADER_BG, pady=10, padx=16, bd=0)
+        hdr = tk.Frame(self, bg=HEADER_BG, pady=12, padx=20)
         hdr.pack(fill="x")
 
         # Left branding
         left_box = tk.Frame(hdr, bg=HEADER_BG)
         left_box.pack(side="left")
 
-        tk.Label(left_box, text="\u26a1 SIN'X AUTOMATION", font=("Segoe UI", 14, "bold"), bg=HEADER_BG, fg=TEXT).pack(anchor="w")
-        tk.Label(left_box, text=f"Multi-Platform Cloud Publishing \u2022 Client Karyawan v{APP_VERSION}", font=("Segoe UI", 8), bg=HEADER_BG, fg=TEXT_DIM).pack(anchor="w")
+        brand_row = tk.Frame(left_box, bg=HEADER_BG)
+        brand_row.pack(anchor="w")
+
+        tk.Label(brand_row, text="⚡", font=("Segoe UI", 13), bg=HEADER_BG, fg=ACCENT_CYAN).pack(side="left", padx=(0, 4))
+        tk.Label(brand_row, text="SIN'X AUTOMATION", font=("Segoe UI", 13, "bold"), bg=HEADER_BG, fg=TEXT).pack(side="left")
+
+        tk.Label(
+            left_box,
+            text=f"Enterprise Multi-Platform Cloud Publisher • Client Karyawan v{APP_VERSION}",
+            font=("Segoe UI", 8), bg=HEADER_BG, fg=TEXT_DIM
+        ).pack(anchor="w", pady=(1, 0))
 
         # Right status badge pill
-        self.right_pill = tk.Frame(hdr, bg=CARD_BG, bd=1, relief="solid", padx=10, pady=4)
-        self.right_pill.pack(side="right")
+        pill_border = tk.Frame(hdr, bg=CARD_BORDER, padx=1, pady=1)
+        pill_border.pack(side="right")
+        self.right_pill = tk.Frame(pill_border, bg=CARD_BG, padx=12, pady=5)
+        self.right_pill.pack()
 
-        self.status_dot = tk.Label(self.right_pill, text="\u25cf", font=("Segoe UI", 12), bg=CARD_BG, fg=DANGER)
-        self.status_dot.pack(side="left", padx=(0, 5))
+        self.status_dot = tk.Label(self.right_pill, text="●", font=("Segoe UI", 11), bg=CARD_BG, fg=DANGER)
+        self.status_dot.pack(side="left", padx=(0, 6))
 
         self.status_lbl = tk.Label(self.right_pill, text="Offline / Belum Login", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT_DIM)
         self.status_lbl.pack(side="left")
 
-    def _build_notebook(self):
-        self.nb = ttk.Notebook(self)
-        self.nb.pack(fill="both", expand=True, padx=10, pady=(6, 10))
+    def _build_tabs(self):
+        tab_specs = [
+            ("📊", "Dashboard"),
+            ("🍪", "Cookies & Profil"),
+            ("📜", "Live Logs"),
+            ("⚙️", "Akun & Server"),
+        ]
 
-        self.tab_dash = tk.Frame(self.nb, bg=BG)
-        self.tab_cookies = tk.Frame(self.nb, bg=BG)
-        self.tab_logs = tk.Frame(self.nb, bg=BG)
-        self.tab_login = tk.Frame(self.nb, bg=BG)
+        nav_frame = tk.Frame(self, bg=BG, padx=16, pady=(10, 4))
+        nav_frame.pack(fill="x")
 
-        self.nb.add(self.tab_dash,    text="  \U0001f4ca Dashboard  ")
-        self.nb.add(self.tab_cookies, text="  \U0001f36a Cookies & Profil  ")
-        self.nb.add(self.tab_logs,    text="  \U0001f4dc Live Logs  ")
-        self.nb.add(self.tab_login,   text="  \U0001f511 Akun & Server  ")
+        self.nav_bar = ModernSegmentedNav(nav_frame, tab_specs, on_select=self._switch_tab, bg=BG)
+        self.nav_bar.pack(fill="x")
+
+        # Pages container
+        self.page_container = tk.Frame(self, bg=BG)
+        self.page_container.pack(fill="both", expand=True, padx=16, pady=(6, 12))
+
+        self.tab_dash = tk.Frame(self.page_container, bg=BG)
+        self.tab_cookies = tk.Frame(self.page_container, bg=BG)
+        self.tab_logs = tk.Frame(self.page_container, bg=BG)
+        self.tab_login = tk.Frame(self.page_container, bg=BG)
+
+        self.pages = [self.tab_dash, self.tab_cookies, self.tab_logs, self.tab_login]
 
         self._build_dashboard_tab()
         self._build_cookies_tab()
         self._build_logs_tab()
         self._build_login_tab()
 
+        self._switch_tab(0)
+
+    def _switch_tab(self, idx: int):
+        for p in self.pages:
+            p.pack_forget()
+        self.pages[idx].pack(fill="both", expand=True)
+
     # ─────────────────────────────────────────────────────────────
     # Tab 1: Dashboard
     # ─────────────────────────────────────────────────────────────
     def _build_dashboard_tab(self):
         f = self.tab_dash
-        outer = tk.Frame(f, bg=BG, padx=14, pady=10)
-        outer.pack(fill="both", expand=True)
 
         # User Card
-        u_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=12, pady=10)
-        u_card.pack(fill="x", pady=(0, 10))
+        _u_border, u_card = create_modern_card(f, padx=16, pady=10)
+        _u_border.pack(fill="x", pady=(0, 10))
 
-        self.dash_user_lbl = tk.Label(u_card, text="Akun: Belum Terhubung", font=("Segoe UI", 11, "bold"), bg=CARD_BG, fg=TEXT)
-        self.dash_user_lbl.pack(side="left")
+        left_user = tk.Frame(u_card, bg=CARD_BG)
+        left_user.pack(side="left")
 
-        self.dash_server_lbl = tk.Label(u_card, text=f"Server: {self.cfg['server_url']}", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM)
-        self.dash_server_lbl.pack(side="left", padx=16)
+        self.dash_user_lbl = tk.Label(left_user, text="Akun: Belum Terhubung", font=("Segoe UI", 11, "bold"), bg=CARD_BG, fg=TEXT)
+        self.dash_user_lbl.pack(anchor="w")
 
-        self.dash_acc_badge = tk.Label(u_card, text="Account ID: -", font=("Segoe UI", 8, "bold"), bg="#1e293b", fg=ACCENT_CYAN, padx=8, pady=3)
-        self.dash_acc_badge.pack(side="right")
+        self.dash_server_lbl = tk.Label(left_user, text=f"Endpoint: {self.cfg['server_url']}", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM)
+        self.dash_server_lbl.pack(anchor="w", pady=(1, 0))
 
-        # 5 Stat Cards Row
-        stats_box = tk.Frame(outer, bg=BG)
+        badge_box = tk.Frame(u_card, bg="#1e293b", padx=10, pady=4)
+        badge_box.pack(side="right")
+        self.dash_acc_badge = tk.Label(badge_box, text="Account ID: -", font=("Segoe UI", 8, "bold"), bg="#1e293b", fg=ACCENT_CYAN)
+        self.dash_acc_badge.pack()
+
+        # 5 Modern Stat KPI Cards Row
+        stats_box = tk.Frame(f, bg=BG)
         stats_box.pack(fill="x", pady=(0, 10))
 
-        self.stat_total  = self._create_stat_card(stats_box, "Total Video", "0", ACCENT, 0)
-        self.stat_ready  = self._create_stat_card(stats_box, "Siap Post", "0", SUCCESS, 1)
-        self.stat_proc   = self._create_stat_card(stats_box, "Diproses", "0", WARNING, 2)
-        self.stat_done   = self._create_stat_card(stats_box, "Selesai", "0", ACCENT_CYAN, 3)
-        self.stat_failed = self._create_stat_card(stats_box, "Gagal", "0", DANGER, 4)
+        self.stat_total  = self._create_modern_stat_card(stats_box, "TOTAL VIDEO", "0", ACCENT, 0)
+        self.stat_ready  = self._create_modern_stat_card(stats_box, "SIAP POST", "0", SUCCESS, 1)
+        self.stat_proc   = self._create_modern_stat_card(stats_box, "DIPROSES", "0", WARNING, 2)
+        self.stat_done   = self._create_modern_stat_card(stats_box, "SELESAI", "0", ACCENT_CYAN, 3)
+        self.stat_failed = self._create_modern_stat_card(stats_box, "GAGAL", "0", DANGER, 4)
 
         # Scheduler Monitor Card
-        sch_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=10)
-        sch_card.pack(fill="x", pady=(0, 10))
+        _sch_border, sch_card = create_modern_card(f, padx=16, pady=12)
+        _sch_border.pack(fill="x", pady=(0, 10))
 
-        tk.Label(sch_card, text="\u23f0 Status Smart Prime-Time Scheduler", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 4))
+        sch_hdr = tk.Frame(sch_card, bg=CARD_BG)
+        sch_hdr.pack(fill="x", pady=(0, 6))
 
-        self.dash_sch_next = tk.Label(sch_card, text="Jadwal Berikutnya: Memuat status...", font=("Segoe UI", 9), bg=CARD_BG, fg=TEXT_DIM)
+        tk.Label(sch_hdr, text="⏰", font=("Segoe UI", 10), bg=CARD_BG, fg=WARNING).pack(side="left", padx=(0, 5))
+        tk.Label(sch_hdr, text="Status Smart Prime-Time Scheduler", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(side="left")
+
+        self.dash_sch_next = tk.Label(sch_card, text="Jadwal Berikutnya: Memuat status...", font=("Segoe UI", 9), bg=CARD_BG, fg=TEXT_MUTED)
         self.dash_sch_next.pack(anchor="w", pady=1)
 
-        self.dash_sch_slots = tk.Label(sch_card, text="Jam Tayang Aktif: -", font=("Segoe UI", 9), bg=CARD_BG, fg=TEXT_DIM)
+        self.dash_sch_slots = tk.Label(sch_card, text="Jam Tayang Aktif: -", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM)
         self.dash_sch_slots.pack(anchor="w", pady=1)
 
-        self.dash_sch_tz = tk.Label(sch_card, text="Timezone Acuan: -", font=("Segoe UI", 9), bg=CARD_BG, fg=TEXT_DIM)
+        self.dash_sch_tz = tk.Label(sch_card, text="Timezone Acuan: -", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM)
         self.dash_sch_tz.pack(anchor="w", pady=1)
 
-        # Action Buttons Section
-        act_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=12)
-        act_card.pack(fill="x", pady=(0, 6))
+        # Quick Operational Actions Card
+        _act_border, act_card = create_modern_card(f, padx=16, pady=12)
+        _act_border.pack(fill="x")
 
-        tk.Label(act_card, text="\U0001f680 Tombol Operasional Cepat", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 8))
+        act_hdr = tk.Frame(act_card, bg=CARD_BG)
+        act_hdr.pack(fill="x", pady=(0, 8))
+
+        tk.Label(act_hdr, text="🚀", font=("Segoe UI", 10), bg=CARD_BG, fg=ACCENT).pack(side="left", padx=(0, 5))
+        tk.Label(act_hdr, text="Tombol Operasional Cepat", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(side="left")
 
         btn_row = tk.Frame(act_card, bg=CARD_BG)
         btn_row.pack(fill="x")
 
         # 1. On-Demand Publish
-        self.btn_publish = tk.Button(
-            btn_row, text="\U0001f680  Post Sekarang (On-Demand)", font=("Segoe UI", 9, "bold"),
-            bg=ACCENT, fg="white", activebackground=ACCENT_HOVER, activeforeground="white",
-            relief="flat", cursor="hand2", padx=12, pady=7, command=self.prompt_publish_now
+        self.btn_publish = RoundedButton(
+            btn_row, text="🚀  Post Sekarang", command=self.prompt_publish_now,
+            bg_color=ACCENT, hover_color=ACCENT_HOVER, height=36, width=170, parent_bg=CARD_BG
         )
-        self.btn_publish.pack(side="left", padx=(0, 6))
+        self.btn_publish.pack(side="left", padx=(0, 8), fill="x", expand=True)
 
         # 2. Debug Screenshot
-        self.btn_screenshot = tk.Button(
-            btn_row, text="\U0001f4f8  Cek Screenshot Browser", font=("Segoe UI", 9, "bold"),
-            bg="#0f3460", fg="white", activebackground="#16213e", activeforeground="white",
-            relief="flat", cursor="hand2", padx=12, pady=7, command=self.prompt_debug_screenshot
+        self.btn_screenshot = RoundedButton(
+            btn_row, text="📸  Cek Screenshot", command=self.prompt_debug_screenshot,
+            bg_color="#1e3a8a", hover_color="#2563eb", height=36, width=150, parent_bg=CARD_BG
         )
-        self.btn_screenshot.pack(side="left", padx=(0, 6))
+        self.btn_screenshot.pack(side="left", padx=(0, 8), fill="x", expand=True)
 
         # 3. Refresh Stats
-        self.btn_refresh = tk.Button(
-            btn_row, text="\U0001f504  Refresh Data", font=("Segoe UI", 9),
-            bg=CARD_BORDER, fg=TEXT, activebackground="#3b4b63", activeforeground=TEXT,
-            relief="flat", cursor="hand2", padx=12, pady=7, command=self.refresh_dashboard_data
+        self.btn_refresh = RoundedButton(
+            btn_row, text="🔄  Refresh Data", command=self.refresh_dashboard_data,
+            bg_color="#1e293b", hover_color="#334155", fg_color=TEXT_MUTED, height=36, width=140, parent_bg=CARD_BG
         )
-        self.btn_refresh.pack(side="left", padx=(0, 6))
+        self.btn_refresh.pack(side="left", padx=(0, 8), fill="x", expand=True)
 
         # 4. Open Web Dashboard
-        self.btn_web = tk.Button(
-            btn_row, text="\U0001f310  Buka Web Dashboard", font=("Segoe UI", 9),
-            bg=CARD_BORDER, fg=TEXT, activebackground="#3b4b63", activeforeground=TEXT,
-            relief="flat", cursor="hand2", padx=12, pady=7, command=self.open_dashboard
+        self.btn_web = RoundedButton(
+            btn_row, text="🌐  Buka Web UI", command=self.open_dashboard,
+            bg_color="#1e293b", hover_color="#334155", fg_color=TEXT_MUTED, height=36, width=140, parent_bg=CARD_BG
         )
-        self.btn_web.pack(side="left")
+        self.btn_web.pack(side="left", fill="x", expand=True)
 
-    def _create_stat_card(self, parent, title: str, value: str, color: str, col_idx: int):
+    def _create_modern_stat_card(self, parent, title: str, value: str, color: str, col_idx: int) -> tk.Label:
         parent.columnconfigure(col_idx, weight=1)
-        card = tk.Frame(parent, bg=CARD_BG, bd=1, relief="solid", padx=6, pady=8)
-        card.grid(row=0, column=col_idx, padx=3, sticky="ew")
+        border_card = tk.Frame(parent, bg=CARD_BORDER, padx=1, pady=1)
+        border_card.grid(row=0, column=col_idx, padx=3, sticky="ew")
 
-        val_lbl = tk.Label(card, text=value, font=("Segoe UI", 16, "bold"), bg=CARD_BG, fg=color)
+        card = tk.Frame(border_card, bg=CARD_BG, padx=8, pady=10)
+        card.pack(fill="both", expand=True)
+
+        # Top Accent Stripe
+        stripe = tk.Frame(card, bg=color, height=3)
+        stripe.pack(fill="x", pady=(0, 6))
+
+        val_lbl = tk.Label(card, text=value, font=("Segoe UI", 18, "bold"), bg=CARD_BG, fg=color)
         val_lbl.pack()
-        tk.Label(card, text=title, font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack()
+
+        tk.Label(card, text=title, font=("Segoe UI", 8, "bold"), bg=CARD_BG, fg=TEXT_DIM).pack()
         return val_lbl
 
     # ─────────────────────────────────────────────────────────────
@@ -337,86 +600,123 @@ class SinXLauncher(tk.Tk):
     # ─────────────────────────────────────────────────────────────
     def _build_cookies_tab(self):
         f = self.tab_cookies
-        outer = tk.Frame(f, bg=BG, padx=18, pady=14)
-        outer.pack(fill="both", expand=True)
 
-        tk.Label(outer, text="\U0001f36a Kelola Cookies & Sesi Login Sosmed", font=("Segoe UI", 12, "bold"), bg=BG, fg=TEXT).pack(anchor="w")
-        tk.Label(outer, text="Upload file cookie atau sesi browser ke server agar bot dapat mempublikasikan video lo:", font=("Segoe UI", 8), bg=BG, fg=TEXT_DIM).pack(anchor="w", pady=(1, 10))
-
-        # Platform selector
-        sel_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=12)
-        sel_card.pack(fill="x", pady=(0, 12))
+        # Platform selector card
+        _sel_border, sel_card = create_modern_card(f, padx=16, pady=12)
+        _sel_border.pack(fill="x", pady=(0, 10))
 
         tk.Label(sel_card, text="Pilih Platform Sasaran:", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
         self.sv_platform_name = tk.StringVar(value="YouTube (Shorts/Studio)")
-        self.cb_platform = ttk.Combobox(sel_card, textvariable=self.sv_platform_name, values=[p[1] for p in PLATFORMS], state="readonly", font=("Segoe UI", 9))
+        self.cb_platform = ttk.Combobox(
+            sel_card, textvariable=self.sv_platform_name,
+            values=[p[1] for p in PLATFORMS], state="readonly", font=("Segoe UI", 9)
+        )
         self.cb_platform.pack(fill="x", pady=(4, 8))
 
-        tk.Label(sel_card, text="Target Key (Opsional, kosongkan bila tidak memakai custom card):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
+        tk.Label(
+            sel_card,
+            text="Target Key Khusus (Opsional, kosongkan bila tidak memakai custom card ID):",
+            font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM
+        ).pack(anchor="w")
+
         self.sv_target = tk.StringVar()
-        tk.Entry(sel_card, textvariable=self.sv_target, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, insertbackground=TEXT, relief="solid", bd=1).pack(fill="x", pady=(2, 4))
+        _t_wrap, _t_entry = create_modern_entry(sel_card, textvariable=self.sv_target)
+        _t_wrap.pack(fill="x", pady=(2, 0))
 
         # Upload Methods Card
-        up_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=12)
-        up_card.pack(fill="x", pady=(0, 12))
+        _up_border, up_card = create_modern_card(f, padx=16, pady=12)
+        _up_border.pack(fill="x", pady=(0, 10))
 
-        tk.Label(up_card, text="Metode 1: Upload File Cookies / Storage State", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
-        tk.Label(up_card, text="Export cookies dari browser lokal lo memakai ekstensi 'Cookie-Editor' atau 'Get cookies.txt LOCALLY':", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", pady=(1, 6))
+        # Method 1
+        m1_row = tk.Frame(up_card, bg=CARD_BG)
+        m1_row.pack(fill="x", pady=(0, 4))
+        tk.Label(m1_row, text="①", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=ACCENT).pack(side="left", padx=(0, 4))
+        tk.Label(m1_row, text="Metode 1: Upload File Cookies (.json / .txt)", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(side="left")
 
-        tk.Button(up_card, text="\U0001f4c2  Upload File Cookie (.json / .txt)", font=("Segoe UI", 9, "bold"),
-                  bg=ACCENT, fg="white", activebackground=ACCENT_HOVER, relief="flat", cursor="hand2",
-                  padx=12, pady=7, command=self.upload_cookie_file).pack(fill="x", pady=(0, 8))
+        tk.Label(
+            up_card,
+            text="Export cookies dari browser lokal Anda memakai ekstensi Cookie-Editor atau Get cookies.txt LOCALLY:",
+            font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM
+        ).pack(anchor="w", pady=(0, 6))
 
-        ttk.Separator(up_card).pack(fill="x", pady=8)
+        RoundedButton(
+            up_card, text="📂  Pilih & Upload File Cookie (.json / .txt)", command=self.upload_cookie_file,
+            bg_color=ACCENT, hover_color=ACCENT_HOVER, height=34, parent_bg=CARD_BG
+        ).pack(fill="x", pady=(0, 10))
 
-        tk.Label(up_card, text="Metode 2: Upload Full Profil Browser (.zip)", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
-        tk.Label(up_card, text="Upload arsip ZIP folder profil browser yang sudah login (misal youtube.zip):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", pady=(1, 6))
+        ttk.Separator(up_card).pack(fill="x", pady=6)
 
-        tk.Button(up_card, text="\U0001f4e6  Upload Folder Profil Browser (.zip)", font=("Segoe UI", 9, "bold"),
-                  bg="#1e3a5f", fg="white", activebackground="#2a4a75", relief="flat", cursor="hand2",
-                  padx=12, pady=7, command=self.upload_profile_zip).pack(fill="x")
+        # Method 2
+        m2_row = tk.Frame(up_card, bg=CARD_BG)
+        m2_row.pack(fill="x", pady=(0, 4))
+        tk.Label(m2_row, text="②", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=ACCENT_CYAN).pack(side="left", padx=(0, 4))
+        tk.Label(m2_row, text="Metode 2: Upload Full Profil Browser (.zip)", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(side="left")
 
-        # Local Browser Login
-        loc_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=12)
-        loc_card.pack(fill="x")
+        tk.Label(
+            up_card,
+            text="Upload arsip ZIP folder profil browser yang sudah login (misal youtube.zip):",
+            font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM
+        ).pack(anchor="w", pady=(0, 6))
 
-        tk.Label(loc_card, text="Metode 3: Login Otomatis via Browser Lokal (Edge / Chrome)", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
-        tk.Label(loc_card, text="Buka jendela browser Edge/Chrome di PC lokal lo untuk login manual & kirim cookies otomatis ke server:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", pady=(1, 6))
+        RoundedButton(
+            up_card, text="📦  Pilih & Upload Profil Browser (.zip)", command=self.upload_profile_zip,
+            bg_color="#1e3a8a", hover_color="#2563eb", height=34, parent_bg=CARD_BG
+        ).pack(fill="x")
 
-        tk.Button(loc_card, text="\U0001f5a5\ufe0f  Buka Browser Lokal & Ekstrak Cookie", font=("Segoe UI", 9, "bold"),
-                  bg="#0f3460", fg="white", activebackground="#16213e", relief="flat", cursor="hand2",
-                  padx=12, pady=7, command=self.do_local_browser_login).pack(fill="x")
+        # Local Browser Login Card
+        _loc_border, loc_card = create_modern_card(f, padx=16, pady=12)
+        _loc_border.pack(fill="x")
+
+        m3_row = tk.Frame(loc_card, bg=CARD_BG)
+        m3_row.pack(fill="x", pady=(0, 4))
+        tk.Label(m3_row, text="③", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=SUCCESS).pack(side="left", padx=(0, 4))
+        tk.Label(m3_row, text="Metode 3: Login Otomatis Browser Lokal (Edge / Chrome)", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(side="left")
+
+        tk.Label(
+            loc_card,
+            text="Buka jendela browser Edge/Chrome di PC lokal Anda untuk login manual & kirim cookies otomatis ke server:",
+            font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM
+        ).pack(anchor="w", pady=(0, 6))
+
+        RoundedButton(
+            loc_card, text="🖥️  Buka Browser Lokal & Ekstrak Sesi Otomatis", command=self.do_local_browser_login,
+            bg_color="#047857", hover_color=SUCCESS_HOVER, height=34, parent_bg=CARD_BG
+        ).pack(fill="x")
 
     # ─────────────────────────────────────────────────────────────
     # Tab 3: Live Logs
     # ─────────────────────────────────────────────────────────────
     def _build_logs_tab(self):
         f = self.tab_logs
-        outer = tk.Frame(f, bg=BG, padx=14, pady=10)
-        outer.pack(fill="both", expand=True)
 
-        hdr_log = tk.Frame(outer, bg=BG)
+        hdr_log = tk.Frame(f, bg=BG)
         hdr_log.pack(fill="x", pady=(0, 6))
 
-        tk.Label(hdr_log, text="\U0001f4dc Live Server Logs (SSE Stream)", font=("Segoe UI", 11, "bold"), bg=BG, fg=TEXT).pack(side="left")
+        tk.Label(hdr_log, text="📜 Live Server Logs (SSE Stream)", font=("Segoe UI", 10, "bold"), bg=BG, fg=TEXT).pack(side="left")
 
         self.auto_scroll_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(hdr_log, text="Auto-scroll", variable=self.auto_scroll_var, font=("Segoe UI", 8),
-                       bg=BG, fg=TEXT_DIM, selectcolor=CARD_BG, activebackground=BG, activeforeground=TEXT).pack(side="right", padx=(8, 0))
+        tk.Checkbutton(
+            hdr_log, text="Auto-scroll", variable=self.auto_scroll_var, font=("Segoe UI", 8),
+            bg=BG, fg=TEXT_DIM, selectcolor=CARD_BG, activebackground=BG, activeforeground=TEXT
+        ).pack(side="right", padx=(8, 0))
 
-        tk.Button(hdr_log, text="\U0001f504  Hubungkan Ulang", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM,
-                  activebackground=CARD_BORDER, activeforeground=TEXT, relief="flat", cursor="hand2",
-                  padx=8, pady=3, command=self._start_sse_stream).pack(side="right", padx=(4, 0))
+        RoundedButton(
+            hdr_log, text="🔄 Hubungkan Ulang", command=self._start_sse_stream,
+            bg_color="#1e293b", hover_color="#334155", fg_color=TEXT_MUTED, height=28, width=130, radius=6, font=("Segoe UI", 8, "bold"), parent_bg=BG
+        ).pack(side="right", padx=(4, 0))
 
-        tk.Button(hdr_log, text="\U0001f9f9  Bersihkan", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM,
-                  activebackground=CARD_BORDER, activeforeground=TEXT, relief="flat", cursor="hand2",
-                  padx=8, pady=3, command=self.clear_logs).pack(side="right")
+        RoundedButton(
+            hdr_log, text="🧹 Bersihkan", command=self.clear_logs,
+            bg_color="#1e293b", hover_color="#334155", fg_color=TEXT_MUTED, height=28, width=90, radius=6, font=("Segoe UI", 8, "bold"), parent_bg=BG
+        ).pack(side="right")
 
-        log_frame = tk.Frame(outer, bg="#080c14", bd=1, relief="solid")
-        log_frame.pack(fill="both", expand=True)
+        log_border = tk.Frame(f, bg=CARD_BORDER, padx=1, pady=1)
+        log_border.pack(fill="both", expand=True)
 
-        self.log_box = scrolledtext.ScrolledText(log_frame, font=("Consolas", 9), bg="#080c14", fg=TEXT,
-                                                 insertbackground=TEXT, state="disabled", relief="flat", bd=6, wrap="word")
+        self.log_box = scrolledtext.ScrolledText(
+            log_border, font=("Consolas", 9), bg="#06090f", fg=TEXT,
+            insertbackground=TEXT, state="disabled", relief="flat", bd=8, wrap="word"
+        )
         self.log_box.pack(fill="both", expand=True)
 
     # ─────────────────────────────────────────────────────────────
@@ -424,67 +724,86 @@ class SinXLauncher(tk.Tk):
     # ─────────────────────────────────────────────────────────────
     def _build_login_tab(self):
         f = self.tab_login
-        outer = tk.Frame(f, bg=BG, padx=20, pady=14)
-        outer.pack(fill="both", expand=True)
 
         # Server Card
-        srv_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=12)
-        srv_card.pack(fill="x", pady=(0, 12))
+        _srv_border, srv_card = create_modern_card(f, padx=16, pady=12)
+        _srv_border.pack(fill="x", pady=(0, 10))
 
-        tk.Label(srv_card, text="\U0001f310 URL Server Dedicated Sin'X Automation", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
+        tk.Label(srv_card, text="🌐 URL Server Dedicated Sin'X Automation", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
         self.sv_url = tk.StringVar(value=self.cfg["server_url"])
-        tk.Entry(srv_card, textvariable=self.sv_url, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, insertbackground=TEXT, relief="solid", bd=1).pack(fill="x", pady=(4, 2))
-        tk.Label(srv_card, text="Format: https://auto.kntl.cc atau http://ip-vps:8080", font=("Segoe UI", 8, "italic"), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
+        _u_wrap, _u_entry = create_modern_entry(srv_card, textvariable=self.sv_url)
+        _u_wrap.pack(fill="x", pady=(4, 2))
+        tk.Label(srv_card, text="Format: https://auto.kntl.cc atau http://ip-vps:8085", font=("Segoe UI", 8, "italic"), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
 
         # Credentials Card
-        c_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=12)
-        c_card.pack(fill="x", pady=(0, 12))
+        _c_border, c_card = create_modern_card(f, padx=16, pady=12)
+        _c_border.pack(fill="x", pady=(0, 10))
 
         tk.Label(c_card, text="Username Karyawan:", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
         self.sv_user = tk.StringVar(value=self.cfg["username"])
-        tk.Entry(c_card, textvariable=self.sv_user, font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, insertbackground=TEXT, relief="solid", bd=1).pack(fill="x", pady=(2, 8))
+        _usr_wrap, _usr_entry = create_modern_entry(c_card, textvariable=self.sv_user)
+        _usr_wrap.pack(fill="x", pady=(2, 8))
 
         tk.Label(c_card, text="Password Akun:", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
         self.sv_pass = tk.StringVar()
-        tk.Entry(c_card, textvariable=self.sv_pass, show="*", font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, insertbackground=TEXT, relief="solid", bd=1).pack(fill="x", pady=(2, 10))
+        _pw_wrap, _pw_entry = create_modern_entry(c_card, textvariable=self.sv_pass, show="*")
+        _pw_wrap.pack(fill="x", pady=(2, 10))
 
         btn_box = tk.Frame(c_card, bg=CARD_BG)
         btn_box.pack(fill="x")
 
-        self.login_btn = tk.Button(btn_box, text="\U0001f511  Login ke Server", font=("Segoe UI", 9, "bold"), bg=ACCENT, fg="white", activebackground=ACCENT_HOVER, activeforeground="white", relief="flat", cursor="hand2", padx=14, pady=7, command=self.do_login)
-        self.login_btn.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self.login_btn = RoundedButton(
+            btn_box, text="🔑  Login ke Server", command=self.do_login,
+            bg_color=ACCENT, hover_color=ACCENT_HOVER, height=36, parent_bg=CARD_BG
+        )
+        self.login_btn.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
-        self.logout_btn = tk.Button(btn_box, text="Keluar / Logout", font=("Segoe UI", 9), bg=CARD_BORDER, fg=TEXT_DIM, activebackground="#3b4b63", activeforeground=TEXT, relief="flat", cursor="hand2", padx=12, pady=7, command=self.do_logout, state="disabled")
+        self.logout_btn = RoundedButton(
+            btn_box, text="Keluar / Logout", command=self.do_logout,
+            bg_color="#1e293b", hover_color="#334155", fg_color=TEXT_DIM, state="disabled", height=36, width=130, parent_bg=CARD_BG
+        )
         self.logout_btn.pack(side="right")
 
         # Change Password Card
-        pw_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=12)
-        pw_card.pack(fill="x")
+        _pw_card_border, pw_card = create_modern_card(f, padx=16, pady=12)
+        _pw_card_border.pack(fill="x", pady=(0, 10))
 
-        tk.Label(pw_card, text="\U0001f512 Ganti Password Akun Lo", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 6))
+        tk.Label(pw_card, text="🔒 Ganti Password Akun Anda", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 6))
 
         tk.Label(pw_card, text="Password Saat Ini:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
         self.sv_cur_pw = tk.StringVar()
-        tk.Entry(pw_card, textvariable=self.sv_cur_pw, show="*", font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x", pady=(1, 6))
+        _cp_wrap, _cp_entry = create_modern_entry(pw_card, textvariable=self.sv_cur_pw, show="*")
+        _cp_wrap.pack(fill="x", pady=(1, 6))
 
         tk.Label(pw_card, text="Password Baru (minimal 6 karakter):", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
         self.sv_new_pw = tk.StringVar()
-        tk.Entry(pw_card, textvariable=self.sv_new_pw, show="*", font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x", pady=(1, 8))
+        _np_wrap, _np_entry = create_modern_entry(pw_card, textvariable=self.sv_new_pw, show="*")
+        _np_wrap.pack(fill="x", pady=(1, 8))
 
-        tk.Button(pw_card, text="🔒  Simpan Password Baru", font=("Segoe UI", 9, "bold"), bg=CARD_BORDER, fg=TEXT, activebackground="#3b4b63", activeforeground=TEXT, relief="flat", cursor="hand2", pady=6, command=self.change_password).pack(fill="x")
+        RoundedButton(
+            pw_card, text="Simpan Password Baru", command=self.change_password,
+            bg_color="#1e293b", hover_color="#334155", fg_color=TEXT_MUTED, height=34, parent_bg=CARD_BG
+        ).pack(fill="x")
 
-        # Update & App Info Card
-        upd_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=12)
-        upd_card.pack(fill="x", pady=(10, 0))
+        # Update & Distribution Card
+        _upd_border, upd_card = create_modern_card(f, padx=16, pady=12)
+        _upd_border.pack(fill="x")
 
-        tk.Label(upd_card, text=f"🚀 Versi Aplikasi & Pembaruan (v{APP_VERSION})", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 4))
+        tk.Label(upd_card, text=f"🚀 Versi Aplikasi & Distribusi Client (v{APP_VERSION})", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 2))
         tk.Label(upd_card, text="Client Karyawan Sin'X Automation • Auto-Update Terintegrasi", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", pady=(0, 8))
 
         upd_btn_box = tk.Frame(upd_card, bg=CARD_BG)
         upd_btn_box.pack(fill="x")
 
-        tk.Button(upd_btn_box, text="🔄  Periksa Update Server", font=("Segoe UI", 9, "bold"), bg=ACCENT, fg="white", activebackground=ACCENT_HOVER, activeforeground="white", relief="flat", cursor="hand2", padx=12, pady=6, command=lambda: self.check_for_updates(manual=True)).pack(side="left", fill="x", expand=True, padx=(0, 6))
-        tk.Button(upd_btn_box, text="⬇️  Unduh Exe Terbaru", font=("Segoe UI", 9), bg=CARD_BORDER, fg=TEXT_DIM, activebackground="#3b4b63", activeforeground=TEXT, relief="flat", cursor="hand2", padx=12, pady=6, command=self.download_latest_exe).pack(side="right")
+        RoundedButton(
+            upd_btn_box, text="🔄  Periksa Update Server", command=lambda: self.check_for_updates(manual=True),
+            bg_color=ACCENT, hover_color=ACCENT_HOVER, height=34, parent_bg=CARD_BG
+        ).pack(side="left", fill="x", expand=True, padx=(0, 8))
+
+        RoundedButton(
+            upd_btn_box, text="⬇️  Unduh Exe Terbaru", command=self.download_latest_exe,
+            bg_color="#1e293b", hover_color="#334155", fg_color=TEXT_MUTED, height=34, width=170, parent_bg=CARD_BG
+        ).pack(side="right")
 
     # ─────────────────────────────────────────────────────────────
     # Logging & Console Feed
@@ -532,8 +851,8 @@ class SinXLauncher(tk.Tk):
 
     def _set_logged_in(self, user: dict):
         self.current_user = user
-        self.logout_btn.configure(state="normal")
-        self.login_btn.configure(state="disabled")
+        self.logout_btn.set_state("normal")
+        self.login_btn.set_state("disabled")
         name = user.get("username", "?")
         acc = user.get("account_id", "?")
         admin = " [ADMIN]" if user.get("is_admin") else " [Karyawan]"
@@ -548,8 +867,8 @@ class SinXLauncher(tk.Tk):
     def _set_logged_out(self):
         self.current_user = None
         self.token = ""
-        self.logout_btn.configure(state="disabled")
-        self.login_btn.configure(state="normal")
+        self.logout_btn.set_state("disabled")
+        self.login_btn.set_state("normal")
         self.dash_user_lbl.configure(text="Akun: Belum Terhubung")
         self.dash_acc_badge.configure(text="Account ID: -")
         self.set_status("Belum Login", ok=False)
@@ -565,7 +884,8 @@ class SinXLauncher(tk.Tk):
 
         self.sv_url.set(url)
         self.log(f"Menghubungkan ke server {url} sebagai '{user}'...")
-        self.login_btn.configure(state="disabled", text="Memverifikasi...")
+        self.login_btn.set_state("disabled")
+        self.login_btn.set_text("Memverifikasi...")
 
         def _do():
             try:
@@ -575,7 +895,7 @@ class SinXLauncher(tk.Tk):
                     save_config(url, user, self.token)
                     self.after(0, lambda: self._set_logged_in(data))
                     self.after(0, lambda: self.log(f"Login sukses! Selamat datang, {data['username']}.", SUCCESS))
-                    self.after(0, lambda: self.nb.select(self.tab_dash))
+                    self.after(0, lambda: self.nav_bar.select(0))
                 else:
                     err = data.get("detail", "Username atau password salah")
                     self.after(0, lambda: self.log(f"Login gagal: {err}", DANGER))
@@ -584,7 +904,8 @@ class SinXLauncher(tk.Tk):
                 self.after(0, lambda: self.log(f"Koneksi gagal: {e}", DANGER))
                 self.after(0, lambda: messagebox.showerror("Koneksi Error", f"Tidak dapat terhubung ke {url}:\n{e}"))
             finally:
-                self.after(0, lambda: self.login_btn.configure(state="normal", text="\U0001f511  Login ke Server"))
+                self.after(0, lambda: self.login_btn.set_state("normal"))
+                self.after(0, lambda: self.login_btn.set_text("🔑  Login ke Server"))
 
         threading.Thread(target=_do, daemon=True).start()
 
@@ -599,7 +920,7 @@ class SinXLauncher(tk.Tk):
         save_config(url, self.sv_user.get(), "")
         self._set_logged_out()
         self.log("Logout berhasil.", TEXT_DIM)
-        self.nb.select(self.tab_login)
+        self.nav_bar.select(3)
 
     def _auto_login_if_token(self):
         if not self.token:
@@ -687,7 +1008,7 @@ class SinXLauncher(tk.Tk):
                     rem = sch.get("remaining_seconds", 0)
                     rem_str = f" ({rem // 3600}j {(rem % 3600) // 60}m lagi)" if rem > 0 else ""
                     slots_str = ", ".join(sch.get("slots", []))
-                    tz_str = f"{sch.get('timezone', 'Asia/Jakarta')} ({sch.get('timezone_abbr', 'WIB')}) \u2014 Jam Server: {sch.get('current_time', '')}"
+                    tz_str = f"{sch.get('timezone', 'Asia/Jakarta')} ({sch.get('timezone_abbr', 'WIB')}) — Jam Server: {sch.get('current_time', '')}"
 
                     self.after(0, lambda: self.dash_sch_next.configure(text=f"Jadwal Berikutnya: {next_slot}{rem_str}"))
                     self.after(0, lambda: self.dash_sch_slots.configure(text=f"Jam Tayang Aktif: {slots_str}"))
@@ -697,7 +1018,7 @@ class SinXLauncher(tk.Tk):
         threading.Thread(target=_do, daemon=True).start()
 
     # ─────────────────────────────────────────────────────────────
-    # On-Demand Publish & Debug Screenshot
+    # On-Demand Publish & Debug Screenshot Modals
     # ─────────────────────────────────────────────────────────────
     def get_selected_platform_key(self) -> str:
         label = self.sv_platform_name.get()
@@ -713,28 +1034,33 @@ class SinXLauncher(tk.Tk):
 
         dlg = tk.Toplevel(self)
         dlg.title("Post Sekarang (On-Demand)")
-        dlg.geometry("380x280")
-        dlg.minsize(360, 260)
-        dlg.configure(bg=CARD_BG)
+        dlg.geometry("400x290")
+        dlg.minsize(380, 270)
+        dlg.configure(bg=BG)
+        apply_windows_dark_mode(dlg)
         dlg.transient(self)
         dlg.grab_set()
 
-        tk.Label(dlg, text="\U0001f680 Publikasikan 1 Video Sekarang", font=("Segoe UI", 11, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", padx=16, pady=(16, 4))
-        tk.Label(dlg, text="Pilih platform tujuan distribusi video lo:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", padx=16, pady=(0, 10))
+        _c_border, c_box = create_modern_card(dlg, padx=16, pady=16)
+        _c_border.pack(fill="both", expand=True, padx=16, pady=16)
 
-        choices = [("ALL", "\u2b50 Semua Platform Aktif Sekaligus")] + PLATFORMS
+        tk.Label(c_box, text="🚀 Publikasikan 1 Video Sekarang", font=("Segoe UI", 11, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 2))
+        tk.Label(c_box, text="Pilih platform tujuan distribusi video Anda:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", pady=(0, 10))
+
+        choices = [("ALL", "⭐ Semua Platform Aktif Sekaligus")] + PLATFORMS
         sel_var = tk.StringVar(value="youtube")
 
-        opt_frame = tk.Frame(dlg, bg=CARD_BG)
-        opt_frame.pack(fill="both", expand=True, padx=16)
-
-        cb = ttk.Combobox(opt_frame, textvariable=sel_var, values=[c[1] for c in choices], state="readonly", font=("Segoe UI", 9))
+        cb = ttk.Combobox(c_box, textvariable=sel_var, values=[c[1] for c in choices], state="readonly", font=("Segoe UI", 9))
         cb.set("YouTube (Shorts/Studio)")
-        cb.pack(fill="x", pady=6)
+        cb.pack(fill="x", pady=(0, 8))
 
-        tk.Label(opt_frame, text="Proses download JIT, render anti-hash & watermark akan langsung berjalan!", font=("Segoe UI", 8, "italic"), bg=CARD_BG, fg=ACCENT_CYAN, wraplength=340, justify="left").pack(fill="x", pady=6)
+        tk.Label(
+            c_box,
+            text="Proses download JIT, render anti-hash & watermark akan langsung berjalan otomatis di antrian worker server.",
+            font=("Segoe UI", 8, "italic"), bg=CARD_BG, fg=ACCENT_CYAN, wraplength=330, justify="left"
+        ).pack(fill="x", pady=(0, 14))
 
-        btn_box = tk.Frame(dlg, bg=CARD_BG, padx=16, pady=12)
+        btn_box = tk.Frame(c_box, bg=CARD_BG)
         btn_box.pack(fill="x")
 
         def _do_pub():
@@ -747,32 +1073,39 @@ class SinXLauncher(tk.Tk):
             dlg.destroy()
             self._trigger_publish(target_key)
 
-        tk.Button(btn_box, text="Mulai Posting Sekarang", font=("Segoe UI", 9, "bold"), bg=ACCENT, fg="white", relief="flat", cursor="hand2", padx=14, pady=6, command=_do_pub).pack(side="left", fill="x", expand=True, padx=(0, 6))
-        tk.Button(btn_box, text="Batal", font=("Segoe UI", 9), bg=CARD_BORDER, fg=TEXT_DIM, relief="flat", cursor="hand2", padx=10, pady=6, command=dlg.destroy).pack(side="right")
+        RoundedButton(
+            btn_box, text="Mulai Posting Sekarang", command=_do_pub,
+            bg_color=ACCENT, hover_color=ACCENT_HOVER, height=34, parent_bg=CARD_BG
+        ).pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        RoundedButton(
+            btn_box, text="Batal", command=dlg.destroy,
+            bg_color="#1e293b", hover_color="#334155", fg_color=TEXT_MUTED, height=34, width=80, parent_bg=CARD_BG
+        ).pack(side="right")
 
     def _trigger_publish(self, target_key: str):
         url = normalize_url(self.sv_url.get().strip())
-        self.nb.select(self.tab_logs)
+        self.nav_bar.select(2)
 
         def _worker():
             try:
                 if target_key == "ALL":
-                    self.log("\U0001f680 Memulai publikasi On-Demand ke SEMUA target platform aktif...", ACCENT_CYAN)
+                    self.log("🚀 Memulai publikasi On-Demand ke SEMUA target platform aktif...", ACCENT_CYAN)
                     data, code = api_post(url, "/api/pipeline/publish-all", token=self.token)
                 else:
-                    self.log(f"\U0001f680 Memulai publikasi On-Demand untuk platform '{target_key}'...", ACCENT_CYAN)
+                    self.log(f"🚀 Memulai publikasi On-Demand untuk platform '{target_key}'...", ACCENT_CYAN)
                     data, code = api_post(url, f"/api/publish/{target_key}", token=self.token)
 
                 if code == 200:
                     msg = data.get("message", "Publikasi dimulai!")
-                    self.after(0, lambda: self.log(f"\u2713 {msg}", SUCCESS))
+                    self.after(0, lambda: self.log(f"✓ {msg}", SUCCESS))
                     self.after(0, self.refresh_dashboard_data)
                 else:
                     err = data.get("detail", "Gagal memicu publikasi")
-                    self.after(0, lambda: self.log(f"\u2717 Gagal: {err}", DANGER))
+                    self.after(0, lambda: self.log(f"✗ Gagal: {err}", DANGER))
                     self.after(0, lambda: messagebox.showerror("Gagal", err))
             except Exception as e:
-                self.after(0, lambda: self.log(f"\u2717 Error: {e}", DANGER))
+                self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
                 self.after(0, lambda: messagebox.showerror("Error", str(e)))
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -784,20 +1117,24 @@ class SinXLauncher(tk.Tk):
 
         dlg = tk.Toplevel(self)
         dlg.title("Cek Screenshot Debug")
-        dlg.geometry("360x220")
-        dlg.minsize(340, 200)
-        dlg.configure(bg=CARD_BG)
+        dlg.geometry("380x230")
+        dlg.minsize(360, 210)
+        dlg.configure(bg=BG)
+        apply_windows_dark_mode(dlg)
         dlg.transient(self)
         dlg.grab_set()
 
-        tk.Label(dlg, text="\U0001f4f8 Lihat Screenshot Browser Headless", font=("Segoe UI", 11, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", padx=16, pady=(16, 4))
-        tk.Label(dlg, text="Pilih platform untuk melihat tangkapan layar browser terakhir:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", padx=16, pady=(0, 10))
+        _c_border, c_box = create_modern_card(dlg, padx=16, pady=16)
+        _c_border.pack(fill="both", expand=True, padx=16, pady=16)
 
-        cb = ttk.Combobox(dlg, values=[p[1] for p in PLATFORMS], state="readonly", font=("Segoe UI", 9))
+        tk.Label(c_box, text="📸 Screenshot Browser Headless", font=("Segoe UI", 11, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 2))
+        tk.Label(c_box, text="Pilih platform untuk melihat tangkapan layar browser server:", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", pady=(0, 10))
+
+        cb = ttk.Combobox(c_box, values=[p[1] for p in PLATFORMS], state="readonly", font=("Segoe UI", 9))
         cb.set("YouTube (Shorts/Studio)")
-        cb.pack(fill="x", padx=16, pady=6)
+        cb.pack(fill="x", pady=(0, 14))
 
-        btn_box = tk.Frame(dlg, bg=CARD_BG, padx=16, pady=12)
+        btn_box = tk.Frame(c_box, bg=CARD_BG)
         btn_box.pack(fill="x")
 
         def _open():
@@ -813,11 +1150,18 @@ class SinXLauncher(tk.Tk):
             webbrowser.open(full_url)
             self.log(f"Membuka screenshot debug {target_key} di browser...", TEXT_DIM)
 
-        tk.Button(btn_box, text="Buka Screenshot di Browser", font=("Segoe UI", 9, "bold"), bg=ACCENT, fg="white", relief="flat", cursor="hand2", padx=12, pady=6, command=_open).pack(side="left", fill="x", expand=True, padx=(0, 6))
-        tk.Button(btn_box, text="Tutup", font=("Segoe UI", 9), bg=CARD_BORDER, fg=TEXT_DIM, relief="flat", cursor="hand2", padx=10, pady=6, command=dlg.destroy).pack(side="right")
+        RoundedButton(
+            btn_box, text="Buka Screenshot", command=_open,
+            bg_color=ACCENT, hover_color=ACCENT_HOVER, height=34, parent_bg=CARD_BG
+        ).pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        RoundedButton(
+            btn_box, text="Tutup", command=dlg.destroy,
+            bg_color="#1e293b", hover_color="#334155", fg_color=TEXT_MUTED, height=34, width=80, parent_bg=CARD_BG
+        ).pack(side="right")
 
     # ─────────────────────────────────────────────────────────────
-    # Cookies & Profile Upload
+    # Cookies & Profile Upload Operations
     # ─────────────────────────────────────────────────────────────
     def upload_profile_zip(self):
         if not self.token:
@@ -839,14 +1183,14 @@ class SinXLauncher(tk.Tk):
                     data, code = api_post(server_url, f"/api/upload-profile/{target_key}", token=self.token, files=files)
                 if code == 200:
                     msg = data.get("message", "Profil berhasil diunggah!")
-                    self.after(0, lambda: self.log(f"\u2713 {msg}", SUCCESS))
+                    self.after(0, lambda: self.log(f"✓ {msg}", SUCCESS))
                     self.after(0, lambda: messagebox.showinfo("Berhasil!", f"{msg}\nSesi login browser '{target_key}' aktif di server."))
                 else:
                     err = data.get("detail", "Gagal upload profil zip")
-                    self.after(0, lambda: self.log(f"\u2717 {err}", DANGER))
+                    self.after(0, lambda: self.log(f"✗ {err}", DANGER))
                     self.after(0, lambda: messagebox.showerror("Gagal", err))
             except Exception as e:
-                self.after(0, lambda: self.log(f"\u2717 Error: {e}", DANGER))
+                self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
                 self.after(0, lambda: messagebox.showerror("Error", str(e)))
         threading.Thread(target=_do, daemon=True).start()
 
@@ -871,14 +1215,14 @@ class SinXLauncher(tk.Tk):
                     data, code = api_post(server_url, f"/api/upload-cookies/{target_key}", token=self.token, files=files)
                 if code == 200:
                     msg = data.get("message", "Cookies berhasil diupload!")
-                    self.after(0, lambda: self.log(f"\u2713 {msg}", SUCCESS))
+                    self.after(0, lambda: self.log(f"✓ {msg}", SUCCESS))
                     self.after(0, lambda: messagebox.showinfo("Berhasil!", f"{msg}\nPlatform '{target_key}' siap digunakan."))
                 else:
                     err = data.get("detail", "Upload gagal")
-                    self.after(0, lambda: self.log(f"\u2717 {err}", DANGER))
+                    self.after(0, lambda: self.log(f"✗ {err}", DANGER))
                     self.after(0, lambda: messagebox.showerror("Gagal", err))
             except Exception as e:
-                self.after(0, lambda: self.log(f"\u2717 Error: {e}", DANGER))
+                self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
                 self.after(0, lambda: messagebox.showerror("Error", str(e)))
         threading.Thread(target=_do, daemon=True).start()
 
@@ -905,7 +1249,7 @@ class SinXLauncher(tk.Tk):
             if not HAS_PLAYWRIGHT:
                 self.after(0, lambda: messagebox.showinfo(
                     "Gunakan Upload Cookies / Profil ZIP",
-                    "\U0001f4a1 Solusi Paling Cepat & Aman:\n"
+                    "💡 Solusi Paling Cepat & Aman:\n"
                     "1. Buka browser Chrome/Edge biasa, login ke sosmed Anda.\n"
                     "2. Gunakan ekstensi 'Cookie-Editor' atau 'Get cookies.txt LOCALLY'.\n"
                     "3. Klik tombol 'Upload File Cookie' atau 'Upload Profil Browser (.zip)' di atas."
@@ -917,7 +1261,13 @@ class SinXLauncher(tk.Tk):
                     browser = None
                     for ch in ("msedge", "chrome", None):
                         try:
-                            browser = p.chromium.launch(channel=ch, headless=False, args=["--disable-blink-features=AutomationControlled"]) if ch else p.chromium.launch(headless=False, args=["--disable-blink-features=AutomationControlled"])
+                            browser = p.chromium.launch(
+                                channel=ch, headless=False,
+                                args=["--disable-blink-features=AutomationControlled"]
+                            ) if ch else p.chromium.launch(
+                                headless=False,
+                                args=["--disable-blink-features=AutomationControlled"]
+                            )
                             if browser:
                                 break
                         except Exception:
@@ -944,7 +1294,7 @@ class SinXLauncher(tk.Tk):
                     self.after(0, lambda: self.log("Tidak ada cookies yang berhasil diekstrak.", DANGER))
                     return
 
-                self.after(0, lambda: self.log(f"\u2713 {len(cookies)} cookies diekstrak. Mengupload ke server...", SUCCESS))
+                self.after(0, lambda: self.log(f"✓ {len(cookies)} cookies diekstrak. Mengupload ke server...", SUCCESS))
                 server_url = normalize_url(self.sv_url.get().strip())
                 tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w")
                 json.dump(cookies, tmp)
@@ -957,14 +1307,14 @@ class SinXLauncher(tk.Tk):
 
                 if code == 200:
                     msg = data.get("message", "Cookies berhasil diupload!")
-                    self.after(0, lambda: self.log(f"\u2713 {msg}", SUCCESS))
+                    self.after(0, lambda: self.log(f"✓ {msg}", SUCCESS))
                     self.after(0, lambda: messagebox.showinfo("Berhasil!", f"{msg}\nPlatform '{target_key}' siap digunakan!"))
                 else:
                     err = data.get("detail", "Upload cookies gagal")
-                    self.after(0, lambda: self.log(f"\u2717 {err}", DANGER))
+                    self.after(0, lambda: self.log(f"✗ {err}", DANGER))
                     self.after(0, lambda: messagebox.showerror("Error", err))
             except Exception as e:
-                self.after(0, lambda: self.log(f"\u2717 Error: {e}", DANGER))
+                self.after(0, lambda: self.log(f"✗ Error: {e}", DANGER))
                 self.after(0, lambda: messagebox.showerror("Gagal Membuka Browser", str(e)))
         threading.Thread(target=_do, daemon=True).start()
 
