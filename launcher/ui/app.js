@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // Sin'X Automation — Desktop Client JavaScript Application
 // ============================================================
 
@@ -6,7 +6,9 @@ let currentConfig = {
     server_url: 'https://auto.kntl.cc',
     username: '',
     token: '',
-    is_authenticated: false
+    is_authenticated: false,
+    proxy_enabled: false,
+    proxy_url: ''
 };
 
 let eventSource = null;
@@ -40,11 +42,19 @@ async function initApp() {
         const authUserInput = document.getElementById('auth-username');
         const setUrlInput = document.getElementById('setting-server-url');
         const setUserInput = document.getElementById('setting-username');
+        const proxyEnabledCheck = document.getElementById('setting-proxy-enabled');
+        const proxyUrlInput = document.getElementById('setting-proxy-url');
 
         if (authUrlInput && currentConfig.server_url) authUrlInput.value = currentConfig.server_url;
         if (authUserInput && currentConfig.username) authUserInput.value = currentConfig.username;
         if (setUrlInput && currentConfig.server_url) setUrlInput.value = currentConfig.server_url;
         if (setUserInput && currentConfig.username) setUserInput.value = currentConfig.username;
+        if (proxyEnabledCheck && currentConfig.proxy_enabled !== undefined) {
+            proxyEnabledCheck.checked = Boolean(currentConfig.proxy_enabled);
+        }
+        if (proxyUrlInput && currentConfig.proxy_url) {
+            proxyUrlInput.value = currentConfig.proxy_url;
+        }
 
         if (currentConfig.is_authenticated && currentConfig.token) {
             setAuthenticatedState(true);
@@ -446,6 +456,79 @@ async function saveSettings() {
         }
     } catch (e) {
         showToast('Error saving settings: ' + e, 'error');
+    }
+}
+
+async function saveProxySettings() {
+    const enabled = document.getElementById('setting-proxy-enabled').checked;
+    const proxyUrl = document.getElementById('setting-proxy-url').value.trim();
+
+    if (enabled && !proxyUrl) {
+        showToast('Masukkan URL proxy jika ingin mengaktifkannya!', 'error');
+        return;
+    }
+
+    try {
+        const res = await window.pywebview.api.save_proxy(enabled, proxyUrl);
+        if (res.success) {
+            currentConfig.proxy_enabled = enabled;
+            currentConfig.proxy_url = proxyUrl;
+            showToast(res.message || 'Pengaturan proxy pribadi disimpan!', 'success');
+        } else {
+            showToast(res.error || 'Gagal menyimpan proxy.', 'error');
+        }
+    } catch (e) {
+        showToast('Error save proxy: ' + e, 'error');
+    }
+}
+
+async function testProxy() {
+    const proxyUrl = document.getElementById('setting-proxy-url').value.trim();
+    const resultBox = document.getElementById('proxy-test-result');
+    const btn = document.getElementById('btn-test-proxy');
+
+    if (!proxyUrl) {
+        showToast('Masukkan URL proxy terlebih dahulu untuk diuji!', 'error');
+        return;
+    }
+
+    const origHtml = btn.innerHTML;
+    btn.innerHTML = '<span>Menguji Proxy...</span>';
+    btn.style.pointerEvents = 'none';
+    btn.style.opacity = '0.7';
+
+    resultBox.style.display = 'block';
+    resultBox.style.background = 'rgba(56, 189, 248, 0.15)';
+    resultBox.style.border = '1px solid rgba(56, 189, 248, 0.3)';
+    resultBox.style.color = '#38bdf8';
+    resultBox.innerText = 'Menghubungi layanan tes IP publik via proxy...';
+
+    try {
+        const res = await window.pywebview.api.test_proxy(proxyUrl);
+        if (res.success) {
+            resultBox.style.background = 'rgba(16, 185, 129, 0.15)';
+            resultBox.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+            resultBox.style.color = '#34d399';
+            resultBox.innerText = `✓ ${res.message}`;
+            showToast('Proxy valid & aktif!', 'success');
+        } else {
+            resultBox.style.background = 'rgba(239, 68, 68, 0.15)';
+            resultBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            resultBox.style.color = '#f87171';
+            resultBox.innerText = `✗ ${res.error}`;
+            showToast('Tes proxy gagal: ' + res.error, 'error');
+        }
+    } catch (e) {
+        resultBox.style.background = 'rgba(239, 68, 68, 0.15)';
+        resultBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+        resultBox.style.color = '#f87171';
+        resultBox.innerText = `✗ Error: ${e}`;
+        showToast('Error tes proxy: ' + e, 'error');
+    } finally {
+        btn.innerHTML = origHtml;
+        btn.style.pointerEvents = 'auto';
+        btn.style.opacity = '1';
+        lucide.createIcons();
     }
 }
 

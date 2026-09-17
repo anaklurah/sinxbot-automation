@@ -1,4 +1,4 @@
-﻿"""
+"""
 Sin'X Automation — Client Desktop Karyawan (Enterprise PyWebView Edition)
 ========================================================================
 Next-generation standalone desktop client for Sin'X Automation.
@@ -73,15 +73,61 @@ def load_config() -> dict:
         "server_url": normalize_url(raw_url),
         "username": cfg.get("app", "username", fallback=""),
         "token": cfg.get("auth", "token", fallback=""),
+        "proxy_enabled": cfg.getboolean("proxy", "enabled", fallback=False),
+        "proxy_url": cfg.get("proxy", "url", fallback=""),
     }
 
 
 def save_config(server_url: str, username: str, token: str = ""):
     cfg = configparser.ConfigParser()
-    cfg["app"] = {"server_url": normalize_url(server_url), "username": username}
-    cfg["auth"] = {"token": token}
+    if CONFIG_PATH.exists():
+        cfg.read(str(CONFIG_PATH), encoding="utf-8")
+    if "app" not in cfg:
+        cfg["app"] = {}
+    cfg["app"]["server_url"] = normalize_url(server_url)
+    cfg["app"]["username"] = username
+    if "auth" not in cfg:
+        cfg["auth"] = {}
+    cfg["auth"]["token"] = token
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         cfg.write(f)
+
+
+def save_proxy_config(enabled: bool, proxy_url: str):
+    cfg = configparser.ConfigParser()
+    if CONFIG_PATH.exists():
+        cfg.read(str(CONFIG_PATH), encoding="utf-8")
+    if "proxy" not in cfg:
+        cfg["proxy"] = {}
+    cfg["proxy"]["enabled"] = "true" if enabled else "false"
+    cfg["proxy"]["url"] = proxy_url.strip()
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        cfg.write(f)
+
+
+def format_playwright_proxy(proxy_url: str | None) -> dict | None:
+    """Format proxy URL into Playwright-compatible dictionary."""
+    if not proxy_url:
+        return None
+    try:
+        import urllib.parse
+        parsed = urllib.parse.urlsplit(proxy_url)
+        scheme = parsed.scheme or "http"
+        host = parsed.hostname
+        if not host:
+            return None
+        port = parsed.port
+        server = f"{scheme}://{host}"
+        if port:
+            server += f":{port}"
+        p_dict = {"server": server}
+        if parsed.username:
+            p_dict["username"] = urllib.parse.unquote(parsed.username)
+        if parsed.password:
+            p_dict["password"] = urllib.parse.unquote(parsed.password)
+        return p_dict
+    except Exception:
+        return {"server": proxy_url}
 
 
 def api_get(server_url: str, path: str, token: str = "", timeout: int = 15) -> tuple[dict, int]:
@@ -148,6 +194,8 @@ class LauncherApi:
             "token": token if is_auth else "",
             "is_authenticated": is_auth,
             "app_version": APP_VERSION,
+            "proxy_enabled": self._cfg.get("proxy_enabled", False),
+            "proxy_url": self._cfg.get("proxy_url", ""),
         }
 
     def login(self, server_url: str, username: str, password: str) -> dict:
@@ -186,6 +234,30 @@ class LauncherApi:
         save_config(url, self._cfg.get("username", ""), self._cfg.get("token", ""))
         self._cfg = load_config()
         return {"success": True, "server_url": url}
+
+    def save_proxy(self, enabled: bool, proxy_url: str) -> dict:
+        """Saves employee personal proxy configuration."""
+        save_proxy_config(enabled, proxy_url)
+        self._cfg = load_config()
+        return {"success": True, "message": "Pengaturan proxy pribadi berhasil disimpan!"}
+
+    def test_proxy(self, proxy_url: str) -> dict:
+        """Tests connectivity and latency to external IP echo service via specified proxy."""
+        proxy_url = proxy_url.strip()
+        if not proxy_url:
+            return {"success": False, "error": "URL proxy tidak boleh kosong."}
+
+        try:
+            proxies = {"http": proxy_url, "https": proxy_url}
+            start_t = time.time()
+            r = requests.get("https://api.ipify.org?format=json", proxies=proxies, timeout=10)
+            latency = int((time.time() - start_t) * 1000)
+            if r.status_code == 200:
+                ip = r.json().get("ip", "Terdeteksi")
+                return {"success": True, "ip": ip, "latency": latency, "message": f"Proxy aktif! IP: {ip} ({latency}ms)"}
+            return {"success": False, "error": f"Proxy merespon HTTP {r.status_code}"}
+        except Exception as e:
+            return {"success": False, "error": f"Gagal terhubung ke proxy: {str(e)}"}
 
     def get_dashboard_stats(self) -> dict:
         """Fetches status and queue statistics from the server."""
@@ -357,7 +429,15 @@ class LauncherApi:
                 if not browser:
                     return {"success": False, "error": "Tidak dapat membuka browser Microsoft Edge atau Google Chrome."}
 
-                context = browser.new_context(viewport={"width": 1280, "height": 720})
+                context_args = {"viewport": {"width": 1280, "height": 720}}
+                if self._cfg.get("proxy_enabled") and self._cfg.get("proxy_url"):
+                    p_url = self._cfg.get("proxy_url", "").strip()
+                    if p_url:
+                        pw_proxy = format_playwright_proxy(p_url)
+                        if pw_proxy:
+                            context_args["proxy"] = pw_proxy
+
+                context = browser.new_context(**context_args)
                 page = context.new_page()
                 page.goto(login_url)
 
