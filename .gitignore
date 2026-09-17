@@ -11,8 +11,9 @@ assets/profiles/*
 *.db-journal
 *.db-wal
 *.log
-downloads/
 downloads/*
+!downloads/
+!downloads/sinx-automation.exe
 
 
 # Python Cache & Virtual Environments
@@ -36,6 +37,7 @@ launcher/dist/
 *.spec
 !launcher/*.spec
 *.exe
+!downloads/sinx-automation.exe
 *.zip
 
 

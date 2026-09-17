@@ -476,9 +476,32 @@ async def register_first_user(req: RegisterRequest):
 
 @app.get("/api/admin/users")
 async def list_users_admin(current_user: dict = Depends(require_admin)):
-    """[Admin] List all users."""
+    """[Admin] List all users with live video queue statistics."""
     cfg = get_config()
     users = auth_module.list_users(cfg.DB_PATH)
+    with db_session(cfg.DB_PATH) as conn:
+        for u in users:
+            aid = u.get("account_id")
+            if aid:
+                r = conn.execute(
+                    """
+                    SELECT 
+                        COUNT(*) as total,
+                        SUM(CASE WHEN status IN ('pending', 'downloaded', 'rendered') THEN 1 ELSE 0 END) as pending,
+                        SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done,
+                        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+                    FROM videos WHERE account_id = ?
+                    """,
+                    (aid,)
+                ).fetchone()
+                u["stats"] = {
+                    "total": r[0] if r and r[0] is not None else 0,
+                    "pending": r[1] if r and r[1] is not None else 0,
+                    "done": r[2] if r and r[2] is not None else 0,
+                    "failed": r[3] if r and r[3] is not None else 0,
+                }
+            else:
+                u["stats"] = {"total": 0, "pending": 0, "done": 0, "failed": 0}
     return {"users": users}
 
 
@@ -705,31 +728,146 @@ async def get_launcher_version():
         "version": "1.3.0",
         "min_version": "1.0.0",
         "download_url": "/api/launcher/download",
-        "filename": "SinX-Launcher.exe",
-        "changelog": "v1.3.0: Dukungan multi-user 50 karyawan, worker pool throttler (anti-crash), auto-clean storage, dan proteksi anti-leak proxy."
+        "filename": "sinx-automation.exe",
+        "changelog": "v1.3.0: Enterprise Client Edition - Tampilan Claymorphism 3D, isolasi bot Telegram mandiri tiap user, proxy personal, dan worker pool throttler."
     }
 
 
 @app.get("/api/launcher/download")
 async def download_launcher_binary():
-    """Direct download endpoint for SinX-Launcher.exe."""
+    """Direct download endpoint for sinx-automation.exe."""
     candidates = [
-        PROJECT_ROOT / "launcher" / "dist" / "SinX-Launcher.exe",
+        PROJECT_ROOT / "downloads" / "sinx-automation.exe",
+        PROJECT_ROOT / "launcher" / "dist" / "sinx-automation.exe",
+        PROJECT_ROOT / "sinx-automation.exe",
         PROJECT_ROOT / "downloads" / "SinX-Launcher.exe",
+        PROJECT_ROOT / "launcher" / "dist" / "SinX-Launcher.exe",
         PROJECT_ROOT / "SinX-Launcher.exe",
     ]
     for p in candidates:
-        if p.exists() and p.is_file():
+        if p.exists() and p.is_file() and p.stat().st_size > 0:
             return FileResponse(
                 str(p),
                 media_type="application/octet-stream",
-                filename="SinX-Launcher.exe",
-                headers={"Content-Disposition": "attachment; filename=SinX-Launcher.exe"}
+                filename="sinx-automation.exe",
+                headers={"Content-Disposition": "attachment; filename=sinx-automation.exe"}
             )
     raise HTTPException(
         status_code=404,
-        detail="File binary SinX-Launcher.exe belum di-build di server. Hubungi administrator."
+        detail="File binary sinx-automation.exe belum tersedia di server. Administrator dapat mengunggah file melalui Tab Manajemen Karyawan / Admin Panel."
     )
+
+
+@app.get("/api/admin/launcher/status")
+async def get_launcher_binary_status(current_user: dict = Depends(require_admin)):
+    """Check availability, size, and last modified timestamp of desktop binary on server."""
+    candidates = [
+        PROJECT_ROOT / "downloads" / "sinx-automation.exe",
+        PROJECT_ROOT / "launcher" / "dist" / "sinx-automation.exe",
+        PROJECT_ROOT / "sinx-automation.exe",
+        PROJECT_ROOT / "downloads" / "SinX-Launcher.exe",
+    ]
+    found = None
+    for p in candidates:
+        if p.exists() and p.is_file() and p.stat().st_size > 0:
+            found = p
+            break
+
+    if found:
+        st = found.stat()
+        import datetime
+        return {
+            "available": True,
+            "filename": "sinx-automation.exe",
+            "path": str(found.relative_to(PROJECT_ROOT)),
+            "size_bytes": st.st_size,
+            "size_mb": round(st.st_size / (1024 * 1024), 2),
+            "last_modified": datetime.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+        }
+    return {
+        "available": False,
+        "filename": "sinx-automation.exe",
+        "message": "File binary belum tersedia di server. Silakan upload file sinx-automation.exe.",
+    }
+
+
+@app.post("/api/admin/launcher/upload")
+async def upload_launcher_binary_admin(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_admin),
+):
+    """Allow Super Admin to upload or replace sinx-automation.exe directly from the Web Dashboard."""
+    if not file.filename.lower().endswith(".exe"):
+        raise HTTPException(status_code=400, detail="Hanya file biner .exe yang diperbolehkan.")
+
+    downloads_dir = PROJECT_ROOT / "downloads"
+    downloads_dir.mkdir(parents=True, exist_ok=True)
+    target_path = downloads_dir / "sinx-automation.exe"
+
+    contents = await file.read()
+    if len(contents) < 1000:
+        raise HTTPException(status_code=400, detail="File terlalu kecil / korup.")
+
+    with open(target_path, "wb") as f:
+        f.write(contents)
+
+    # Also mirror to launcher/dist/ if directory exists
+    dist_dir = PROJECT_ROOT / "launcher" / "dist"
+    if dist_dir.exists():
+        try:
+            with open(dist_dir / "sinx-automation.exe", "wb") as f:
+                f.write(contents)
+        except Exception:
+            pass
+
+    size_mb = round(len(contents) / (1024 * 1024), 2)
+    logger.info(f"[Admin] Super Admin '{current_user['username']}' berhasil mengunggah binary sinx-automation.exe ({size_mb} MB)")
+    return {
+        "success": True,
+        "filename": "sinx-automation.exe",
+        "size_mb": size_mb,
+        "message": f"File sinx-automation.exe ({size_mb} MB) berhasil diunggah ke server dan siap diunduh oleh karyawan!"
+    }
+
+
+@app.get("/api/admin/database/backup")
+async def backup_database(current_user: dict = Depends(require_admin)):
+    """Allow Super Admin to download a live SQLite database backup."""
+    cfg = get_config()
+    db_path = Path(cfg.DB_PATH)
+    if not db_path.exists():
+        raise HTTPException(status_code=404, detail="Database file tidak ditemukan.")
+
+    import shutil
+    import tempfile
+    import sqlite3
+    import datetime
+
+    backup_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    backup_file.close()
+
+    with db_session(db_path) as src_conn:
+        dst_conn = sqlite3.connect(backup_file.name)
+        src_conn.backup(dst_conn)
+        dst_conn.close()
+
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    return FileResponse(
+        backup_file.name,
+        media_type="application/x-sqlite3",
+        filename=f"osap_backup_{ts}.db",
+        headers={"Content-Disposition": f"attachment; filename=osap_backup_{ts}.db"}
+    )
+
+
+@app.post("/api/admin/system/cleanup")
+async def trigger_system_cleanup(current_user: dict = Depends(require_admin)):
+    """Prune done video files, old caches, and vacuum database."""
+    cfg = get_config()
+    from osap.db.queue import prune_done_videos_and_caches
+    res = prune_done_videos_and_caches(cfg.DB_PATH)
+    return {"success": True, "message": "Pembersihan storage & temporary cache server berhasil dijalankan!", "details": res}
+
 
 
 # ─────────────────────────────────────────────

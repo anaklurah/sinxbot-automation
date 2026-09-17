@@ -1779,6 +1779,7 @@ async function loadUsersData() {
     const tbody = document.getElementById('users-table-body');
     if (!tbody) return;
     try {
+        loadLauncherBinaryStatus();
         const res = await apiFetch('/api/admin/users');
         if (!res.ok) throw new Error('Gagal memuat data user');
         const data = await res.json();
@@ -1794,6 +1795,19 @@ async function loadUsersData() {
                 ? `<span style="background: rgba(168,85,247,0.15); color: #c084fc; padding: 4px 10px; border-radius: 50px; font-size: 12px; font-weight: 700; border: 1px solid rgba(168,85,247,0.3);">Admin</span>`
                 : `<span style="background: rgba(16,185,129,0.15); color: #6ee7b7; padding: 4px 10px; border-radius: 50px; font-size: 12px; font-weight: 700; border: 1px solid rgba(16,185,129,0.3);">Karyawan</span>`;
             const dateStr = u.created_at ? u.created_at.substring(0, 19).replace('T', ' ') : '-';
+            
+            const stats = u.stats || { total: 0, pending: 0, done: 0, failed: 0 };
+            const queueBadge = `
+                <div style="font-size: 0.8rem; line-height: 1.4;">
+                    <strong style="color: #f8fafc;">${stats.total} Total</strong>
+                    <div style="color: var(--text-dim); font-size: 0.72rem;">
+                        <span style="color: #fbbf24;">${stats.pending} pending</span> &bull; 
+                        <span style="color: #34d399;">${stats.done} done</span>
+                        ${stats.failed > 0 ? ` &bull; <span style="color: #f87171;">${stats.failed} fail</span>` : ''}
+                    </div>
+                </div>
+            `;
+
             const actionBtns = `
                 <button class="btn-clay btn-clay-secondary" onclick="promptResetUserPassword(${u.id}, '${u.username}')" style="padding: 4px 10px; font-size: 12px; cursor: pointer; margin-right: 6px;" title="Ganti password user ini">🔑 Ganti Password</button>
                 ${u.username === 'admin'
@@ -1805,8 +1819,8 @@ async function loadUsersData() {
                 <tr style="border-bottom: 1px solid var(--border-color);">
                     <td style="padding: 12px 16px; color: var(--text-dim);">#${u.id}</td>
                     <td style="padding: 12px 16px; font-weight: 700; color: var(--text-primary);">${u.username}</td>
-                    <td style="padding: 12px 16px; color: var(--text-secondary);">${u.account_name || '-'}</td>
-                    <td style="padding: 12px 16px; color: var(--text-dim);">${u.account_id}</td>
+                    <td style="padding: 12px 16px; color: var(--text-secondary);">${u.account_name || '-'} (ID: ${u.account_id})</td>
+                    <td style="padding: 12px 16px;">${queueBadge}</td>
                     <td style="padding: 12px 16px;">${roleBadge}</td>
                     <td style="padding: 12px 16px; color: var(--text-dim); font-size: 13px;">${dateStr}</td>
                     <td style="padding: 12px 16px; text-align: right;">${actionBtns}</td>
@@ -1818,7 +1832,94 @@ async function loadUsersData() {
     }
     // Also load audit log table
     loadAuditLogs();
+    initLucide();
 }
+
+async function loadLauncherBinaryStatus() {
+    const statusText = document.getElementById('binary-status-text');
+    const sizeBadge = document.getElementById('binary-size-badge');
+    const metaText = document.getElementById('binary-meta-text');
+    const bubble = document.getElementById('binary-status-bubble');
+    if (!statusText) return;
+
+    try {
+        const res = await apiFetch('/api/admin/launcher/status');
+        const data = await res.json();
+        if (res.ok && data.available) {
+            statusText.innerText = 'Tersedia & Siap Download';
+            statusText.style.color = '#10b981';
+            if (sizeBadge) {
+                sizeBadge.innerText = `${data.size_mb} MB`;
+                sizeBadge.className = 'badge-clay badge-done';
+            }
+            if (metaText) {
+                metaText.innerHTML = `Lokasi: <code>${data.path}</code> &bull; Update: ${data.last_modified}`;
+            }
+            if (bubble) bubble.className = 'stat-icon-bubble stat-bubble-done';
+        } else {
+            statusText.innerText = 'Belum Ada di Server';
+            statusText.style.color = '#f59e0b';
+            if (sizeBadge) {
+                sizeBadge.innerText = '0 MB';
+                sizeBadge.className = 'badge-clay badge-secondary';
+            }
+            if (metaText) {
+                metaText.innerText = 'Klik tombol Upload .EXE di bawah untuk mengunggah sinx-automation.exe.';
+            }
+            if (bubble) bubble.className = 'stat-icon-bubble stat-bubble-pending';
+        }
+    } catch (e) {
+        if (statusText) statusText.innerText = 'Gagal cek binary';
+    }
+}
+
+async function uploadLauncherBinary(inputEl) {
+    if (!inputEl.files || !inputEl.files[0]) return;
+    const file = inputEl.files[0];
+    if (!file.name.toLowerCase().endsWith('.exe')) {
+        showToast('Hanya file .exe yang diperbolehkan!', 'error');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    showToast(`Mengunggah ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB) ke server...`, 'info', 10000);
+    try {
+        const res = await apiFetch('/api/admin/launcher/upload', {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(data.message || 'Binary berhasil diunggah ke server!', 'success');
+            loadLauncherBinaryStatus();
+        } else {
+            showToast(data.detail || 'Gagal mengunggah binary.', 'error');
+        }
+    } catch (err) {
+        showToast('Terjadi kesalahan jaringan saat upload binary: ' + err.message, 'error');
+    } finally {
+        inputEl.value = '';
+    }
+}
+
+async function adminCleanupSystem() {
+    if (!confirm('Bersihkan file cache sementara dan video selesai dari penyimpanan disk server?')) return;
+    showToast('Membersihkan penyimpanan server...', 'info');
+    try {
+        const res = await apiFetch('/api/admin/system/cleanup', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(data.message || 'Pembersihan berhasil!', 'success');
+        } else {
+            showToast(data.detail || 'Pembersihan gagal.', 'error');
+        }
+    } catch (e) {
+        showToast('Error pembersihan: ' + e, 'error');
+    }
+}
+
 
 async function loadAuditLogs() {
     const tbody = document.getElementById('audit-table-body');
