@@ -779,19 +779,15 @@ async def test_my_telegram(req: TelegramTestRequest, current_user: dict = Depend
     from osap.db.queue import get_account_settings
     cfg = get_config()
     settings = get_account_settings(current_user["account_id"], cfg.DB_PATH)
-    token = req.bot_token or settings.get("telegram_bot_token")
-    chat_id = req.chat_id or settings.get("telegram_chat_id")
+    token = (req.bot_token or settings.get("telegram_bot_token") or "").strip()
+    chat_id = str(req.chat_id or settings.get("telegram_chat_id") or "").strip()
     if not token or not chat_id:
         raise HTTPException(status_code=400, detail="Bot Token dan Chat ID wajib diisi!")
-    from osap.modules.telegram_notifier import send_telegram_notification
-    ok = await send_telegram_notification(
-        f"<b>Test Notifikasi OSAP</b>\nUser: {current_user['username']}\nStatus: Berhasil terhubung!",
-        bot_token=token,
-        chat_id=chat_id
-    )
+    from osap.modules.telegram_notifier import test_telegram_connection
+    ok, msg = test_telegram_connection(token, chat_id)
     if not ok:
-        raise HTTPException(status_code=400, detail="Gagal mengirim pesan Telegram. Cek Bot Token dan Chat ID.")
-    return {"success": True, "message": "Pesan test Telegram berhasil terkirim!"}
+        raise HTTPException(status_code=400, detail=msg)
+    return {"success": True, "message": msg}
 
 
 @app.get("/api/videos")
@@ -1234,12 +1230,19 @@ async def test_telegram_endpoint(req: TelegramTestRequest, current_user: dict = 
         with open(yaml_path, "r", encoding="utf-8") as f:
             yaml_data = yaml.safe_load(f) or {}
 
+    acc_id = current_user.get("account_id")
+    from osap.db.queue import get_account_settings
+    settings = get_account_settings(acc_id, cfg.DB_PATH) if acc_id else {}
+
     token = req.bot_token.strip() if _is_valid_new_secret(req.bot_token) else (
-        os.environ.get("TELEGRAM_BOT_TOKEN") or getattr(cfg, "TELEGRAM_BOT_TOKEN", None) or _nested_get(yaml_data, "telegram", "bot_token", default="")
+        settings.get("telegram_bot_token") or os.environ.get("TELEGRAM_BOT_TOKEN") or getattr(cfg, "TELEGRAM_BOT_TOKEN", None) or _nested_get(yaml_data, "telegram", "bot_token", default="")
     )
     chat_id = req.chat_id.strip() if (req.chat_id and str(req.chat_id).strip()) else (
-        os.environ.get("TELEGRAM_CHAT_ID") or getattr(cfg, "TELEGRAM_CHAT_ID", None) or _nested_get(yaml_data, "telegram", "chat_id", default="")
+        settings.get("telegram_chat_id") or os.environ.get("TELEGRAM_CHAT_ID") or getattr(cfg, "TELEGRAM_CHAT_ID", None) or _nested_get(yaml_data, "telegram", "chat_id", default="")
     )
+
+    if not token or not chat_id:
+        raise HTTPException(status_code=400, detail="Bot Token dan Chat ID wajib diisi!")
 
     from osap.modules.telegram_notifier import test_telegram_connection
     success, msg = await asyncio.to_thread(test_telegram_connection, token, str(chat_id))
@@ -1899,31 +1902,37 @@ async def trigger_manual_publish(target_key: str, current_user: dict = Depends(r
     }
 
 
-def _run_fetch_latest_posts_proc(db_path: str):
-    """Top-level process target to scan all active platforms for latest posts and report to Telegram."""
+def _run_fetch_latest_posts_proc(db_path: str, account_id: Optional[int] = None):
+    """Top-level process target to scan all active platforms for latest posts and report to user's Telegram."""
     import asyncio
     from osap.db.queue import list_platform_targets, get_active_account
     from osap.modules.post_fetcher import fetch_all_latest_posts
     from osap.modules.telegram_notifier import send_post_summary_to_telegram
 
     async def _do():
-        logger.info("[Manual Link Check] ðŸ” Memulai scan link postingan terakhir di seluruh platform aktif...")
-        active_acc = get_active_account(db_path)
+        logger.info("[Manual Link Check] 🔍 Memulai scan link postingan terakhir di seluruh platform aktif...")
+        acc_id = account_id
+        if acc_id is None:
+            active_acc = get_active_account(db_path)
+            acc_id = active_acc["id"] if active_acc else None
+
         all_targets = list_platform_targets(db_path)
         active_targets = [t for t in all_targets if t.get("enabled", 1) == 1]
         if not active_targets:
             logger.warning("[Manual Link Check] Tidak ada target platform yang aktif.")
             return
 
-        post_links = await fetch_all_latest_posts(active_targets, account_id=active_acc["id"])
+        post_links = await fetch_all_latest_posts(active_targets, account_id=acc_id)
         logger.info(f"[Manual Link Check] Selesai scan {len(post_links)} platform. Mengirim laporan ke Telegram...")
 
         await send_post_summary_to_telegram(
             video_title="Pengecekan Manual Link Postingan Terakhir",
             post_links=post_links,
             failed_platforms=None,
+            account_id=acc_id,
+            db_path=db_path,
         )
-        logger.info("[Manual Link Check] âœ“ Laporan berhasil dikirim ke Telegram!")
+        logger.info("[Manual Link Check] ✓ Laporan berhasil dikirim ke Telegram!")
 
     try:
         asyncio.run(_do())
@@ -1937,9 +1946,10 @@ def _run_fetch_latest_posts_proc(db_path: str):
 async def trigger_fetch_latest_posts(current_user: dict = Depends(require_auth)):
     """Trigger background check of latest post links across all enabled platforms and report to Telegram."""
     cfg = get_config()
+    acc_id = current_user.get("account_id")
     p = multiprocessing.Process(
         target=_run_fetch_latest_posts_proc,
-        args=(cfg.DB_PATH,),
+        args=(cfg.DB_PATH, acc_id),
         name="fetch_latest_posts",
         daemon=True,
     )

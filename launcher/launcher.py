@@ -269,6 +269,73 @@ class LauncherApi:
         except Exception as e:
             return {"success": False, "error": f"Gagal terhubung ke proxy: {str(e)}"}
 
+    def get_telegram_settings(self) -> dict:
+        """Fetches personal Telegram settings from server."""
+        token = self._cfg.get("token", "")
+        url = self._cfg.get("server_url", "https://auto.kntl.cc")
+        if not token:
+            return {"success": False, "error": "Belum login"}
+        try:
+            data, code = api_get(url, "/api/user/settings", token=token, timeout=10)
+            if code == 200:
+                s = data.get("settings", {})
+                return {
+                    "success": True,
+                    "enabled": bool(s.get("telegram_enabled", False)),
+                    "bot_token": s.get("telegram_bot_token", "") or "",
+                    "chat_id": str(s.get("telegram_chat_id", "") or ""),
+                }
+            return {"success": False, "error": data.get("detail", f"HTTP {code}")}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def save_telegram_settings(self, enabled: bool, bot_token: str, chat_id: str) -> dict:
+        """Saves personal Telegram settings to server."""
+        token = self._cfg.get("token", "")
+        url = self._cfg.get("server_url", "https://auto.kntl.cc")
+        if not token:
+            return {"success": False, "error": "Belum login"}
+        try:
+            data, code = api_post(
+                url,
+                "/api/user/settings",
+                token=token,
+                data={
+                    "telegram_enabled": bool(enabled),
+                    "telegram_bot_token": bot_token.strip(),
+                    "telegram_chat_id": str(chat_id).strip(),
+                },
+                timeout=10,
+            )
+            if code == 200 and data.get("success"):
+                return {"success": True, "message": "Pengaturan bot Telegram pribadi berhasil disimpan!"}
+            return {"success": False, "error": data.get("detail", data.get("message", f"HTTP {code}"))}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def test_telegram_connection(self, bot_token: str, chat_id: str) -> dict:
+        """Tests personal Telegram bot connectivity via server."""
+        token = self._cfg.get("token", "")
+        url = self._cfg.get("server_url", "https://auto.kntl.cc")
+        if not token:
+            return {"success": False, "error": "Belum login"}
+        try:
+            data, code = api_post(
+                url,
+                "/api/user/telegram/test",
+                token=token,
+                data={
+                    "bot_token": bot_token.strip(),
+                    "chat_id": str(chat_id).strip(),
+                },
+                timeout=15,
+            )
+            if code == 200 and data.get("success"):
+                return {"success": True, "message": data.get("message", "Test Telegram berhasil!")}
+            return {"success": False, "error": data.get("detail", data.get("message", f"HTTP {code}"))}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def get_dashboard_stats(self) -> dict:
         """Fetches status and queue statistics from the server."""
         url = self._cfg.get("server_url", "")

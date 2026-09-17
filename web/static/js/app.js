@@ -766,6 +766,27 @@ async function loadConfigData() {
             document.getElementById('cfg-telegram-chat-id').value = env.TELEGRAM_CHAT_ID || '';
         }
 
+        // Check if admin has personal account settings for telegram
+        try {
+            const userRes = await apiFetch('/api/user/settings');
+            const userData = await userRes.json();
+            if (userRes.ok && userData.settings) {
+                const s = userData.settings;
+                if (s.telegram_bot_token) {
+                    if (document.getElementById('cfg-telegram-enabled') && s.telegram_enabled !== undefined) {
+                        document.getElementById('cfg-telegram-enabled').value = s.telegram_enabled ? 'true' : 'false';
+                    }
+                    if (tgTokenInput) {
+                        tgTokenInput.value = s.telegram_bot_token;
+                        tgTokenInput.placeholder = '(Tersimpan) - Biarkan kosong jika tidak diubah';
+                    }
+                    if (document.getElementById('cfg-telegram-chat-id') && s.telegram_chat_id) {
+                        document.getElementById('cfg-telegram-chat-id').value = s.telegram_chat_id;
+                    }
+                }
+            }
+        } catch (e) {}
+
         // Proxy URL
         const proxyInput = document.getElementById('cfg-proxy-url');
         if (proxyInput) {
@@ -860,6 +881,19 @@ async function saveConfiguration() {
         });
         const data = await res.json();
         if (res.ok) {
+            // Also sync admin's personal account settings for telegram
+            try {
+                await apiFetch('/api/user/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        telegram_enabled: payload.telegram_enabled,
+                        telegram_bot_token: payload.telegram_bot_token,
+                        telegram_chat_id: payload.telegram_chat_id,
+                    })
+                });
+            } catch (e) {}
+
             showToast(data.message || 'Konfigurasi & jam posting berhasil disimpan!', 'success');
             loadDashboardData(true);
         } else {

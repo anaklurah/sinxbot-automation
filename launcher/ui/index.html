@@ -378,6 +378,50 @@
                     <div>&bull; <code>http://ip_proxy:port</code> (IP Whitelist tanpa user/pass)</div>
                 </div>
             </div>
+
+            <!-- Card 3: Pengaturan Bot Telegram Pribadi Karyawan -->
+            <div class="card-clay" style="margin-top: 16px;">
+                <div class="card-header-row">
+                    <div class="card-title-wrap">
+                        <i data-lucide="send"></i>
+                        <span class="card-title">Pengaturan Bot Telegram Pribadi</span>
+                    </div>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 700; cursor: pointer; color: #a5b4fc;">
+                        <input type="checkbox" id="setting-telegram-enabled" style="width: 16px; height: 16px; cursor: pointer;">
+                        <span>Aktifkan Notifikasi Telegram</span>
+                    </label>
+                </div>
+
+                <p style="font-size: 0.82rem; color: var(--text-muted, #94a3b8); margin-bottom: 14px; line-height: 1.5;">
+                    Setiap pengguna/karyawan dapat menghubungkan bot Telegram masing-masing agar laporan postingan otomatis dan URL link tayang langsung terkirim secara privat ke bot pribadi Anda.
+                </p>
+
+                <div class="form-group">
+                    <label class="form-label">TELEGRAM BOT TOKEN</label>
+                    <input type="text" id="setting-telegram-token" class="form-input" placeholder="Contoh: 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ">
+                    <span style="font-size: 0.72rem; color: var(--text-dim, #64748b); margin-top: 4px; display: block;">Dapatkan bot token gratis dari <b>@BotFather</b> di Telegram.</span>
+                </div>
+
+                <div class="form-group" style="margin-top: 12px;">
+                    <label class="form-label">TELEGRAM CHAT ID</label>
+                    <input type="text" id="setting-telegram-chat-id" class="form-input" placeholder="Contoh: 123456789 atau -1001234567890">
+                    <span style="font-size: 0.72rem; color: var(--text-dim, #64748b); margin-top: 4px; display: block;">ID akun Anda atau ID Group Telegram tujuan (cek ID Anda via <b>@userinfobot</b>).</span>
+                </div>
+
+                <!-- Test result status badge -->
+                <div id="telegram-test-result" style="display: none; padding: 10px 14px; border-radius: 12px; font-size: 0.82rem; font-weight: 600; margin-top: 12px; margin-bottom: 14px;"></div>
+
+                <div style="display: flex; gap: 12px; margin-top: 14px;">
+                    <button class="btn-clay btn-clay-blue" id="btn-test-telegram" onclick="testTelegram()" style="flex: 1;">
+                        <i data-lucide="send"></i>
+                        <span>Tes Notifikasi Bot</span>
+                    </button>
+                    <button class="btn-clay btn-clay-emerald" id="btn-save-telegram" onclick="saveTelegramSettings()" style="flex: 1;">
+                        <i data-lucide="check-circle-2"></i>
+                        <span>Simpan Bot Telegram</span>
+                    </button>
+                </div>
+            </div>
         </section>
 
     </main>

@@ -172,6 +172,7 @@ async def run_jit_video_pipeline(
         return {"success": False, "message": msg, "results": {}}
 
     vid_id = video["id"]
+    account_id = video.get("account_id") or account_id or 1
     raw_path = video.get("raw_path")
     meta_path = video.get("meta_path")
 

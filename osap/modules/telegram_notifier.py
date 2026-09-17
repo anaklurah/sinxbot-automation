@@ -124,27 +124,39 @@ async def send_post_summary_to_telegram(
     account_id: Optional[int] = None,
     db_path: Optional[str] = None,
 ) -> bool:
-    """Format and send publication summary to Telegram."""
+    """Format and send publication summary to Telegram (strictly scoped to account owner's bot)."""
     cfg = get_config()
-    bot_token = getattr(cfg, "TELEGRAM_BOT_TOKEN", None)
-    chat_id = getattr(cfg, "TELEGRAM_CHAT_ID", None)
-    enabled = getattr(cfg, "TELEGRAM_ENABLED", True)
+    db_path = db_path or getattr(cfg, "DB_PATH", None)
+    bot_token = None
+    chat_id = None
+    enabled = False
+    account_name = None
 
     if account_id is not None:
         try:
-            from osap.db.queue import get_account_settings
-            s = get_account_settings(account_id, db_path or getattr(cfg, "DB_PATH", None))
-            if s.get("telegram_enabled") is not None:
-                enabled = bool(s["telegram_enabled"])
-            if s.get("telegram_bot_token"):
-                bot_token = s["telegram_bot_token"]
-            if s.get("telegram_chat_id"):
-                chat_id = s["telegram_chat_id"]
-        except Exception:
-            pass
+            from osap.db.queue import get_account_settings, _session
+            s = get_account_settings(account_id, db_path)
+            if s:
+                enabled = bool(s.get("telegram_enabled", False))
+                bot_token = (s.get("telegram_bot_token") or "").strip()
+                chat_id = str(s.get("telegram_chat_id") or "").strip()
+
+            with _session(db_path) as conn:
+                row = conn.execute("SELECT name FROM accounts WHERE id = ?", (account_id,)).fetchone()
+                if row and row[0]:
+                    account_name = row[0]
+        except Exception as e:
+            logger.warning(f"[Telegram] Gagal membaca pengaturan Telegram akun #{account_id}: {e}")
+    else:
+        # Fallback only when running system-wide CLI where no account is specified
+        bot_token = (getattr(cfg, "TELEGRAM_BOT_TOKEN", None) or "").strip()
+        chat_id = str(getattr(cfg, "TELEGRAM_CHAT_ID", "") or "").strip()
+        enabled = bool(getattr(cfg, "TELEGRAM_ENABLED", True))
 
     if not enabled or not bot_token or not chat_id:
-        logger.debug("[Telegram] Telegram notifications disabled or credentials missing for account %s.", account_id)
+        logger.info(
+            f"[Telegram] Notifikasi Telegram dinonaktifkan atau token/chat_id belum diisi untuk akun #{account_id}. Notifikasi dilewati."
+        )
         return False
 
     now_str = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")
@@ -153,9 +165,16 @@ async def send_post_summary_to_telegram(
     lines = [
         "🚀 <b>Laporan Publikasi Konten Sinxbot</b>",
         "────────────────────────",
+    ]
+    if account_name:
+        lines.append(f"👤 <b>Pengguna / Akun:</b> <code>{html.escape(account_name)}</code>")
+    elif account_id:
+        lines.append(f"👤 <b>Akun ID:</b> <code>#{account_id}</code>")
+
+    lines.extend([
         f"🎬 <b>Judul:</b> {safe_title}",
         f"📅 <b>Waktu:</b> <code>{now_str}</code>",
-    ]
+    ])
 
     if watermark_info:
         lines.append(f"🏷️ <b>Watermark:</b> <code>{html.escape(watermark_info)}</code>")

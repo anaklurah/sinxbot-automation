@@ -94,6 +94,9 @@ function setAuthenticatedState(isAuth) {
 
         // Connect SSE logs
         startLogStream();
+
+        // Load personal Telegram settings
+        loadTelegramSettings();
     } else {
         authGate.style.display = 'flex';
         navBar.style.display = 'none';
@@ -527,6 +530,107 @@ async function testProxy() {
         resultBox.style.color = '#f87171';
         resultBox.innerText = `✗ Error: ${e}`;
         showToast('Error tes proxy: ' + e, 'error');
+    } finally {
+        btn.innerHTML = origHtml;
+        btn.style.pointerEvents = 'auto';
+        btn.style.opacity = '1';
+        lucide.createIcons();
+    }
+}
+
+async function loadTelegramSettings() {
+    try {
+        const res = await window.pywebview.api.get_telegram_settings();
+        if (res && res.success) {
+            const enabledCheck = document.getElementById('setting-telegram-enabled');
+            const tokenInput = document.getElementById('setting-telegram-token');
+            const chatIdInput = document.getElementById('setting-telegram-chat-id');
+            if (enabledCheck) enabledCheck.checked = Boolean(res.enabled);
+            if (tokenInput) tokenInput.value = res.bot_token || '';
+            if (chatIdInput) chatIdInput.value = res.chat_id || '';
+        }
+    } catch (e) {
+        console.warn('Gagal memuat pengaturan telegram:', e);
+    }
+}
+
+async function saveTelegramSettings() {
+    const enabled = document.getElementById('setting-telegram-enabled')?.checked || false;
+    const botToken = document.getElementById('setting-telegram-token')?.value?.trim() || '';
+    const chatId = document.getElementById('setting-telegram-chat-id')?.value?.trim() || '';
+
+    showToast('Menyimpan pengaturan bot Telegram pribadi...', 'info');
+    try {
+        const res = await window.pywebview.api.save_telegram_settings(enabled, botToken, chatId);
+        if (res && res.success) {
+            showToast(res.message || 'Pengaturan bot Telegram berhasil disimpan!', 'success');
+        } else {
+            showToast(res.error || 'Gagal menyimpan pengaturan bot Telegram', 'error');
+        }
+    } catch (e) {
+        showToast('Error simpan bot Telegram: ' + e, 'error');
+    }
+}
+
+async function testTelegram() {
+    const botToken = document.getElementById('setting-telegram-token')?.value?.trim() || '';
+    const chatId = document.getElementById('setting-telegram-chat-id')?.value?.trim() || '';
+    const resultBox = document.getElementById('telegram-test-result');
+    const btn = document.getElementById('btn-test-telegram');
+
+    if (!botToken || !chatId) {
+        showToast('Bot Token dan Chat ID wajib diisi untuk melakukan tes!', 'error');
+        if (resultBox) {
+            resultBox.style.display = 'block';
+            resultBox.style.background = 'rgba(239, 68, 68, 0.15)';
+            resultBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            resultBox.style.color = '#f87171';
+            resultBox.innerText = '✗ Bot Token dan Chat ID wajib diisi.';
+        }
+        return;
+    }
+
+    const origHtml = btn.innerHTML;
+    btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i><span>Menguji Bot...</span>';
+    btn.style.pointerEvents = 'none';
+    btn.style.opacity = '0.7';
+
+    if (resultBox) {
+        resultBox.style.display = 'block';
+        resultBox.style.background = 'rgba(56, 189, 248, 0.15)';
+        resultBox.style.border = '1px solid rgba(56, 189, 248, 0.3)';
+        resultBox.style.color = '#38bdf8';
+        resultBox.innerText = 'Menguji koneksi ke server Telegram API & mengirim pesan uji coba...';
+    }
+
+    try {
+        const res = await window.pywebview.api.test_telegram_connection(botToken, chatId);
+        if (res && res.success) {
+            if (resultBox) {
+                resultBox.style.background = 'rgba(16, 185, 129, 0.15)';
+                resultBox.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                resultBox.style.color = '#34d399';
+                resultBox.innerText = `✓ ${res.message}`;
+            }
+            showToast(res.message || 'Bot Telegram terhubung!', 'success');
+        } else {
+            const err = res.error || 'Gagal terhubung ke bot';
+            if (resultBox) {
+                resultBox.style.background = 'rgba(239, 68, 68, 0.15)';
+                resultBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+                resultBox.style.color = '#f87171';
+                resultBox.innerText = `✗ ${err}`;
+            }
+            showToast(err, 'error');
+        }
+    } catch (e) {
+        if (resultBox) {
+            resultBox.style.background = 'rgba(239, 68, 68, 0.15)';
+            resultBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            resultBox.style.color = '#f87171';
+            resultBox.innerText = `✗ Error: ${e}`;
+        }
+        showToast('Error tes bot Telegram: ' + e, 'error');
     } finally {
         btn.innerHTML = origHtml;
         btn.style.pointerEvents = 'auto';
