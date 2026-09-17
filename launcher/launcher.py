@@ -454,8 +454,8 @@ class SinXLauncher(tk.Tk):
             ("⚙️", "Akun & Server"),
         ]
 
-        nav_frame = tk.Frame(self, bg=BG, padx=16, pady=(10, 4))
-        nav_frame.pack(fill="x")
+        nav_frame = tk.Frame(self, bg=BG)
+        nav_frame.pack(fill="x", padx=16, pady=(10, 4))
 
         self.nav_bar = ModernSegmentedNav(nav_frame, tab_specs, on_select=self._switch_tab, bg=BG)
         self.nav_bar.pack(fill="x")
