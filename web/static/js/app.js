@@ -709,7 +709,6 @@ async function loadConfigData() {
         document.getElementById('cfg-watermark-size').value = env.WATERMARK_FONT_SIZE || yaml.watermark?.font_size || 20;
 
         // DeepSeek AI Captions (Admin Only Editing)
-        const u = getCurrentUser();
         const isAdmin = Boolean(u && u.is_admin);
         const deepseekInput = document.getElementById('cfg-deepseek-key');
         const deepseekModel = document.getElementById('cfg-deepseek-model');
