@@ -80,6 +80,19 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+
+-- Audit logs track employee activities (upload, delete, post, settings)
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER,
+    username    TEXT,
+    account_id  INTEGER,
+    action      TEXT NOT NULL,
+    details     TEXT DEFAULT '',
+    ip_address  TEXT DEFAULT '',
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC);
 """
 
 
@@ -301,3 +314,59 @@ def ensure_default_admin(db_path: str | Path, default_password: str = "admin123"
             )
         except Exception as e:
             _log.error(f"Failed to create default admin: {e}")
+
+
+def log_audit_event(
+    db_path: str | Path,
+    action: str,
+    details: str = "",
+    user_id: int | None = None,
+    username: str = "",
+    account_id: int | None = None,
+    ip_address: str = "",
+) -> None:
+    """Record an operational action to the audit_logs table."""
+    from osap.db.models import db_session
+    try:
+        with db_session(db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO audit_logs (user_id, username, account_id, action, details, ip_address)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, username, account_id, action, details, ip_address),
+            )
+    except Exception as e:
+        _log.debug("Audit log recording error: %s", e)
+
+
+def get_audit_logs(
+    db_path: str | Path,
+    limit: int = 100,
+    offset: int = 0,
+    account_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch recent audit log entries."""
+    from osap.db.models import db_session
+    with db_session(db_path) as conn:
+        if account_id is not None:
+            rows = conn.execute(
+                """
+                SELECT id, user_id, username, account_id, action, details, ip_address, created_at
+                FROM audit_logs
+                WHERE account_id = ?
+                ORDER BY id DESC LIMIT ? OFFSET ?
+                """,
+                (account_id, limit, offset),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, user_id, username, account_id, action, details, ip_address, created_at
+                FROM audit_logs
+                ORDER BY id DESC LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
+        return [dict(r) for r in rows]
+

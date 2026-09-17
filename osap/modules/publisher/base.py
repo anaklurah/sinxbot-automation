@@ -225,18 +225,19 @@ class BasePublisher(ABC):
         use_proxy = False
         pw_proxy = None
         if proxy_url:
-            if is_proxy_reachable(proxy_url, timeout=2.0):
+            if is_proxy_reachable(proxy_url, timeout=3.0):
                 pw_proxy = format_playwright_proxy(proxy_url)
                 if pw_proxy:
                     use_proxy = True
-                    self._log.info('[%s] Routing browser traffic through verified proxy: %s', self.PLATFORM_NAME, pw_proxy.get('server'))
+                    self._log.info('[%s] 🌐 Routing browser traffic through verified proxy: %s', self.PLATFORM_NAME, pw_proxy.get('server'))
                     launch_opts['proxy'] = pw_proxy
             else:
-                self._log.warning(
-                    '[%s] Configured PROXY_URL (%s) is UNREACHABLE (Connection Refused/Timeout). '
-                    'Bypassing proxy to prevent browser navigation failure!',
-                    self.PLATFORM_NAME, proxy_url
+                err_msg = (
+                    f"[{self.PLATFORM_NAME}] ❌ Proxy tidak dapat dijangkau / OFFLINE ({proxy_url}). "
+                    f"Upload DIBATALKAN demi keamanan akun untuk mencegah kebocoran IP Datacenter VPS & shadowban massal!"
                 )
+                self._log.error(err_msg)
+                raise RuntimeError(err_msg)
 
         ctx_opts = get_context_options(
             locale=getattr(cfg, 'BROWSER_LOCALE', 'en-US'),

@@ -322,4 +322,64 @@ def clean_browser_caches(profiles_dir: Path | None = None) -> int:
     return total_freed
 
 
-__all__ = ["CleanupWorker", "clean_browser_caches"]
+def prune_done_videos_and_caches(db_path: str | Path | None = None) -> dict[str, Any]:
+    """Automated scheduled cleanup function.
+    
+    1. Prunes raw and rendered video files for all completed ('done') videos.
+    2. Sweeps and removes browser junk caches (IndexedDB blobs, shaders, etc.).
+    3. Cleans orphaned temporary files (.tmp, .part) in downloads directory.
+    """
+    cfg = get_config()
+    db = db_path or cfg.DB_PATH
+    worker = CleanupWorker(db_path=str(db), dry_run=False)
+    
+    # Run video file deletion
+    done_videos = worker._fetch_done_videos()
+    cleaned_count = 0
+    total_raw_freed = 0
+    total_rendered_freed = 0
+
+    for v in done_videos:
+        try:
+            r_free, ren_free = worker._cleanup_video(v)
+            total_raw_freed += r_free
+            total_rendered_freed += ren_free
+            cleaned_count += 1
+        except Exception as e:
+            logger.debug("Prune error on video %s: %e", v.get("id"), e)
+
+    # Clean browser caches
+    cache_freed = clean_browser_caches()
+
+    # Clean orphaned tmp / part files in downloads directory
+    orphaned_freed = 0
+    dl_dir = Path(cfg.DOWNLOAD_DIR)
+    if dl_dir.exists():
+        for f in dl_dir.glob("*.part"):
+            try:
+                orphaned_freed += f.stat().st_size
+                f.unlink(missing_ok=True)
+            except Exception:
+                pass
+        for f in dl_dir.glob("*.tmp"):
+            try:
+                orphaned_freed += f.stat().st_size
+                f.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    total_bytes = total_raw_freed + total_rendered_freed + cache_freed + orphaned_freed
+    logger.info(
+        "[Cleanup Engine] Prune summary: %d video(s) pruned. Total space reclaimed: %s (Raw: %s, Render: %s, Cache: %s, Temp: %s)",
+        cleaned_count, _fmt_bytes(total_bytes), _fmt_bytes(total_raw_freed),
+        _fmt_bytes(total_rendered_freed), _fmt_bytes(cache_freed), _fmt_bytes(orphaned_freed)
+    )
+    return {
+        "videos_cleaned": cleaned_count,
+        "bytes_freed": total_bytes,
+        "formatted_freed": _fmt_bytes(total_bytes)
+    }
+
+
+__all__ = ["CleanupWorker", "clean_browser_caches", "prune_done_videos_and_caches"]
+

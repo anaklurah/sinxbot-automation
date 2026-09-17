@@ -14,7 +14,7 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <!-- 3D Claymorphism Stylesheet -->
-    <link rel="stylesheet" href="/static/css/clay.css?v=1.2.0">
+    <link rel="stylesheet" href="/static/css/clay.css?v=1.3.0">
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 
     <!-- Fast-path Auth Check (Prevents login modal flashing on reload if already logged in) -->
@@ -183,6 +183,12 @@
                 <span>Reset Stuck</span>
             </button>
 
+            <!-- Download Desktop Launcher Button -->
+            <a href="/api/launcher/download" class="btn-clay btn-clay-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" title="Unduh Sin'X Client Desktop Launcher (.exe) untuk Windows">
+                <i data-lucide="download"></i>
+                <span>Download Launcher (.exe)</span>
+            </a>
+
             <!-- User Badge & Logout -->
             <div id="user-badge" style="display: none; align-items: center; gap: 10px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); border-radius: 50px; padding: 8px 16px;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #a78bfa; flex-shrink: 0;">
@@ -322,6 +328,16 @@
                     <div class="hardware-info">
                         <h4>Active Channels</h4>
                         <p id="sys-platforms-count" style="color: var(--accent-emerald);">8 Platforms Active</p>
+                    </div>
+                </div>
+
+                <div class="hardware-item">
+                    <div class="hardware-icon-box">
+                        <i data-lucide="layers"></i>
+                    </div>
+                    <div class="hardware-info">
+                        <h4>Worker Pool (50 Tim)</h4>
+                        <p id="sys-worker-pool" style="color: var(--accent-cyan);">0/3 Aktif</p>
                     </div>
                 </div>
             </div>
@@ -1024,6 +1040,46 @@
                     </table>
                 </div>
             </div>
+
+            <!-- Audit Log Operasional Karyawan -->
+            <div class="clay-card" style="margin-top: 24px;">
+                <div class="clay-card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <h2 class="clay-card-title" style="display: flex; align-items: center; gap: 8px;">
+                            <i data-lucide="shield-check" style="color: var(--accent-cyan);"></i>
+                            <span>Audit Log Operasional Tim</span>
+                        </h2>
+                        <p class="clay-card-subtitle">
+                            Histori aktivitas 50 karyawan (input URL, posting video, dan perubahan konfigurasi akun).
+                        </p>
+                    </div>
+                    <div>
+                        <button class="btn-clay btn-clay-secondary btn-clay-sm" onclick="loadAuditLogs()" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <i data-lucide="refresh-cw"></i>
+                            <span>Refresh Audit</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="clay-table-responsive" style="margin-top: 15px; overflow-x: auto;">
+                    <table class="clay-table" style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="border-bottom: 2px solid var(--border-color); text-align: left;">
+                                <th style="padding: 12px 16px;">Waktu</th>
+                                <th style="padding: 12px 16px;">Karyawan</th>
+                                <th style="padding: 12px 16px;">Account ID</th>
+                                <th style="padding: 12px 16px;">Aktivitas</th>
+                                <th style="padding: 12px 16px;">Rincian</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-table-body">
+                            <tr>
+                                <td colspan="5" style="text-align: center; color: var(--text-dim); padding: 25px;">Klik Refresh Audit untuk memuat log terbaru...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </section>
 
         <!-- Modal: Tambah Karyawan Baru -->
@@ -1068,7 +1124,7 @@
 
 
     <!-- Application JavaScript Logic -->
-    <script src="/static/js/toast.js?v=1.2.1"></script>
-    <script src="/static/js/app.js?v=1.2.1"></script>
+    <script src="/static/js/toast.js?v=1.3.0"></script>
+    <script src="/static/js/app.js?v=1.3.0"></script>
 </body>
 </html>

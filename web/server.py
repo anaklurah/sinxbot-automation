@@ -86,7 +86,14 @@ def require_admin(request: Request) -> dict:
 
 
 # Public endpoints that don't need authentication
-_PUBLIC_PATHS = frozenset({"/", "/api/auth/login", "/api/auth/register-first"})
+_PUBLIC_PATHS = frozenset({
+    "/",
+    "/api/auth/login",
+    "/api/auth/register-first",
+    "/api/launcher/version",
+    "/api/launcher/download",
+    "/api/pipeline/queue-status",
+})
 _PUBLIC_PREFIXES = ("/static/",)
 
 
@@ -214,15 +221,66 @@ class SchedulerManager:
 scheduler_mgr = SchedulerManager()
 
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────────────────────────────
+# Enterprise Publish Queue & Worker Concurrency Throttler
+# ─────────────────────────────────────────────────────────────
+MAX_CONCURRENT_PUBLISH_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", "3"))
+
+class PublishQueueManager:
+    """Controls and throttles concurrent on-demand publishing jobs across 50+ employees."""
+    def __init__(self, max_concurrent: int = 3):
+        self.max_concurrent = max_concurrent
+        self._active_jobs: list[dict[str, Any]] = []
+
+    def _cleanup_dead(self):
+        self._active_jobs = [
+            j for j in self._active_jobs
+            if j["process"] is not None and j["process"].is_alive()
+        ]
+
+    def get_status(self) -> dict[str, Any]:
+        self._cleanup_dead()
+        return {
+            "active_count": len(self._active_jobs),
+            "max_concurrent": self.max_concurrent,
+            "available_slots": max(0, self.max_concurrent - len(self._active_jobs)),
+            "jobs": [
+                {
+                    "job_name": j["name"],
+                    "username": j.get("username", "system"),
+                    "account_id": j.get("account_id"),
+                    "started_at": j.get("started_at"),
+                }
+                for j in self._active_jobs
+            ]
+        }
+
+    def can_start(self) -> bool:
+        self._cleanup_dead()
+        return len(self._active_jobs) < self.max_concurrent
+
+    def register(self, process: multiprocessing.Process, name: str, username: str = "", account_id: int | None = None):
+        self._cleanup_dead()
+        self._active_jobs.append({
+            "process": process,
+            "name": name,
+            "username": username,
+            "account_id": account_id,
+            "started_at": datetime.datetime.now().strftime("%H:%M:%S")
+        })
+
+publish_queue_mgr = PublishQueueManager(max_concurrent=MAX_CONCURRENT_PUBLISH_JOBS)
+
+
+# ─────────────────────────────────────────────────────────────
 # FastAPI Lifespan & App Setup
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cfg = get_config()
     cfg.ensure_dirs()
     init_db(cfg.DB_PATH)
-    # Initialize auth schema (users + sessions tables)
+    # Initialize auth schema (users + sessions + audit_logs tables)
     auth_module.init_auth_schema(cfg.DB_PATH)
     # Ensure at least one admin user exists so dashboard is never locked out
     auth_module.ensure_default_admin(cfg.DB_PATH)
@@ -233,9 +291,27 @@ async def lifespan(app: FastAPI):
             logger.info(f"Auto-recovered {recovered} stuck job(s) on startup.")
     except Exception as exc:
         logger.debug(f"Reset stuck jobs note: {exc}")
+
+    # Periodic background storage cleanup task (runs every 6 hours)
+    cleanup_running = True
+    async def _periodic_storage_cleanup():
+        while cleanup_running:
+            try:
+                await asyncio.sleep(6 * 3600)
+                from osap.modules.cleanup import prune_done_videos_and_caches
+                prune_done_videos_and_caches(cfg.DB_PATH)
+            except asyncio.CancelledError:
+                break
+            except Exception as pe:
+                logger.debug(f"Periodic cleanup note: {pe}")
+
+    cleanup_task = asyncio.create_task(_periodic_storage_cleanup())
+
     logger.info("OSAP Web Dashboard API starting up...")
     yield
     logger.info("OSAP Web Dashboard API shutting down...")
+    cleanup_running = False
+    cleanup_task.cancel()
     pipeline_mgr.stop_pipeline()
     scheduler_mgr.stop_scheduler()
     # Unblock any active SSE log subscribers so uvicorn shuts down cleanly
@@ -595,6 +671,7 @@ async def get_dashboard_status(current_user: dict = Depends(require_auth)):
         "hardware": hw_info,
         "pipeline_active": is_pipeline_active,
         "workers": workers_status,
+        "queue_pool": publish_queue_mgr.get_status(),
         "enabled_platforms": cfg.enabled_platforms,
         "scheduler": scheduler_info,
         "current_user": {
@@ -603,6 +680,72 @@ async def get_dashboard_status(current_user: dict = Depends(require_auth)):
             "is_admin": bool(current_user.get("is_admin", False)),
         },
     }
+
+
+# ─────────────────────────────────────────────
+# Enterprise Pipeline Queue Status & Throttler Info
+# ─────────────────────────────────────────────
+
+@app.get("/api/pipeline/queue-status")
+async def get_pipeline_queue_status():
+    """Returns active job count, available slots, and pool status."""
+    return publish_queue_mgr.get_status()
+
+
+# ─────────────────────────────────────────────
+# Desktop Launcher Auto-Update & Download API
+# ─────────────────────────────────────────────
+
+@app.get("/api/launcher/version")
+async def get_launcher_version():
+    """Returns latest desktop client version and update metadata."""
+    return {
+        "version": "1.3.0",
+        "min_version": "1.0.0",
+        "download_url": "/api/launcher/download",
+        "filename": "SinX-Launcher.exe",
+        "changelog": "v1.3.0: Dukungan multi-user 50 karyawan, worker pool throttler (anti-crash), auto-clean storage, dan proteksi anti-leak proxy."
+    }
+
+
+@app.get("/api/launcher/download")
+async def download_launcher_binary():
+    """Direct download endpoint for SinX-Launcher.exe."""
+    candidates = [
+        PROJECT_ROOT / "launcher" / "dist" / "SinX-Launcher.exe",
+        PROJECT_ROOT / "downloads" / "SinX-Launcher.exe",
+        PROJECT_ROOT / "SinX-Launcher.exe",
+    ]
+    for p in candidates:
+        if p.exists() and p.is_file():
+            return FileResponse(
+                str(p),
+                media_type="application/octet-stream",
+                filename="SinX-Launcher.exe",
+                headers={"Content-Disposition": "attachment; filename=SinX-Launcher.exe"}
+            )
+    raise HTTPException(
+        status_code=404,
+        detail="File binary SinX-Launcher.exe belum di-build di server. Hubungi administrator."
+    )
+
+
+# ─────────────────────────────────────────────
+# Enterprise Admin Audit Logs API
+# ─────────────────────────────────────────────
+
+@app.get("/api/admin/audit-logs")
+async def list_audit_logs(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    account_id: Optional[int] = Query(None),
+    current_user: dict = Depends(require_admin),
+):
+    """Retrieve system-wide operational audit logs (Admin only)."""
+    cfg = get_config()
+    logs = auth_module.get_audit_logs(cfg.DB_PATH, limit=limit, offset=offset, account_id=account_id)
+    return {"success": True, "logs": logs, "count": len(logs)}
+
 
 
 # ─────────────────────────────────────────────
@@ -725,18 +868,47 @@ async def list_videos(
 
 @app.post("/api/ingest")
 async def ingest_urls(req: IngestRequest, current_user: dict = Depends(require_auth)):
-    """Parse and add raw URLs into queue (auto-assigned to current user's account)."""
+    """Parse and add raw URLs into queue (auto-assigned to current user's account with fair-usage quota)."""
     cfg = get_config()
     raw_lines = req.urls.replace(",", "\n").splitlines()
     cleaned_urls = [line.strip() for line in raw_lines if line.strip() and not line.strip().startswith("#")]
 
     if not cleaned_urls:
-        raise HTTPException(status_code=400, detail="No valid URLs provided")
+        raise HTTPException(status_code=400, detail="Tidak ada URL valid yang dimasukkan.")
 
-    # Always assign to current user's account_id (ignore any account_id in request body)
+    # 1. Batch limit (max 50 URLs per ingest batch)
+    if len(cleaned_urls) > 50:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maksimal 50 link per sekali input (Anda memasukkan {len(cleaned_urls)} link) demi menjaga performa antrean."
+        )
+
     effective_account_id = current_user["account_id"]
+
+    # 2. Fair-usage quota: max 150 pending videos per employee account
+    if not current_user.get("is_admin"):
+        from osap.db.queue import get_pending_count
+        pending_now = get_pending_count(cfg.DB_PATH, account_id=effective_account_id)
+        if pending_now + len(cleaned_urls) > 150:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Batas kuota antrean tercapai! Akun Anda memiliki {pending_now} video menunggu (maksimal 150 per akun). "
+                    f"Silakan tunggu postingan selesai sebelum menambahkan link baru."
+                )
+            )
+
     added, skipped = add_urls_batch(cleaned_urls, db_path=cfg.DB_PATH, account_id=effective_account_id)
-    logger.info(f"Ingested via Web Dashboard: {added} added, {skipped} skipped/duplicate into Gudang Konten (account_id={effective_account_id})")
+    logger.info(f"Ingested via Web Dashboard: {added} added, {skipped} skipped into Gudang Konten (account_id={effective_account_id}, user={current_user.get('username')})")
+
+    auth_module.log_audit_event(
+        cfg.DB_PATH,
+        action="INGEST_URLS",
+        details=f"Input {len(cleaned_urls)} URL (Ditambahkan: {added}, Duplikat/Lewat: {skipped})",
+        user_id=current_user.get("id"),
+        username=current_user.get("username", ""),
+        account_id=effective_account_id,
+    )
 
     return {
         "success": True,
@@ -1614,6 +1786,17 @@ async def trigger_publish_all(current_user: dict = Depends(require_auth)):
     cfg = get_config()
     acc_id = None if current_user.get("is_admin") else current_user["account_id"]
 
+    # 1. Throttler check: prevent RAM crash from too many concurrent Playwright/FFmpeg processes
+    if not publish_queue_mgr.can_start():
+        q_stat = publish_queue_mgr.get_status()
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Kapasitas server penuh ({q_stat['active_count']}/{q_stat['max_concurrent']} proses aktif). "
+                f"Harap tunggu 1-2 menit sebelum memulai posting lagi demi menjaga kestabilan memori server!"
+            )
+        )
+
     # Check video availability for this account (or all if admin)
     with db_session(cfg.DB_PATH) as conn:
         if acc_id is not None:
@@ -1637,6 +1820,15 @@ async def trigger_publish_all(current_user: dict = Depends(require_auth)):
         daemon=True,
     )
     p.start()
+    publish_queue_mgr.register(p, name="Publish All", username=current_user.get("username", ""), account_id=acc_id)
+    auth_module.log_audit_event(
+        cfg.DB_PATH,
+        action="PUBLISH_ALL",
+        details=f"Triggered 1-video distribution to all active platforms",
+        user_id=current_user.get("id"),
+        username=current_user.get("username", ""),
+        account_id=acc_id,
+    )
 
     return {
         "success": True,
@@ -1653,6 +1845,17 @@ async def trigger_manual_publish(target_key: str, current_user: dict = Depends(r
     target = get_platform_target(target_key, cfg.DB_PATH)
     target_name = target["name"] if target else target_key
     acc_id = None if current_user.get("is_admin") else current_user["account_id"]
+
+    # 1. Throttler check: prevent RAM crash
+    if not publish_queue_mgr.can_start():
+        q_stat = publish_queue_mgr.get_status()
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Kapasitas server penuh ({q_stat['active_count']}/{q_stat['max_concurrent']} proses aktif). "
+                f"Harap tunggu 1-2 menit sebelum memulai posting lagi demi menjaga kestabilan memori server!"
+            )
+        )
 
     with db_session(cfg.DB_PATH) as conn:
         if acc_id is not None:
@@ -1676,6 +1879,15 @@ async def trigger_manual_publish(target_key: str, current_user: dict = Depends(r
         daemon=True
     )
     p.start()
+    publish_queue_mgr.register(p, name=f"Publish {target_name}", username=current_user.get("username", ""), account_id=acc_id)
+    auth_module.log_audit_event(
+        cfg.DB_PATH,
+        action="PUBLISH_SINGLE",
+        details=f"Triggered on-demand post for {target_name} ({target_key})",
+        user_id=current_user.get("id"),
+        username=current_user.get("username", ""),
+        account_id=acc_id,
+    )
 
     msg = f"On-Demand Post dimulai untuk '{target_name}'. Memproses JIT dan upload... Pantau prosesnya di Live Logs!"
     logger.info(msg)

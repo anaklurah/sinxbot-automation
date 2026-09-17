@@ -29,6 +29,8 @@ try:
 except Exception:
     HAS_PLAYWRIGHT = False
 
+APP_VERSION = "1.3.0"
+
 # ─────────────────────────────────────────────────────────────
 # Theme Colors (Modern Slate & Clay Aesthetic)
 # ─────────────────────────────────────────────────────────────
@@ -141,6 +143,7 @@ class SinXLauncher(tk.Tk):
         self._build_notebook()
         self._start_log_consumer()
         self._auto_login_if_token()
+        self.after(1500, lambda: self.check_for_updates(manual=False))
 
     def _set_app_icon(self):
         try:
@@ -201,7 +204,7 @@ class SinXLauncher(tk.Tk):
         left_box.pack(side="left")
 
         tk.Label(left_box, text="\u26a1 SIN'X AUTOMATION", font=("Segoe UI", 14, "bold"), bg=HEADER_BG, fg=TEXT).pack(anchor="w")
-        tk.Label(left_box, text="Multi-Platform Cloud Publishing \u2022 Client Karyawan", font=("Segoe UI", 8), bg=HEADER_BG, fg=TEXT_DIM).pack(anchor="w")
+        tk.Label(left_box, text=f"Multi-Platform Cloud Publishing \u2022 Client Karyawan v{APP_VERSION}", font=("Segoe UI", 8), bg=HEADER_BG, fg=TEXT_DIM).pack(anchor="w")
 
         # Right status badge pill
         self.right_pill = tk.Frame(hdr, bg=CARD_BG, bd=1, relief="solid", padx=10, pady=4)
@@ -468,7 +471,20 @@ class SinXLauncher(tk.Tk):
         self.sv_new_pw = tk.StringVar()
         tk.Entry(pw_card, textvariable=self.sv_new_pw, show="*", font=("Segoe UI", 9), bg=INPUT_BG, fg=TEXT, relief="solid", bd=1).pack(fill="x", pady=(1, 8))
 
-        tk.Button(pw_card, text="\U0001f512  Simpan Password Baru", font=("Segoe UI", 9, "bold"), bg=CARD_BORDER, fg=TEXT, activebackground="#3b4b63", activeforeground=TEXT, relief="flat", cursor="hand2", pady=6, command=self.change_password).pack(fill="x")
+        tk.Button(pw_card, text="🔒  Simpan Password Baru", font=("Segoe UI", 9, "bold"), bg=CARD_BORDER, fg=TEXT, activebackground="#3b4b63", activeforeground=TEXT, relief="flat", cursor="hand2", pady=6, command=self.change_password).pack(fill="x")
+
+        # Update & App Info Card
+        upd_card = tk.Frame(outer, bg=CARD_BG, bd=1, relief="solid", padx=14, pady=12)
+        upd_card.pack(fill="x", pady=(10, 0))
+
+        tk.Label(upd_card, text=f"🚀 Versi Aplikasi & Pembaruan (v{APP_VERSION})", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 4))
+        tk.Label(upd_card, text="Client Karyawan Sin'X Automation • Auto-Update Terintegrasi", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w", pady=(0, 8))
+
+        upd_btn_box = tk.Frame(upd_card, bg=CARD_BG)
+        upd_btn_box.pack(fill="x")
+
+        tk.Button(upd_btn_box, text="🔄  Periksa Update Server", font=("Segoe UI", 9, "bold"), bg=ACCENT, fg="white", activebackground=ACCENT_HOVER, activeforeground="white", relief="flat", cursor="hand2", padx=12, pady=6, command=lambda: self.check_for_updates(manual=True)).pack(side="left", fill="x", expand=True, padx=(0, 6))
+        tk.Button(upd_btn_box, text="⬇️  Unduh Exe Terbaru", font=("Segoe UI", 9), bg=CARD_BORDER, fg=TEXT_DIM, activebackground="#3b4b63", activeforeground=TEXT, relief="flat", cursor="hand2", padx=12, pady=6, command=self.download_latest_exe).pack(side="right")
 
     # ─────────────────────────────────────────────────────────────
     # Logging & Console Feed
@@ -985,6 +1001,67 @@ class SinXLauncher(tk.Tk):
                 except Exception:
                     time.sleep(4)
         threading.Thread(target=_stream, daemon=True).start()
+
+    # ─────────────────────────────────────────────────────────────
+    # Auto-Update & Client Distribution
+    # ─────────────────────────────────────────────────────────────
+    def check_for_updates(self, manual: bool = False):
+        url = normalize_url(self.sv_url.get().strip())
+        if not url:
+            if manual:
+                messagebox.showwarning("Update", "Isi Server URL terlebih dahulu.")
+            return
+
+        def _check():
+            try:
+                data, code = api_get(url, "/api/launcher/version")
+                if code == 200 and data.get("version"):
+                    remote_ver = str(data["version"]).strip()
+                    current_ver = APP_VERSION.strip()
+
+                    def _parse_v(v_str):
+                        clean = v_str.lstrip("vV")
+                        return [int(x) for x in clean.split(".") if x.isdigit()]
+
+                    is_newer = False
+                    try:
+                        is_newer = _parse_v(remote_ver) > _parse_v(current_ver)
+                    except Exception:
+                        is_newer = (remote_ver != current_ver)
+
+                    if is_newer:
+                        chg = data.get("changelog", "Pembaruan stabilitas sistem dan fitur baru.")
+                        msg = (
+                            f"Update Baru Sin'X Launcher Tersedia!\n\n"
+                            f"Versi Anda saat ini : v{current_ver}\n"
+                            f"Versi terbaru server : v{remote_ver}\n\n"
+                            f"Catatan Pembaruan:\n{chg}\n\n"
+                            f"Apakah Anda ingin membuka link unduhan untuk memperbarui sekarang?"
+                        )
+                        def _prompt():
+                            if messagebox.askyesno("Update Sin'X Launcher", msg):
+                                dl_path = data.get("download_url") or "/api/launcher/download"
+                                full_dl = dl_path if dl_path.startswith("http") else f"{url}{dl_path}"
+                                webbrowser.open(full_dl)
+                        self.after(0, _prompt)
+                    else:
+                        if manual:
+                            self.after(0, lambda: messagebox.showinfo("Update", f"Aplikasi Sin'X Launcher sudah versi terbaru (v{current_ver})!"))
+                else:
+                    if manual:
+                        self.after(0, lambda: messagebox.showwarning("Update", f"Tidak dapat mengambil info versi dari server (HTTP {code})."))
+            except Exception as e:
+                if manual:
+                    self.after(0, lambda: messagebox.showerror("Error Update", f"Gagal menghubungi server untuk cek update:\n{e}"))
+
+        threading.Thread(target=_check, daemon=True).start()
+
+    def download_latest_exe(self):
+        url = normalize_url(self.sv_url.get().strip())
+        if not url:
+            messagebox.showwarning("Download", "Isi Server URL terlebih dahulu.")
+            return
+        webbrowser.open(f"{url}/api/launcher/download")
 
 
 if __name__ == "__main__":

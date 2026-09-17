@@ -141,30 +141,67 @@ async def run_scheduler(db_path: Optional[str] = None, slots: Optional[List[str]
                 remaining_secs = (target_dt - now).total_seconds()
 
             # Time reached!
-            logger.info(f"[Scheduler] ⏰ Prime-time slot {slot_str} reached! Initiating automated post...")
+            logger.info(f"[Scheduler] ⏰ Prime-time slot {slot_str} reached! Initiating multi-account automated posting...")
             
-            from osap.db.queue import get_active_account, list_platform_targets
-            active_acc = get_active_account(db_path)
+            import random
+            from osap.db.models import db_session
+            from osap.db.queue import list_platform_targets
+            from osap.modules.cleanup import prune_done_videos_and_caches
+
             active_targets = [t for t in list_platform_targets(db_path) if t.get("enabled", 1) == 1]
             if not active_targets:
                 logger.warning("[Scheduler] No active platform targets in database. Skipping this prime-time slot.")
             else:
-                target_names = [t.get("name") or t.get("target_key") for t in active_targets]
-                logger.info(
-                    f"[Scheduler] 🚀 Running scheduled JIT 1-video post across {len(active_targets)} active target(s) "
-                    f"({', '.join(target_names)})..."
-                )
-                res = await run_jit_video_pipeline(
-                    target_platforms=None,  # Dynamically pull all enabled targets from DB
-                    account_id=None,        # Claim any available pending video across all accounts
-                    db_path=db_path,
-                    auto_cleanup=True,
-                    send_telegram=True,
-                )
-                if res.get("success"):
-                    logger.info(f"[Scheduler] ✓ Successfully executed scheduled post for slot {slot_str}: {res.get('message')}")
+                # Find all accounts that currently have pending videos
+                accounts_with_pending: list[int | None] = []
+                with db_session(db_path) as conn:
+                    rows = conn.execute(
+                        "SELECT DISTINCT account_id FROM videos WHERE status IN ('pending', 'downloaded', 'rendered') ORDER BY account_id"
+                    ).fetchall()
+                    accounts_with_pending = [r[0] for r in rows]
+
+                if not accounts_with_pending:
+                    logger.info("[Scheduler] Tidak ada video pending di seluruh akun. Slot dilewati.")
                 else:
-                    logger.warning(f"[Scheduler] ⚠️ Scheduled post for slot {slot_str} finished with issues: {res.get('message')}")
+                    logger.info(
+                        f"[Scheduler] 🚀 Ditemukan {len(accounts_with_pending)} akun memiliki video pending. "
+                        f"Menjalankan posting bertahap dengan random jitter..."
+                    )
+                    success_count = 0
+                    for idx, acc_id in enumerate(accounts_with_pending, 1):
+                        acc_label = f"Akun #{acc_id}" if acc_id else "Default Akun"
+                        logger.info(f"[Scheduler] [{idx}/{len(accounts_with_pending)}] Memproses {acc_label}...")
+                        try:
+                            res = await run_jit_video_pipeline(
+                                target_platforms=None,
+                                account_id=acc_id,
+                                db_path=db_path,
+                                auto_cleanup=True,
+                                send_telegram=True,
+                            )
+                            if res.get("success"):
+                                success_count += 1
+                                logger.info(f"[Scheduler] ✓ {acc_label} berhasil diposting: {res.get('message')}")
+                            else:
+                                logger.warning(f"[Scheduler] ⚠️ {acc_label}: {res.get('message')}")
+                        except Exception as acc_err:
+                            logger.error(f"[Scheduler] Error pada {acc_label}: {acc_err}")
+
+                        # Random jitter delay between accounts (10s to 35s) to avoid slamming server & platforms
+                        if idx < len(accounts_with_pending):
+                            jitter_sec = random.uniform(10.0, 35.0)
+                            logger.info(f"[Scheduler] ⏳ Jeda anti-collision antar akun: {jitter_sec:.1f} detik...")
+                            await asyncio.sleep(jitter_sec)
+
+                    logger.info(
+                        f"[Scheduler] Selesai slot {slot_str}: {success_count}/{len(accounts_with_pending)} akun berhasil diposting."
+                    )
+
+            # Auto-prune old done files and caches after slot completion
+            try:
+                prune_done_videos_and_caches(db_path)
+            except Exception as pe:
+                logger.debug(f"[Scheduler] Post-slot prune note: {pe}")
 
             # Sleep 70 seconds past the target minute to avoid double trigger
             await asyncio.sleep(70)

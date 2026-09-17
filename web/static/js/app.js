@@ -374,6 +374,14 @@ async function loadDashboardData(silent = false) {
         const enabledCount = (data.enabled_platforms || []).length;
         document.getElementById('sys-platforms-count').innerText = `${enabledCount} Platforms Active`;
 
+        // Worker Pool Throttler Status
+        const qp = data.queue_pool;
+        const elPool = document.getElementById('sys-worker-pool');
+        if (elPool && qp) {
+            elPool.innerText = `${qp.active_count}/${qp.max_concurrent} Aktif (${qp.available_slots} Slot Tersedia)`;
+            elPool.style.color = qp.active_count >= qp.max_concurrent ? 'var(--accent-rose)' : 'var(--accent-cyan)';
+        }
+
         // Pipeline & Scheduler State
         isPipelineActive = !!data.pipeline_active;
         updatePipelineStatusUI(isPipelineActive, data.scheduler);
@@ -1759,6 +1767,37 @@ async function loadUsersData() {
         }).join('');
     } catch (err) {
         tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--accent-rose); padding: 30px;">Error: ${err.message}</td></tr>`;
+    }
+    // Also load audit log table
+    loadAuditLogs();
+}
+
+async function loadAuditLogs() {
+    const tbody = document.getElementById('audit-table-body');
+    if (!tbody) return;
+    try {
+        const res = await apiFetch('/api/admin/audit-logs?limit=40');
+        if (!res.ok) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--accent-rose); padding: 20px;">Gagal memuat audit log.</td></tr>';
+            return;
+        }
+        const data = await res.json();
+        const logs = data.logs || [];
+        if (!logs.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-dim); padding: 20px;">Belum ada riwayat aktivitas tim yang tercatat.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = logs.map(l => `
+            <tr style="border-bottom: 1px solid var(--border-color);">
+                <td style="padding: 10px 16px; font-size: 0.8rem; color: var(--text-dim);">${l.created_at || '-'}</td>
+                <td style="padding: 10px 16px; font-weight: 600; font-size: 0.85rem;">${l.username || '-'}</td>
+                <td style="padding: 10px 16px; font-size: 0.8rem; color: var(--text-dim);">#${l.account_id || '-'}</td>
+                <td style="padding: 10px 16px;"><span class="badge-clay badge-secondary" style="font-size: 0.72rem; padding: 3px 8px;">${l.action}</span></td>
+                <td style="padding: 10px 16px; font-size: 0.8rem; color: var(--text-muted);">${l.details || '-'}</td>
+            </tr>
+        `).join('');
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--accent-rose); padding: 20px;">Error: ${err.message}</td></tr>`;
     }
 }
 
