@@ -3,6 +3,7 @@ Sin'X Automation — Client Desktop Karyawan (Modern Enterprise UI)
 =================================================================
 Desktop client for Sin'X Automation (OmniShorts Auto-Publisher).
 Features modern Windows 11 rounded corners, native dark title bar,
+auth gate (login first to unlock features), navbar logout button,
 sleek segmented pill navigation, rounded action buttons, and elevated cards.
 """
 
@@ -338,7 +339,7 @@ class NotebookAdapter:
             self.launcher.nav_bar.select(1)
         elif target_tab == self.launcher.tab_logs:
             self.launcher.nav_bar.select(2)
-        elif target_tab == self.launcher.tab_login:
+        elif target_tab in (self.launcher.tab_settings, getattr(self.launcher, "tab_login", None)):
             self.launcher.nav_bar.select(3)
 
 
@@ -349,8 +350,8 @@ class SinXLauncher(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Sin'X Automation — Desktop Client")
-        self.geometry("900x710")
-        self.minsize(860, 600)
+        self.geometry("900x720")
+        self.minsize(860, 620)
         self.configure(bg=BG)
 
         # Apply native Windows 11 rounded corners & dark title bar
@@ -370,8 +371,14 @@ class SinXLauncher(tk.Tk):
 
         self.nb = NotebookAdapter(self)
         self._start_log_consumer()
-        self._auto_login_if_token()
-        self.after(1500, lambda: self.check_for_updates(manual=False))
+
+        # Check authentication on startup
+        if self.token:
+            self._auto_login_if_token()
+        else:
+            self._set_logged_out()
+
+        self.after(2000, lambda: self.check_for_updates(manual=False))
 
     def _set_app_icon(self):
         try:
@@ -434,54 +441,151 @@ class SinXLauncher(tk.Tk):
             font=("Segoe UI", 8), bg=HEADER_BG, fg=TEXT_DIM
         ).pack(anchor="w", pady=(1, 0))
 
-        # Right status badge pill
-        pill_border = tk.Frame(hdr, bg=CARD_BORDER, padx=1, pady=1)
-        pill_border.pack(side="right")
+        # Right container for status badge & navbar logout button
+        right_container = tk.Frame(hdr, bg=HEADER_BG)
+        right_container.pack(side="right")
+
+        # Status badge pill
+        pill_border = tk.Frame(right_container, bg=CARD_BORDER, padx=1, pady=1)
+        pill_border.pack(side="left")
         self.right_pill = tk.Frame(pill_border, bg=CARD_BG, padx=12, pady=5)
         self.right_pill.pack()
 
         self.status_dot = tk.Label(self.right_pill, text="●", font=("Segoe UI", 11), bg=CARD_BG, fg=DANGER)
         self.status_dot.pack(side="left", padx=(0, 6))
 
-        self.status_lbl = tk.Label(self.right_pill, text="Offline / Belum Login", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT_DIM)
+        self.status_lbl = tk.Label(self.right_pill, text="Belum Login", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT_DIM)
         self.status_lbl.pack(side="left")
+
+        # Logout button in navbar (visible only when logged in)
+        self.btn_nav_logout = RoundedButton(
+            right_container,
+            text="🚪 Logout",
+            command=self.confirm_logout,
+            bg_color="#dc2626",
+            hover_color="#b91c1c",
+            active_color="#991b1b",
+            fg_color="#ffffff",
+            radius=8,
+            height=30,
+            width=85,
+            font=("Segoe UI", 8, "bold"),
+            parent_bg=HEADER_BG
+        )
+        # Initially not packed until user logs in
 
     def _build_tabs(self):
         tab_specs = [
             ("📊", "Dashboard"),
             ("🍪", "Cookies & Profil"),
             ("📜", "Live Logs"),
-            ("⚙️", "Akun & Server"),
+            ("⚙️", "Pengaturan"),
         ]
 
-        nav_frame = tk.Frame(self, bg=BG)
-        nav_frame.pack(fill="x", padx=16, pady=(10, 4))
-
-        self.nav_bar = ModernSegmentedNav(nav_frame, tab_specs, on_select=self._switch_tab, bg=BG)
+        # Top nav frame (hidden until user logs in)
+        self.nav_frame = tk.Frame(self, bg=BG)
+        self.nav_bar = ModernSegmentedNav(self.nav_frame, tab_specs, on_select=self._switch_tab, bg=BG)
         self.nav_bar.pack(fill="x")
 
         # Pages container
         self.page_container = tk.Frame(self, bg=BG)
         self.page_container.pack(fill="both", expand=True, padx=16, pady=(6, 12))
 
+        # 1. Login Gate View (shown when logged out)
+        self.view_auth = tk.Frame(self.page_container, bg=BG)
+        self._build_auth_view()
+
+        # 2. Authenticated Feature Pages (unlocked after login)
         self.tab_dash = tk.Frame(self.page_container, bg=BG)
         self.tab_cookies = tk.Frame(self.page_container, bg=BG)
         self.tab_logs = tk.Frame(self.page_container, bg=BG)
-        self.tab_login = tk.Frame(self.page_container, bg=BG)
+        self.tab_settings = tk.Frame(self.page_container, bg=BG)
+        self.tab_login = self.tab_settings  # alias for backward compatibility
 
-        self.pages = [self.tab_dash, self.tab_cookies, self.tab_logs, self.tab_login]
+        self.pages = [self.tab_dash, self.tab_cookies, self.tab_logs, self.tab_settings]
 
         self._build_dashboard_tab()
         self._build_cookies_tab()
         self._build_logs_tab()
-        self._build_login_tab()
-
-        self._switch_tab(0)
+        self._build_settings_tab()
 
     def _switch_tab(self, idx: int):
+        if not self.current_user:
+            self._show_auth_gate()
+            return
+        self.view_auth.pack_forget()
         for p in self.pages:
             p.pack_forget()
         self.pages[idx].pack(fill="both", expand=True)
+
+    def _show_auth_gate(self):
+        self.nav_frame.pack_forget()
+        for p in self.pages:
+            p.pack_forget()
+        self.btn_nav_logout.pack_forget()
+        self.view_auth.pack(fill="both", expand=True)
+
+    # ─────────────────────────────────────────────────────────────
+    # Auth Gate: Dedicated Login View
+    # ─────────────────────────────────────────────────────────────
+    def _build_auth_view(self):
+        f = self.view_auth
+
+        center_box = tk.Frame(f, bg=BG)
+        center_box.pack(expand=True, padx=20, pady=20)
+
+        _card_border, card = create_modern_card(center_box, padx=28, pady=24)
+        _card_border.pack(fill="x", padx=10, pady=10)
+
+        # Header with branding
+        hdr_row = tk.Frame(card, bg=CARD_BG)
+        hdr_row.pack(fill="x", pady=(0, 4))
+        tk.Label(hdr_row, text="🔐", font=("Segoe UI", 16), bg=CARD_BG).pack(side="left", padx=(0, 8))
+        tk.Label(hdr_row, text="Portal Login Karyawan", font=("Segoe UI", 14, "bold"), bg=CARD_BG, fg=TEXT).pack(side="left")
+
+        tk.Label(
+            card,
+            text="Silakan masuk dengan akun Anda untuk membuka seluruh fitur otomasi.",
+            font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM
+        ).pack(anchor="w", pady=(0, 16))
+
+        # 1. Server URL
+        tk.Label(card, text="URL Server Sin'X Automation:", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
+        self.sv_url = tk.StringVar(value=self.cfg.get("server_url", "https://auto.kntl.cc"))
+        _u_wrap, _u_entry = create_modern_entry(card, textvariable=self.sv_url)
+        _u_wrap.pack(fill="x", pady=(3, 10))
+
+        # 2. Username
+        tk.Label(card, text="Username Karyawan:", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
+        self.sv_user = tk.StringVar(value=self.cfg.get("username", ""))
+        _usr_wrap, _usr_entry = create_modern_entry(card, textvariable=self.sv_user)
+        _usr_wrap.pack(fill="x", pady=(3, 10))
+
+        # 3. Password
+        tk.Label(card, text="Password Akun:", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
+        self.sv_pass = tk.StringVar()
+        _pw_wrap, _pw_entry = create_modern_entry(card, textvariable=self.sv_pass, show="*")
+        _pw_wrap.pack(fill="x", pady=(3, 16))
+
+        # Enter triggers login
+        _pw_entry.bind("<Return>", lambda _e: self.do_login())
+        _usr_entry.bind("<Return>", lambda _e: self.do_login())
+
+        # Action button
+        self.login_btn = RoundedButton(
+            card,
+            text="🔑  Masuk ke Akun Karyawan",
+            command=self.do_login,
+            bg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
+            height=38,
+            font=("Segoe UI", 10, "bold"),
+            parent_bg=CARD_BG
+        )
+        self.login_btn.pack(fill="x", pady=(0, 10))
+
+        self.auth_msg_lbl = tk.Label(card, text="", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM)
+        self.auth_msg_lbl.pack()
 
     # ─────────────────────────────────────────────────────────────
     # Tab 1: Dashboard
@@ -720,49 +824,25 @@ class SinXLauncher(tk.Tk):
         self.log_box.pack(fill="both", expand=True)
 
     # ─────────────────────────────────────────────────────────────
-    # Tab 4: Akun & Server
+    # Tab 4: Pengaturan & Akun (Settings)
     # ─────────────────────────────────────────────────────────────
-    def _build_login_tab(self):
-        f = self.tab_login
+    def _build_settings_tab(self):
+        f = self.tab_settings
 
-        # Server Card
-        _srv_border, srv_card = create_modern_card(f, padx=16, pady=12)
-        _srv_border.pack(fill="x", pady=(0, 10))
+        # Account Info Card
+        _info_border, info_card = create_modern_card(f, padx=16, pady=12)
+        _info_border.pack(fill="x", pady=(0, 10))
 
-        tk.Label(srv_card, text="🌐 URL Server Dedicated Sin'X Automation", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
-        self.sv_url = tk.StringVar(value=self.cfg["server_url"])
-        _u_wrap, _u_entry = create_modern_entry(srv_card, textvariable=self.sv_url)
-        _u_wrap.pack(fill="x", pady=(4, 2))
-        tk.Label(srv_card, text="Format: https://auto.kntl.cc atau http://ip-vps:8085", font=("Segoe UI", 8, "italic"), bg=CARD_BG, fg=TEXT_DIM).pack(anchor="w")
+        tk.Label(info_card, text="👤 Profil Akun & Server", font=("Segoe UI", 10, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w", pady=(0, 4))
+        self.settings_user_lbl = tk.Label(info_card, text="User: Belum Login", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=ACCENT_CYAN)
+        self.settings_user_lbl.pack(anchor="w")
+        self.settings_server_lbl = tk.Label(info_card, text=f"URL Server: {self.cfg['server_url']}", font=("Segoe UI", 8), bg=CARD_BG, fg=TEXT_DIM)
+        self.settings_server_lbl.pack(anchor="w", pady=(1, 6))
 
-        # Credentials Card
-        _c_border, c_card = create_modern_card(f, padx=16, pady=12)
-        _c_border.pack(fill="x", pady=(0, 10))
-
-        tk.Label(c_card, text="Username Karyawan:", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
-        self.sv_user = tk.StringVar(value=self.cfg["username"])
-        _usr_wrap, _usr_entry = create_modern_entry(c_card, textvariable=self.sv_user)
-        _usr_wrap.pack(fill="x", pady=(2, 8))
-
-        tk.Label(c_card, text="Password Akun:", font=("Segoe UI", 9, "bold"), bg=CARD_BG, fg=TEXT).pack(anchor="w")
-        self.sv_pass = tk.StringVar()
-        _pw_wrap, _pw_entry = create_modern_entry(c_card, textvariable=self.sv_pass, show="*")
-        _pw_wrap.pack(fill="x", pady=(2, 10))
-
-        btn_box = tk.Frame(c_card, bg=CARD_BG)
-        btn_box.pack(fill="x")
-
-        self.login_btn = RoundedButton(
-            btn_box, text="🔑  Login ke Server", command=self.do_login,
-            bg_color=ACCENT, hover_color=ACCENT_HOVER, height=36, parent_bg=CARD_BG
-        )
-        self.login_btn.pack(side="left", fill="x", expand=True, padx=(0, 8))
-
-        self.logout_btn = RoundedButton(
-            btn_box, text="Keluar / Logout", command=self.do_logout,
-            bg_color="#1e293b", hover_color="#334155", fg_color=TEXT_DIM, state="disabled", height=36, width=130, parent_bg=CARD_BG
-        )
-        self.logout_btn.pack(side="right")
+        RoundedButton(
+            info_card, text="🌐  Buka Web Dashboard di Browser", command=self.open_dashboard,
+            bg_color="#1e293b", hover_color="#334155", fg_color=TEXT_MUTED, height=32, parent_bg=CARD_BG
+        ).pack(fill="x")
 
         # Change Password Card
         _pw_card_border, pw_card = create_modern_card(f, padx=16, pady=12)
@@ -861,43 +941,57 @@ class SinXLauncher(tk.Tk):
     # ─────────────────────────────────────────────────────────────
     def set_status(self, text: str, ok: bool = False):
         self.status_dot.configure(fg=SUCCESS if ok else DANGER)
-        self.status_lbl.configure(fg=SUCCESS if ok else TEXT_DIM, text=text)
+        self.status_lbl.configure(fg=TEXT if ok else TEXT_DIM, text=text)
 
     def _set_logged_in(self, user: dict):
         self.current_user = user
-        self.logout_btn.set_state("normal")
-        self.login_btn.set_state("disabled")
         name = user.get("username", "?")
         acc = user.get("account_id", "?")
         admin = " [ADMIN]" if user.get("is_admin") else " [Karyawan]"
 
+        # Hide login gate and unlock navigation bar & pages
+        self.view_auth.pack_forget()
+        self.nav_frame.pack(fill="x", padx=16, pady=(10, 4), before=self.page_container)
+        self.btn_nav_logout.pack(side="left", padx=(10, 0))
+
+        # Update indicators
         self.dash_user_lbl.configure(text=f"Akun: {name}{admin}")
         self.dash_acc_badge.configure(text=f"Account ID: #{acc}")
-        self.set_status(f"Connected: {name}", ok=True)
+        self.settings_user_lbl.configure(text=f"User: {name}{admin} (Account #{acc})")
+        self.settings_server_lbl.configure(text=f"URL Server: {self.cfg['server_url']}")
+        self.set_status(f"{name}{admin}", ok=True)
 
+        # Land on Dashboard
+        self.nav_bar.select(0)
         self.refresh_dashboard_data()
         self._start_sse_stream()
 
     def _set_logged_out(self):
         self.current_user = None
         self.token = ""
-        self.logout_btn.set_state("disabled")
-        self.login_btn.set_state("normal")
+        self.sse_active = False
+
+        # Lock tabs and display login gate
+        self._show_auth_gate()
+
         self.dash_user_lbl.configure(text="Akun: Belum Terhubung")
         self.dash_acc_badge.configure(text="Account ID: -")
         self.set_status("Belum Login", ok=False)
-        self.sse_active = False
+
+        if hasattr(self, "login_btn"):
+            self.login_btn.set_state("normal")
+            self.login_btn.set_text("🔑  Masuk ke Akun Karyawan")
 
     def do_login(self):
         url = normalize_url(self.sv_url.get().strip())
         user = self.sv_user.get().strip()
         pw = self.sv_pass.get()
         if not url or not user or not pw:
-            messagebox.showerror("Error", "Server URL, username, dan password wajib diisi.")
+            self.auth_msg_lbl.configure(text="Server URL, username, dan password wajib diisi.", fg=DANGER)
             return
 
         self.sv_url.set(url)
-        self.log(f"Menghubungkan ke server {url} sebagai '{user}'...")
+        self.auth_msg_lbl.configure(text=f"Menghubungkan ke server {url}...", fg=ACCENT_CYAN)
         self.login_btn.set_state("disabled")
         self.login_btn.set_text("Memverifikasi...")
 
@@ -909,19 +1003,24 @@ class SinXLauncher(tk.Tk):
                     save_config(url, user, self.token)
                     self.after(0, lambda: self._set_logged_in(data))
                     self.after(0, lambda: self.log(f"Login sukses! Selamat datang, {data['username']}.", SUCCESS))
-                    self.after(0, lambda: self.nav_bar.select(0))
+                    self.after(0, lambda: self.auth_msg_lbl.configure(text=""))
                 else:
                     err = data.get("detail", "Username atau password salah")
-                    self.after(0, lambda: self.log(f"Login gagal: {err}", DANGER))
+                    self.after(0, lambda: self.auth_msg_lbl.configure(text=f"✗ {err}", fg=DANGER))
                     self.after(0, lambda: messagebox.showerror("Gagal Login", err))
             except Exception as e:
-                self.after(0, lambda: self.log(f"Koneksi gagal: {e}", DANGER))
-                self.after(0, lambda: messagebox.showerror("Koneksi Error", f"Tidak dapat terhubung ke {url}:\n{e}"))
+                err_msg = f"Tidak dapat terhubung ke {url}: {e}"
+                self.after(0, lambda: self.auth_msg_lbl.configure(text="✗ Koneksi server gagal. Periksa URL.", fg=DANGER))
+                self.after(0, lambda: messagebox.showerror("Koneksi Error", err_msg))
             finally:
                 self.after(0, lambda: self.login_btn.set_state("normal"))
-                self.after(0, lambda: self.login_btn.set_text("🔑  Login ke Server"))
+                self.after(0, lambda: self.login_btn.set_text("🔑  Masuk ke Akun Karyawan"))
 
         threading.Thread(target=_do, daemon=True).start()
+
+    def confirm_logout(self):
+        if messagebox.askyesno("Konfirmasi Logout", "Apakah Anda yakin ingin keluar dari akun ini?"):
+            self.do_logout()
 
     def do_logout(self):
         url = normalize_url(self.sv_url.get().strip())
@@ -934,7 +1033,6 @@ class SinXLauncher(tk.Tk):
         save_config(url, self.sv_user.get(), "")
         self._set_logged_out()
         self.log("Logout berhasil.", TEXT_DIM)
-        self.nav_bar.select(3)
 
     def _auto_login_if_token(self):
         if not self.token:
@@ -942,7 +1040,7 @@ class SinXLauncher(tk.Tk):
         url = normalize_url(self.cfg.get("server_url", ""))
         if not url:
             return
-        self.log("Memverifikasi sesi tersimpan di server...")
+        self.auth_msg_lbl.configure(text="Memverifikasi sesi login tersimpan...", fg=ACCENT_CYAN)
         def _do():
             try:
                 data, code = api_get(url, "/api/auth/me", self.token)
@@ -952,9 +1050,11 @@ class SinXLauncher(tk.Tk):
                     self.after(0, lambda: self.log(f"Sesi aktif: {data['username']}", SUCCESS))
                 else:
                     self.token = ""
-                    self.after(0, lambda: self.log("Sesi kadaluarsa, silakan login ulang.", TEXT_DIM))
+                    self.after(0, self._set_logged_out)
+                    self.after(0, lambda: self.auth_msg_lbl.configure(text="Sesi login telah berakhir. Silakan login kembali.", fg=WARNING))
             except Exception:
-                self.after(0, lambda: self.log("Server tidak dapat dijangkau saat startup.", DANGER))
+                self.after(0, self._set_logged_out)
+                self.after(0, lambda: self.auth_msg_lbl.configure(text="Server belum terjangkau. Silakan login manual.", fg=DANGER))
         threading.Thread(target=_do, daemon=True).start()
 
     def change_password(self):
