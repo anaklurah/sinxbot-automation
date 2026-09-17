@@ -4,15 +4,6 @@ Sin'X Automation — Client Desktop Karyawan (Enterprise PyWebView Edition)
 Next-generation standalone desktop client for Sin'X Automation.
 Renders 100% identical Claymorphism 3D theme, Lucide icons, and responsive layout
 as the Web Dashboard using Microsoft Edge Chromium WebView2 engine.
-
-Features:
-- Enterprise Auth Gate (all features locked until authenticated)
-- Top navbar Logout button
-- Segmented pill navigation (Dashboard, Cookies & Profil, Live Logs, Pengaturan)
-- Realtime SSE Server Logs & auto-clearing
-- Windows native file dialogs for Cookie & ZIP uploads
-- Playwright local browser session extractor
-- Automatic client update checker & one-click EXE download
 """
 
 from __future__ import annotations
@@ -122,31 +113,34 @@ def api_post(server_url: str, path: str, data: dict = None, token: str = "", fil
 
 
 class LauncherApi:
-    """Python bridge exposed to JavaScript inside WebView2 via window.pywebview.api."""
+    """
+    Python bridge exposed to JavaScript inside WebView2 via window.pywebview.api.
+    NOTE: All internal fields MUST begin with an underscore ('_') so pywebview's
+    get_functions() does not recursively introspect them.
+    """
 
     def __init__(self):
-        self.window: webview.Window | None = None
-        self.cfg = load_config()
+        self._window: webview.Window | None = None
+        self._cfg = load_config()
 
     def set_window(self, window: webview.Window):
-        self.window = window
+        self._window = window
 
     def get_initial_state(self) -> dict:
         """Returns the saved server configuration and checks token validity."""
-        self.cfg = load_config()
-        server_url = self.cfg.get("server_url", "https://auto.kntl.cc")
-        username = self.cfg.get("username", "")
-        token = self.cfg.get("token", "")
+        self._cfg = load_config()
+        server_url = self._cfg.get("server_url", "https://auto.kntl.cc")
+        username = self._cfg.get("username", "")
+        token = self._cfg.get("token", "")
 
         is_auth = False
         if server_url and token:
             try:
-                data, code = api_get(server_url, "/api/status", token=token, timeout=5)
+                data, code = api_get(server_url, "/api/status", token=token, timeout=3)
                 if code == 200:
                     is_auth = True
             except Exception:
-                # Jika offline atau server belum siap, tetap biarkan token jika ada
-                is_auth = bool(token)
+                is_auth = False
 
         return {
             "server_url": server_url,
@@ -170,7 +164,7 @@ class LauncherApi:
                 token = data.get("token") or data.get("access_token", "")
                 if token:
                     save_config(server_url, username, token)
-                    self.cfg = load_config()
+                    self._cfg = load_config()
                     return {"success": True, "token": token, "message": "Login berhasil!"}
                 else:
                     return {"success": False, "error": "Server tidak mengembalikan token autentikasi."}
@@ -182,21 +176,21 @@ class LauncherApi:
 
     def logout(self) -> dict:
         """Clears local session token."""
-        save_config(self.cfg.get("server_url", "https://auto.kntl.cc"), self.cfg.get("username", ""), "")
-        self.cfg = load_config()
+        save_config(self._cfg.get("server_url", "https://auto.kntl.cc"), self._cfg.get("username", ""), "")
+        self._cfg = load_config()
         return {"success": True}
 
     def save_server_url(self, server_url: str) -> dict:
         """Saves updated server URL."""
         url = normalize_url(server_url)
-        save_config(url, self.cfg.get("username", ""), self.cfg.get("token", ""))
-        self.cfg = load_config()
+        save_config(url, self._cfg.get("username", ""), self._cfg.get("token", ""))
+        self._cfg = load_config()
         return {"success": True, "server_url": url}
 
     def get_dashboard_stats(self) -> dict:
         """Fetches status and queue statistics from the server."""
-        url = self.cfg.get("server_url", "")
-        token = self.cfg.get("token", "")
+        url = self._cfg.get("server_url", "")
+        token = self._cfg.get("token", "")
         if not url or not token:
             return {"error": "Sesi tidak aktif"}
         try:
@@ -209,8 +203,8 @@ class LauncherApi:
 
     def trigger_publish(self, target_key: str) -> dict:
         """Triggers on-demand video publication."""
-        url = self.cfg.get("server_url", "")
-        token = self.cfg.get("token", "")
+        url = self._cfg.get("server_url", "")
+        token = self._cfg.get("token", "")
         if not url or not token:
             return {"success": False, "error": "Silakan login terlebih dahulu."}
 
@@ -229,8 +223,8 @@ class LauncherApi:
 
     def open_debug_screenshot(self, platform: str) -> dict:
         """Opens server browser debug screenshot in default web browser."""
-        url = self.cfg.get("server_url", "")
-        token = self.cfg.get("token", "")
+        url = self._cfg.get("server_url", "")
+        token = self._cfg.get("token", "")
         if not url or not token:
             return {"success": False, "error": "Silakan login terlebih dahulu."}
 
@@ -240,8 +234,8 @@ class LauncherApi:
 
     def clear_logs(self) -> dict:
         """Truncates server log file and broadcasts clear event."""
-        url = self.cfg.get("server_url", "")
-        token = self.cfg.get("token", "")
+        url = self._cfg.get("server_url", "")
+        token = self._cfg.get("token", "")
         if not url or not token:
             return {"success": False, "error": "Silakan login terlebih dahulu."}
 
@@ -255,17 +249,17 @@ class LauncherApi:
 
     def pick_and_upload_cookie(self, platform: str, target_key: str) -> dict:
         """Opens Windows file picker for cookie file (.json / .txt) and uploads to server."""
-        if not self.window:
+        if not self._window:
             return {"success": False, "error": "Window tidak tersedia"}
 
-        url = self.cfg.get("server_url", "")
-        token = self.cfg.get("token", "")
+        url = self._cfg.get("server_url", "")
+        token = self._cfg.get("token", "")
         if not url or not token:
             return {"success": False, "error": "Silakan login terlebih dahulu."}
 
         target = target_key.strip() or platform.strip() or "youtube"
 
-        result = self.window.create_file_dialog(
+        result = self._window.create_file_dialog(
             webview.OPEN_DIALOG,
             file_types=('Cookie Files (*.json;*.txt)', 'All files (*.*)')
         )
@@ -287,17 +281,17 @@ class LauncherApi:
 
     def pick_and_upload_zip(self, platform: str, target_key: str) -> dict:
         """Opens Windows file picker for profile archive (.zip) and uploads to server."""
-        if not self.window:
+        if not self._window:
             return {"success": False, "error": "Window tidak tersedia"}
 
-        url = self.cfg.get("server_url", "")
-        token = self.cfg.get("token", "")
+        url = self._cfg.get("server_url", "")
+        token = self._cfg.get("token", "")
         if not url or not token:
             return {"success": False, "error": "Silakan login terlebih dahulu."}
 
         target = target_key.strip() or platform.strip() or "youtube"
 
-        result = self.window.create_file_dialog(
+        result = self._window.create_file_dialog(
             webview.OPEN_DIALOG,
             file_types=('ZIP Archives (*.zip)', 'All files (*.*)')
         )
@@ -319,8 +313,8 @@ class LauncherApi:
 
     def launch_local_browser(self, platform: str, target_key: str) -> dict:
         """Launches local Chrome/Edge browser for interactive login, then captures cookies."""
-        url = self.cfg.get("server_url", "")
-        token = self.cfg.get("token", "")
+        url = self._cfg.get("server_url", "")
+        token = self._cfg.get("token", "")
         if not url or not token:
             return {"success": False, "error": "Silakan login terlebih dahulu."}
 
@@ -396,7 +390,7 @@ class LauncherApi:
 
     def check_updates(self, manual: bool = False) -> dict:
         """Checks for newer version on the server."""
-        url = self.cfg.get("server_url", "")
+        url = self._cfg.get("server_url", "")
         if not url:
             return {"has_update": False, "error": "Server URL kosong"}
 
@@ -427,7 +421,7 @@ class LauncherApi:
 
     def download_latest_exe(self) -> dict:
         """Opens download URL in external browser."""
-        url = self.cfg.get("server_url", "")
+        url = self._cfg.get("server_url", "")
         if url:
             webbrowser.open(f"{url}/api/launcher/download")
         return {"success": True}
@@ -453,7 +447,6 @@ def main():
         width=980,
         height=720,
         min_size=(880, 620),
-        background_color="#0c1017",
         text_select=True
     )
     api.set_window(window)
