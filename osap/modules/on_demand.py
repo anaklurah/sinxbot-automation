@@ -249,6 +249,19 @@ async def run_jit_video_pipeline(
         wm_text = target.get("watermark_text") or ""
         wm_enabled = bool(target.get("watermark_enabled", 1))
 
+        # If publishing on behalf of an employee account, prioritize their personal watermark
+        if account_id and account_id > 1:
+            try:
+                from osap.db.queue import get_account_settings
+                acc_settings = get_account_settings(account_id, db_path)
+                emp_wm = acc_settings.get("watermark_text")
+                if emp_wm is not None and emp_wm.strip():
+                    wm_text = emp_wm.strip()
+                if "watermark_enabled" in acc_settings:
+                    wm_enabled = bool(acc_settings.get("watermark_enabled", 1))
+            except Exception as e:
+                logger.warning(f"[JIT Pipeline] Could not load personal watermark for account #{account_id}: {e}")
+
         if i > 0:
             base_delay = cfg.DELAY_BETWEEN_PLATFORMS if cfg.DELAY_BETWEEN_PLATFORMS > 0 else 25
             jitter_val = random.randint(-5, 12)

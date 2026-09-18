@@ -248,15 +248,17 @@ class BasePublisher(ABC):
         root_profiles_dir = Path(getattr(cfg, 'PROFILES_DIR', './assets/profiles'))
         profile_key = getattr(self, "target_key", None) or self.PLATFORM_NAME
         use_camoufox = getattr(cfg, 'BROWSER_ENGINE', 'camoufox') == 'camoufox'
+        is_employee = bool(self.account_id and self.account_id > 1)
 
         if self.AUTH_METHOD == 'persistent':
             profile_dir = profiles_dir / profile_key
-            # Fallback to populated root profile directory if account-specific folder is empty
-            if (not profile_dir.exists() or not any(profile_dir.iterdir())) and (root_profiles_dir / profile_key).exists() and any((root_profiles_dir / profile_key).iterdir()):
-                self._log.info('[%s] Menggunakan root persistent profile yang terisi: %s', profile_key, root_profiles_dir / profile_key)
-                profile_dir = root_profiles_dir / profile_key
-            else:
-                profile_dir.mkdir(parents=True, exist_ok=True)
+            # Fallback to populated root profile directory ONLY for admin
+            if (not profile_dir.exists() or not any(profile_dir.iterdir())):
+                if not is_employee and (root_profiles_dir / profile_key).exists() and any((root_profiles_dir / profile_key).iterdir()):
+                    self._log.info('[%s] Menggunakan root persistent profile yang terisi: %s', profile_key, root_profiles_dir / profile_key)
+                    profile_dir = root_profiles_dir / profile_key
+                else:
+                    profile_dir.mkdir(parents=True, exist_ok=True)
             context: BrowserContext | None = None
 
             if use_camoufox:
@@ -290,20 +292,24 @@ class BasePublisher(ABC):
             await apply_stealth(context)
 
             # Inject uploaded cookies if available so persistent profile is authenticated
-            root_profiles_dir = Path(getattr(cfg, 'PROFILES_DIR', './assets/profiles'))
             candidate_files = [
                 profiles_dir / f'{profile_key}_storage.json',
                 profiles_dir / f'{profile_key}_cookies.json',
                 profiles_dir / f'{profile_key}_cookies.txt',
                 profiles_dir / f'{self.PLATFORM_NAME}_storage.json',
                 profiles_dir / f'{self.PLATFORM_NAME}_cookies.txt',
-                # Fallback to root profiles dir if cookies were saved globally
-                root_profiles_dir / f'{profile_key}_storage.json',
-                root_profiles_dir / f'{profile_key}_cookies.json',
-                root_profiles_dir / f'{profile_key}_cookies.txt',
-                root_profiles_dir / f'{self.PLATFORM_NAME}_storage.json',
-                root_profiles_dir / f'{self.PLATFORM_NAME}_cookies.txt',
             ]
+            # Fallback to root profiles dir ONLY for admin (prevent cross-tenant leaks)
+            if not is_employee:
+                candidate_files.extend([
+                    root_profiles_dir / f'{profile_key}_storage.json',
+                    root_profiles_dir / f'{profile_key}_cookies.json',
+                    root_profiles_dir / f'{profile_key}_cookies.txt',
+                    root_profiles_dir / f'{self.PLATFORM_NAME}_storage.json',
+                    root_profiles_dir / f'{self.PLATFORM_NAME}_cookies.txt',
+                ])
+
+            injected = False
             for cf in candidate_files:
                 if cf.exists() and cf.stat().st_size > 0:
                     try:
@@ -311,9 +317,23 @@ class BasePublisher(ABC):
                         if cookies:
                             self._log.info('[%s] Injected %d uploaded cookies into persistent context from %s', profile_key, len(cookies), cf.name)
                             await context.add_cookies(cookies)
+                            injected = True
                             break
                     except Exception as e:
                         self._log.warning('[%s] Failed injecting cookies into persistent context: %s', profile_key, e)
+
+            # Tenant isolation guard: abort if employee has neither injected cookies nor existing persistent profile data
+            if is_employee and not injected and not any(profile_dir.iterdir()):
+                err_msg = (
+                    f"[{profile_key}] ❌ Akun #{self.account_id} belum memiliki cookies atau profile terotentikasi! "
+                    f"Upload DIBATALKAN demi keamanan agar konten niche Anda tidak salah terunggah."
+                )
+                self._log.error(err_msg)
+                try:
+                    await context.close()
+                except Exception:
+                    pass
+                raise RuntimeError(err_msg)
 
             return context
 
@@ -388,11 +408,28 @@ class BasePublisher(ABC):
                     self._log.info('[%s] Injected %d normalized cookies from %s', profile_key, len(cookies), target_cookie_file.name)
                 else:
                     self._log.warning('[%s] No valid cookies parsed from %s', profile_key, target_cookie_file)
+                    if is_employee:
+                        err_msg = f"[{profile_key}] ❌ File cookie akun #{self.account_id} kosong/tidak valid! Upload DIBATALKAN demi menjaga integritas niche."
+                        self._log.error(err_msg)
+                        try:
+                            await context.close()
+                        except Exception:
+                            pass
+                        raise RuntimeError(err_msg)
             else:
-                self._log.warning(
-                    '[%s] No auth file found in %s — launching unauthenticated context.',
-                    profile_key, profiles_dir,
-                )
+                if is_employee:
+                    err_msg = f"[{profile_key}] ❌ Cookies / sesi login belum tersedia untuk akun #{self.account_id} di {profiles_dir}! Upload DIBATALKAN untuk mencegah konten salah sasaran / cross-tenant leak."
+                    self._log.error(err_msg)
+                    try:
+                        await context.close()
+                    except Exception:
+                        pass
+                    raise RuntimeError(err_msg)
+                else:
+                    self._log.warning(
+                        '[%s] No auth file found in %s — launching unauthenticated context.',
+                        profile_key, profiles_dir,
+                    )
 
 
         # Wrap context.close to ensure parent browser is also cleanly terminated (prevents Camoufox/Firefox zombies)

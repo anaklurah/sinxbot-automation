@@ -1531,11 +1531,9 @@ async def list_platform_states(current_user: dict = Depends(require_auth)):
         p_base = t["platform"]
         enabled = bool(t["enabled"])
 
-        # Check profile auth file/folder in the user's specific profile directory, with fallback to root profiles dir
+        # Check profile auth file/folder strictly in the user's specific profile directory (no cross-tenant fallback)
         auth_status = False
         check_dirs = [target_profiles_dir]
-        if target_profiles_dir != profiles_dir:
-            check_dirs.append(profiles_dir)
 
         for p_dir in check_dirs:
             storage_json = p_dir / f"{t_key}_storage.json"
@@ -1754,7 +1752,10 @@ async def upload_platform_cookies(target_key: str, file: UploadFile = File(...),
     """Upload cookie file (.txt or .json) or storage_state for a specific target card."""
     cfg = get_config()
     profiles_dir = Path(cfg.PROFILES_DIR)
-    profiles_dir.mkdir(parents=True, exist_ok=True)
+    acc_id = current_user.get("account_id")
+    is_employee = bool(acc_id and acc_id > 1)
+    target_profiles_dir = (profiles_dir / f"account_{acc_id}") if is_employee else profiles_dir
+    target_profiles_dir.mkdir(parents=True, exist_ok=True)
 
     contents = await file.read()
     if not contents:
@@ -1768,7 +1769,7 @@ async def upload_platform_cookies(target_key: str, file: UploadFile = File(...),
     from osap.modules.publisher.cookie_loader import load_cookies, export_netscape_cookies
 
     if is_json:
-        save_path = profiles_dir / f"{target_key}_storage.json"
+        save_path = target_profiles_dir / f"{target_key}_storage.json"
         with open(save_path, "wb") as f:
             f.write(contents)
 
@@ -1786,20 +1787,20 @@ async def upload_platform_cookies(target_key: str, file: UploadFile = File(...),
 
             # If YouTube target, export to Netscape format for yt-dlp
             if "youtube" in target_key.lower():
-                yt_netscape = profiles_dir / "youtube_cookies.txt"
+                yt_netscape = target_profiles_dir / "youtube_cookies.txt"
                 try:
                     export_netscape_cookies(parsed, yt_netscape)
                     logger.info("  [yt-dlp] Exported %d cookies from JSON to %s", len(parsed), yt_netscape.name)
                 except Exception as e:
                     logger.warning(f"Could not export yt-dlp cookiefile: {e}")
     else:
-        save_path = profiles_dir / f"{target_key}_cookies.txt"
+        save_path = target_profiles_dir / f"{target_key}_cookies.txt"
         with open(save_path, "wb") as f:
             f.write(contents)
 
         # For YouTube target, save exact raw bytes as youtube_cookies.txt for yt-dlp
         if "youtube" in target_key.lower():
-            yt_netscape = profiles_dir / "youtube_cookies.txt"
+            yt_netscape = target_profiles_dir / "youtube_cookies.txt"
             with open(yt_netscape, "wb") as f:
                 f.write(contents)
             logger.info(f"  [yt-dlp] Saved raw Netscape cookies directly to {yt_netscape.name}")
@@ -1811,26 +1812,12 @@ async def upload_platform_cookies(target_key: str, file: UploadFile = File(...),
 
         # Also write storage_state.json for Playwright browser publishers
         if parsed:
-            storage_path = profiles_dir / f"{target_key}_storage.json"
+            storage_path = target_profiles_dir / f"{target_key}_storage.json"
             try:
                 with open(storage_path, "w", encoding="utf-8") as sf:
                     json.dump({"cookies": parsed, "origins": []}, sf, indent=2)
             except Exception as e:
                 logger.warning(f"Could not write storage state for {target_key}: {e}")
-
-    # If uploaded by a specific employee account, sync cookies to account folder too
-    acc_id = current_user.get("account_id")
-    if acc_id and acc_id > 1:
-        acc_dir = profiles_dir / f"account_{acc_id}"
-        acc_dir.mkdir(parents=True, exist_ok=True)
-        import shutil
-        for f_name in [f"{target_key}_storage.json", f"{target_key}_cookies.txt", "youtube_cookies.txt"]:
-            src_f = profiles_dir / f_name
-            if src_f.exists():
-                try:
-                    shutil.copy2(src_f, acc_dir / f_name)
-                except Exception:
-                    pass
 
     count = len(parsed)
     logger.info(f"Uploaded cookie file for target {target_key}: {save_path.name} ({count} cookies parsed)")
@@ -1861,14 +1848,10 @@ async def upload_profile_zip(target_key: str, file: UploadFile = File(...), curr
 
     cfg = get_config()
     profiles_dir = Path(cfg.PROFILES_DIR)
-    target_dir = profiles_dir / target_key
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    # If user has an account_id > 1, also target the account profile directory
     acc_id = current_user.get("account_id")
-    acc_target_dir = (profiles_dir / f"account_{acc_id}" / target_key) if (acc_id and acc_id > 1) else None
-    if acc_target_dir:
-        acc_target_dir.mkdir(parents=True, exist_ok=True)
+    is_employee = bool(acc_id and acc_id > 1)
+    target_dir = (profiles_dir / f"account_{acc_id}" / target_key) if is_employee else (profiles_dir / target_key)
+    target_dir.mkdir(parents=True, exist_ok=True)
 
     contents = await file.read()
     if not contents:
@@ -1896,17 +1879,11 @@ async def upload_profile_zip(target_key: str, file: UploadFile = File(...), curr
                 dest = target_dir / rel_path
                 if member.is_dir():
                     dest.mkdir(parents=True, exist_ok=True)
-                    if acc_target_dir:
-                        (acc_target_dir / rel_path).mkdir(parents=True, exist_ok=True)
                 else:
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     data = zf.read(member)
                     with open(dest, "wb") as dst:
                         dst.write(data)
-                    if acc_target_dir:
-                        (acc_target_dir / rel_path).parent.mkdir(parents=True, exist_ok=True)
-                        with open(acc_target_dir / rel_path, "wb") as dst2:
-                            dst2.write(data)
                     extracted_files += 1
 
         logger.info(f"Successfully extracted {extracted_files} files into profile directory: {target_dir}")
@@ -2026,7 +2003,7 @@ async def trigger_publish_all(current_user: dict = Depends(require_auth)):
     with db_session(cfg.DB_PATH) as conn:
         if acc_id is not None:
             total_available = conn.execute(
-                "SELECT COUNT(*) FROM videos WHERE status IN ('pending', 'downloaded', 'rendered') AND (account_id = ? OR account_id IS NULL)",
+                "SELECT COUNT(*) FROM videos WHERE status IN ('pending', 'downloaded', 'rendered') AND account_id = ?",
                 (acc_id,)
             ).fetchone()[0]
         else:
@@ -2085,7 +2062,7 @@ async def trigger_manual_publish(target_key: str, current_user: dict = Depends(r
     with db_session(cfg.DB_PATH) as conn:
         if acc_id is not None:
             total_available = conn.execute(
-                "SELECT COUNT(*) FROM videos WHERE status IN ('pending', 'downloaded', 'rendered') AND (account_id = ? OR account_id IS NULL)",
+                "SELECT COUNT(*) FROM videos WHERE status IN ('pending', 'downloaded', 'rendered') AND account_id = ?",
                 (acc_id,)
             ).fetchone()[0]
         else:

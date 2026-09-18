@@ -195,7 +195,7 @@ def claim_next(
     with _immediate(db_path) as conn:
         if account_id is not None:
             row = conn.execute(
-                "SELECT * FROM videos WHERE status = ? AND (account_id = ? OR account_id IS NULL) ORDER BY created_at ASC LIMIT 1",
+                "SELECT * FROM videos WHERE status = ? AND account_id = ? ORDER BY created_at ASC LIMIT 1",
                 (from_status, account_id),
             ).fetchone()
         else:
