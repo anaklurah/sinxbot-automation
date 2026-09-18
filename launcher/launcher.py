@@ -44,6 +44,7 @@ class NativeCDPClient:
     Minimalist Chrome DevTools Protocol client using only Python stdlib.
     Connects to a running Chrome/Edge browser via WebSocket and can
     extract cookies (Storage.getCookies) without Playwright or Selenium.
+    Supports RFC 6455 fragmentation, ping/pong frames, and large payloads.
     """
 
     def __init__(self, ws_url: str, timeout: float = 10.0):
@@ -100,22 +101,6 @@ class NativeCDPClient:
         frame.extend(bytes(b ^ mask[i % 4] for i, b in enumerate(payload)))
         self._sock.sendall(frame)
 
-    def _recv_frame(self) -> bytes:
-        """Read one WebSocket frame and return the unmasked payload."""
-        header = self._recv_exact(2)
-        b1 = header[1]
-        length = b1 & 0x7F
-        if length == 126:
-            length = struct.unpack(">H", self._recv_exact(2))[0]
-        elif length == 127:
-            length = struct.unpack(">Q", self._recv_exact(8))[0]
-        is_masked = (b1 & 0x80) != 0
-        mask = self._recv_exact(4) if is_masked else b""
-        data = self._recv_exact(length)
-        if is_masked:
-            data = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
-        return data
-
     def _recv_exact(self, n: int) -> bytes:
         buf = b""
         while len(buf) < n:
@@ -124,6 +109,39 @@ class NativeCDPClient:
                 raise EOFError("Koneksi CDP terputus.")
             buf += chunk
         return buf
+
+    def _recv_message(self) -> str:
+        """Reads frames until a complete WebSocket message (FIN bit set) is assembled."""
+        fragments = []
+        while True:
+            header = self._recv_exact(2)
+            b0, b1 = header[0], header[1]
+            fin = (b0 & 0x80) != 0
+            opcode = b0 & 0x0F
+            length = b1 & 0x7F
+            if length == 126:
+                length = struct.unpack(">H", self._recv_exact(2))[0]
+            elif length == 127:
+                length = struct.unpack(">Q", self._recv_exact(8))[0]
+            is_masked = (b1 & 0x80) != 0
+            mask = self._recv_exact(4) if is_masked else b""
+            data = self._recv_exact(length)
+            if is_masked:
+                data = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
+            if opcode == 0x9:  # Ping -> reply Pong
+                pong = bytearray([0x8A, 0x80])
+                pong.extend(b"\x00\x00\x00\x00")
+                try:
+                    self._sock.sendall(pong)
+                except Exception:
+                    pass
+                continue
+            if opcode == 0x8:  # Close
+                raise ConnectionError("CDP WebSocket ditutup oleh browser.")
+            fragments.append(data)
+            if fin:
+                break
+        return b"".join(fragments).decode("utf-8", errors="ignore")
 
     def send_command(self, method: str, params: dict | None = None, wait_for_result: bool = True) -> dict:
         with self._lock:
@@ -137,14 +155,15 @@ class NativeCDPClient:
         while time.time() < deadline:
             self._sock.settimeout(max(0.5, deadline - time.time()))
             try:
-                raw = self._recv_frame()
-                msg = json.loads(raw.decode("utf-8", errors="ignore"))
+                raw_text = self._recv_message()
+                msg = json.loads(raw_text)
                 if msg.get("id") == msg_id:
                     return msg.get("result", {})
             except socket.timeout:
                 break
             except Exception:
-                break
+                # ignore non-matching events or transient parse errors, keep listening until timeout
+                continue
         return {}
 
 
@@ -168,6 +187,22 @@ def _find_edge_or_chrome() -> str | None:
     return None
 
 
+def _get_cdp_browser_ws(port: int, timeout: float = 12.0) -> str | None:
+    """Polls the CDP /json/version endpoint and returns the browser WebSocket URL."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=2) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                ws_url = data.get("webSocketDebuggerUrl")
+                if ws_url:
+                    return ws_url
+        except Exception:
+            pass
+        time.sleep(0.3)
+    return None
+
+
 def _get_cdp_page(port: int, timeout: float = 10.0) -> dict | None:
     """Polls the CDP /json/list endpoint and returns first page entry."""
     deadline = time.time() + timeout
@@ -182,6 +217,165 @@ def _get_cdp_page(port: int, timeout: float = 10.0) -> dict | None:
             pass
         time.sleep(0.4)
     return None
+
+def _dpapi_decrypt(encrypted_bytes: bytes) -> bytes | None:
+    """Decrypts bytes encrypted with Windows DPAPI CryptUnprotectData."""
+    from ctypes import wintypes
+
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
+
+    try:
+        blob_in = DATA_BLOB(
+            len(encrypted_bytes),
+            ctypes.cast(ctypes.create_string_buffer(encrypted_bytes), ctypes.POINTER(ctypes.c_byte)),
+        )
+        blob_out = DATA_BLOB()
+        if ctypes.windll.crypt32.CryptUnprotectData(
+            ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out)
+        ):
+            cb_data = int(blob_out.cbData)
+            pb_data = blob_out.pbData
+            buffer = ctypes.string_at(pb_data, cb_data)
+            ctypes.windll.kernel32.LocalFree(pb_data)
+            return buffer
+    except Exception:
+        pass
+    return None
+
+
+def _extract_cookies_from_chromium_profile(profile_dir: Path | str) -> list[dict]:
+    """
+    Extracts and decrypts all cookies directly from Edge/Chrome SQLite database
+    using Windows DPAPI and AES-GCM (including Chromium 120+ 32-byte header support).
+    Zero external runtime dependencies.
+    """
+    import sqlite3
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    except ImportError:
+        return []
+
+    profile_path = Path(profile_dir)
+    local_state_file = profile_path / "Local State"
+    if not local_state_file.exists():
+        return []
+
+    try:
+        with open(local_state_file, "r", encoding="utf-8") as f:
+            local_state = json.load(f)
+        enc_key_b64 = local_state.get("os_crypt", {}).get("encrypted_key")
+        if not enc_key_b64:
+            return []
+        raw_key = base64.b64decode(enc_key_b64)
+        if raw_key.startswith(b"DPAPI"):
+            raw_key = raw_key[5:]
+        master_key = _dpapi_decrypt(raw_key)
+        if not master_key:
+            return []
+    except Exception:
+        return []
+
+    cookie_db = profile_path / "Default" / "Network" / "Cookies"
+    if not cookie_db.exists():
+        cookie_db = profile_path / "Default" / "Cookies"
+    if not cookie_db.exists():
+        return []
+
+    tmp_db = tempfile.mktemp(suffix=".sqlite")
+    rows = []
+    try:
+        import shutil
+        shutil.copy2(cookie_db, tmp_db)
+        conn = sqlite3.connect(tmp_db)
+        c = conn.cursor()
+        c.execute("SELECT host_key, name, path, expires_utc, is_secure, is_httponly, samesite, encrypted_value FROM cookies")
+        rows = c.fetchall()
+        conn.close()
+    except Exception:
+        return []
+    finally:
+        if os.path.exists(tmp_db):
+            try:
+                os.unlink(tmp_db)
+            except Exception:
+                pass
+
+    aesgcm = AESGCM(master_key)
+    cookies = []
+    same_site_map = {0: "Lax", 1: "Lax", 2: "Strict", -1: "None"}
+
+    for host, name, path, exp_utc, sec, http_only, s_site, enc_val in rows:
+        val = ""
+        if enc_val:
+            try:
+                if enc_val[:3] in (b"v10", b"v11"):
+                    nonce = enc_val[3:15]
+                    ciphertext = enc_val[15:]
+                    raw = aesgcm.decrypt(nonce, ciphertext, None)
+                    # Strip 32-byte header if present (Chromium 120+)
+                    if len(raw) > 32:
+                        try:
+                            val = raw[32:].decode("utf-8")
+                        except Exception:
+                            val = raw.decode("utf-8", errors="ignore")
+                    else:
+                        val = raw.decode("utf-8", errors="ignore")
+                else:
+                    dpapi_val = _dpapi_decrypt(enc_val)
+                    if dpapi_val:
+                        val = dpapi_val.decode("utf-8", errors="ignore")
+            except Exception:
+                continue
+
+        if exp_utc and exp_utc > 0:
+            expires = (exp_utc / 1_000_000) - 11644473600
+        else:
+            expires = -1
+
+        cookies.append({
+            "name": name,
+            "value": val,
+            "domain": host,
+            "path": path or "/",
+            "expires": expires,
+            "httpOnly": bool(http_only),
+            "secure": bool(sec),
+            "sameSite": same_site_map.get(s_site, "Lax"),
+        })
+
+    return cookies
+
+
+def _export_netscape_format(cookies: list[dict], target_path: Path):
+    """Exports a list of cookie dicts to Netscape HTTP Cookie format (.txt)."""
+    lines = [
+        "# Netscape HTTP Cookie File\n",
+        "# http://curl.haxx.se/rfc/cookie_spec.html\n",
+        "# Exported by Sin'X Automation Client\n\n",
+    ]
+    for c in cookies:
+        name = c.get("name")
+        val = c.get("value")
+        domain = c.get("domain", "")
+        if not name or val is None or not domain:
+            continue
+        path = c.get("path") or "/"
+        secure = "TRUE" if c.get("secure") else "FALSE"
+        include_sub = "TRUE" if domain.startswith(".") else "FALSE"
+        exp = c.get("expires", -1)
+        try:
+            exp_int = int(float(exp))
+        except Exception:
+            exp_int = -1
+        if exp_int <= 0:
+            exp_int = 2147483647
+        http_only = bool(c.get("httpOnly", False))
+        prefix = "#HttpOnly_" if http_only else ""
+        lines.append(f"{prefix}{domain}\t{include_sub}\t{path}\t{secure}\t{exp_int}\t{name}\t{val}\n")
+
+    target_path.write_text("".join(lines), encoding="utf-8")
+
 
 APP_VERSION = "1.3.0"
 
@@ -281,32 +475,63 @@ def format_playwright_proxy(proxy_url: str | None) -> dict | None:
         return {"server": proxy_url}
 
 
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+)
+
+
+def _parse_api_response(r) -> tuple[dict, int]:
+    try:
+        return r.json(), r.status_code
+    except Exception:
+        text = (r.text or "").strip()
+        ctype = r.headers.get("content-type", "").lower()
+        if "html" in ctype or text.startswith("<"):
+            if "Cloudflare" in text or "Attention Required!" in text or "Sorry, you have been blocked" in text:
+                msg = f"Koneksi diblokir oleh Cloudflare (HTTP {r.status_code}). Pastikan IP Anda di-whitelist di WAF Cloudflare."
+            elif r.status_code == 403:
+                msg = "Akses ditolak (HTTP 403 Forbidden). Periksa izin akun atau IP Anda."
+            elif r.status_code == 502:
+                msg = "Server tidak merespon (HTTP 502 Bad Gateway). Pastikan backend aktif."
+            elif r.status_code == 504:
+                msg = "Gateway timeout (HTTP 504). Server backend sedang sibuk."
+            else:
+                msg = f"Server mengembalikan respon error HTML (HTTP {r.status_code})."
+            return {"detail": msg}, r.status_code
+        return {"detail": text[:200] if text else f"HTTP {r.status_code}"}, r.status_code
+
+
 def api_get(server_url: str, path: str, token: str = "", timeout: int = 15) -> tuple[dict, int]:
     if requests is None:
         raise RuntimeError("Modul 'requests' belum terinstall.")
     base = normalize_url(server_url)
-    headers = {"X-Auth-Token": token} if token else {}
+    headers = {
+        "User-Agent": BROWSER_USER_AGENT,
+        "Accept": "application/json, text/plain, */*",
+    }
+    if token:
+        headers["X-Auth-Token"] = token
     r = requests.get(f"{base}{path}", headers=headers, timeout=timeout)
-    try:
-        return r.json(), r.status_code
-    except Exception:
-        return {"detail": r.text}, r.status_code
+    return _parse_api_response(r)
 
 
 def api_post(server_url: str, path: str, data: dict = None, token: str = "", files=None, timeout: int = 30) -> tuple[dict, int]:
     if requests is None:
         raise RuntimeError("Modul 'requests' belum terinstall.")
     base = normalize_url(server_url)
-    headers = {"X-Auth-Token": token} if token else {}
+    headers = {
+        "User-Agent": BROWSER_USER_AGENT,
+        "Accept": "application/json, text/plain, */*",
+    }
+    if token:
+        headers["X-Auth-Token"] = token
     if files:
         r = requests.post(f"{base}{path}", headers=headers, files=files, timeout=60)
     else:
         headers["Content-Type"] = "application/json"
         r = requests.post(f"{base}{path}", headers=headers, json=data or {}, timeout=timeout)
-    try:
-        return r.json(), r.status_code
-    except Exception:
-        return {"detail": r.text}, r.status_code
+    return _parse_api_response(r)
 
 
 class LauncherApi:
@@ -617,10 +842,8 @@ class LauncherApi:
         to complete login, then extracts all cookies via CDP Storage.getCookies and
         uploads them to the server. Zero third-party dependencies.
         """
-        url = self._cfg.get("server_url", "")
+        url = self._cfg.get("server_url", "https://auto.kntl.cc")
         token = self._cfg.get("token", "")
-        if not url or not token:
-            return {"success": False, "error": "Silakan login terlebih dahulu."}
 
         browser_path = _find_edge_or_chrome()
         if not browser_path:
@@ -634,7 +857,7 @@ class LauncherApi:
 
         target = target_key.strip() or platform.strip() or "youtube"
         url_map = {
-            "youtube":      "https://accounts.google.com",
+            "youtube":      "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2F",
             "instagram":    "https://www.instagram.com/accounts/login/",
             "tiktok":       "https://www.tiktok.com/login",
             "facebook":     "https://www.facebook.com/login",
@@ -674,34 +897,54 @@ class LauncherApi:
             return {"success": False, "error": f"Gagal membuka browser: {e}"}
 
         try:
-            # Wait for CDP endpoint to be ready
-            page_info = _get_cdp_page(dbg_port, timeout=15.0)
-            if not page_info:
-                proc.terminate()
-                return {"success": False, "error": "Browser gagal start (CDP endpoint tidak tersedia)."}
+            # Attempt to connect to CDP for real-time capture
+            ws_url = _get_cdp_browser_ws(dbg_port, timeout=8.0)
+            if not ws_url:
+                page_info = _get_cdp_page(dbg_port, timeout=3.0)
+                if page_info:
+                    ws_url = page_info.get("webSocketDebuggerUrl")
 
-            # Poll cookies every 3 seconds while browser is alive
-            # Once the user closes the browser window, we capture all cookies.
             last_cookies: list = []
-            while True:
-                if proc.poll() is not None:
-                    # Browser was closed by user
-                    break
+            cdp: NativeCDPClient | None = None
 
-                try:
-                    page_info = _get_cdp_page(dbg_port, timeout=3.0)
-                    if page_info and page_info.get("webSocketDebuggerUrl"):
-                        cdp = NativeCDPClient(page_info["webSocketDebuggerUrl"], timeout=5.0)
-                        cdp.connect()
-                        result = cdp.send_command("Storage.getCookies")
-                        cdp.close()
-                        cookies = result.get("cookies", [])
+            if ws_url:
+                while proc.poll() is None:
+                    try:
+                        if not cdp:
+                            cdp = NativeCDPClient(ws_url, timeout=4.0)
+                            cdp.connect()
+                        res = cdp.send_command("Storage.getCookies")
+                        cookies = res.get("cookies", [])
                         if cookies:
                             last_cookies = cookies
+                    except Exception:
+                        try:
+                            if cdp:
+                                cdp.close()
+                        except Exception:
+                            pass
+                        cdp = None
+                    time.sleep(1.5)
+            else:
+                proc.wait()
+
+            # Close CDP connection cleanly
+            if cdp:
+                try:
+                    cdp.close()
                 except Exception:
                     pass
 
-                time.sleep(3)
+            # Wait briefly for Edge/Chrome to flush SQLite changes to disk
+            time.sleep(0.5)
+
+            # Extract cookies directly from Chromium profile SQLite database using DPAPI + AES-GCM
+            try:
+                sqlite_cookies = _extract_cookies_from_chromium_profile(temp_dir)
+                if sqlite_cookies:
+                    last_cookies = sqlite_cookies
+            except Exception:
+                pass
 
             # Clean up temp dir (best effort)
             try:
@@ -711,20 +954,58 @@ class LauncherApi:
                 pass
 
             if not last_cookies:
-                return {"success": False, "error": "Tidak ada cookies yang berhasil diekstrak. Pastikan Anda sudah login sebelum menutup browser."}
+                return {
+                    "success": False,
+                    "error": "Tidak ada cookies yang berhasil diekstrak. Pastikan Anda sudah login sebelum menutup browser."
+                }
+
+            final_cookies = last_cookies
+
+            # Save local backups to ~/.osap_launcher/saved_cookies and user Downloads
+            try:
+                saved_dir = CONFIG_DIR / "saved_cookies"
+                saved_dir.mkdir(parents=True, exist_ok=True)
+                with open(saved_dir / f"{target}_storage.json", "w", encoding="utf-8") as f:
+                    json.dump({"cookies": final_cookies, "origins": []}, f, indent=2)
+                _export_netscape_format(final_cookies, saved_dir / f"{target}_cookies.txt")
+
+                downloads_dir = Path.home() / "Downloads"
+                if downloads_dir.exists():
+                    with open(downloads_dir / f"{target}_cookies.json", "w", encoding="utf-8") as f:
+                        json.dump(final_cookies, f, indent=2)
+                    _export_netscape_format(final_cookies, downloads_dir / f"{target}_cookies.txt")
+            except Exception:
+                pass
+
+            # If user has not logged in to launcher yet, provide informative message
+            if not token:
+                return {
+                    "success": True,
+                    "message": (
+                        f"{len(final_cookies)} cookies tersimpan di Downloads/{target}_cookies.txt! "
+                        "Silakan login di aplikasi agar otomatis terunggah ke server, atau upload manual via dashboard."
+                    )
+                }
 
             # Upload cookies to server
             tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w", encoding="utf-8")
-            json.dump(last_cookies, tmp)
+            json.dump(final_cookies, tmp)
             tmp.close()
 
-            with open(tmp.name, "rb") as fh:
-                files = {"file": (f"{target}_cookies.json", fh, "application/json")}
-                data, code = api_post(url, f"/api/upload-cookies/{target}", token=token, files=files)
-            os.unlink(tmp.name)
+            try:
+                with open(tmp.name, "rb") as fh:
+                    files = {"file": (f"{target}_cookies.json", fh, "application/json")}
+                    data, code = api_post(url, f"/api/upload-cookies/{target}", token=token, files=files)
+            finally:
+                if os.path.exists(tmp.name):
+                    try:
+                        os.unlink(tmp.name)
+                    except Exception:
+                        pass
 
             if code == 200:
-                return {"success": True, "message": f"{len(last_cookies)} cookies berhasil diunggah! Target '{target}' siap digunakan."}
+                count = data.get("cookies_count", len(final_cookies))
+                return {"success": True, "message": f"{count} cookies berhasil diunggah! Target '{target}' siap digunakan."}
             return {"success": False, "error": data.get("detail", "Gagal mengunggah cookies ke server.")}
 
         except Exception as e:

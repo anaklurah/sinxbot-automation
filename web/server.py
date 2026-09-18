@@ -1531,23 +1531,34 @@ async def list_platform_states(current_user: dict = Depends(require_auth)):
         p_base = t["platform"]
         enabled = bool(t["enabled"])
 
-        # Check profile auth file/folder in the user's specific profile directory
+        # Check profile auth file/folder in the user's specific profile directory, with fallback to root profiles dir
         auth_status = False
-        storage_json = target_profiles_dir / f"{t_key}_storage.json"
-        cookies_txt = target_profiles_dir / f"{t_key}_cookies.txt"
-        cookies_json = target_profiles_dir / f"{t_key}_cookies.json"
-        prof_dir = target_profiles_dir / t_key
+        check_dirs = [target_profiles_dir]
+        if target_profiles_dir != profiles_dir:
+            check_dirs.append(profiles_dir)
 
-        if storage_json.exists() or cookies_txt.exists() or cookies_json.exists() or (prof_dir.exists() and any(prof_dir.iterdir())):
-            auth_status = True
-        elif p_base in persistent_platforms:
-            base_dir = target_profiles_dir / p_base
-            base_storage = target_profiles_dir / f"{p_base}_storage.json"
-            auth_status = (base_dir.exists() and any(base_dir.iterdir())) or base_storage.exists()
-        else:
-            base_storage = target_profiles_dir / f"{p_base}_storage.json"
-            base_cookies = target_profiles_dir / f"{p_base}_cookies.txt"
-            auth_status = base_storage.exists() or base_cookies.exists()
+        for p_dir in check_dirs:
+            storage_json = p_dir / f"{t_key}_storage.json"
+            cookies_txt = p_dir / f"{t_key}_cookies.txt"
+            cookies_json = p_dir / f"{t_key}_cookies.json"
+            prof_dir = p_dir / t_key
+            base_dir = p_dir / p_base
+            base_storage = p_dir / f"{p_base}_storage.json"
+            base_cookies = p_dir / f"{p_base}_cookies.txt"
+            base_cookies_json = p_dir / f"{p_base}_cookies.json"
+
+            if (
+                storage_json.exists()
+                or cookies_txt.exists()
+                or cookies_json.exists()
+                or (prof_dir.exists() and any(prof_dir.iterdir()))
+                or base_storage.exists()
+                or base_cookies.exists()
+                or base_cookies_json.exists()
+                or (base_dir.exists() and any(base_dir.iterdir()))
+            ):
+                auth_status = True
+                break
 
         wm_text = emp_wm if (is_employee and emp_wm is not None) else t.get("watermark_text", "")
 

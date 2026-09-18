@@ -1,11 +1,18 @@
-# -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec for sinx-automation Enterprise Installer
+import os
+
+if os.path.exists('dist/sinx-automation.exe'):
+    exe_source = 'dist/sinx-automation.exe'
+elif os.path.exists('../downloads/sinx-automation.exe'):
+    exe_source = '../downloads/sinx-automation.exe'
+else:
+    exe_source = 'sinx-automation.exe'
+
 a = Analysis(
     ['installer.py'],
     pathex=[],
     binaries=[],
     datas=[
-        ('../downloads/sinx-automation.exe', '.'),
+        (exe_source, '.'),
         ('icon.ico', '.'),
     ],
     hiddenimports=[],
