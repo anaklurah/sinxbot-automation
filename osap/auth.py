@@ -37,8 +37,9 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, hashed: str) -> bool:
-    """Compare plain-text password against its stored hash."""
-    return hashlib.sha256(password.encode("utf-8")).hexdigest() == hashed
+    """Compare plain-text password against its stored hash using constant-time comparison."""
+    computed = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return secrets.compare_digest(computed, hashed)
 
 
 # ---------------------------------------------------------------------------

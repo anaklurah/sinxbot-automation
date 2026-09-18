@@ -42,6 +42,13 @@ logger = get_logger("osap.web")
 # Auth Helpers
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+def _sanitize_key(key: str) -> str:
+    """Sanitize route parameter keys to alphanumeric, underscore, hyphen to prevent path traversal."""
+    if not key or not re.match(r'^[a-zA-Z0-9_\-]+$', key):
+        raise HTTPException(status_code=400, detail=f"Invalid key identifier: '{key}'. Only alphanumeric, '_' and '-' allowed.")
+    return key
+
+
 def _get_db_path() -> str:
     return get_config().DB_PATH
 
@@ -1615,6 +1622,7 @@ async def create_platform_target_endpoint(req: CreatePlatformTargetRequest, curr
 @app.patch("/api/platform-targets/{target_key}")
 async def update_platform_target_endpoint(target_key: str, req: UpdatePlatformTargetRequest, current_user: dict = Depends(require_auth)):
     """Update watermark, toggle status, or name for a target card."""
+    target_key = _sanitize_key(target_key)
     cfg = get_config()
     from osap.db.queue import update_platform_target, get_platform_target
     fields = {}
@@ -1638,6 +1646,7 @@ async def update_platform_target_endpoint(target_key: str, req: UpdatePlatformTa
 @app.delete("/api/platform-targets/{target_key}")
 async def delete_platform_target_endpoint(target_key: str, current_user: dict = Depends(require_admin)):
     """Delete a custom platform target card."""
+    target_key = _sanitize_key(target_key)
     cfg = get_config()
     from osap.db.queue import delete_platform_target
     success = delete_platform_target(target_key, db_path=cfg.DB_PATH)
@@ -1701,6 +1710,7 @@ async def setup_platform_auth(target_key: str, current_user: dict = Depends(requ
     NOTE: On Linux servers without a display, this will fail.
     Karyawan harus menggunakan OSAP Launcher (lokal) untuk login browser dan upload cookies.
     """
+    target_key = _sanitize_key(target_key)
     cfg = get_config()
     from osap.db.queue import get_platform_target
     target = get_platform_target(target_key, cfg.DB_PATH)
@@ -1750,6 +1760,7 @@ async def setup_platform_auth(target_key: str, current_user: dict = Depends(requ
 @app.post("/api/upload-cookies/{target_key}")
 async def upload_platform_cookies(target_key: str, file: UploadFile = File(...), current_user: dict = Depends(require_auth)):
     """Upload cookie file (.txt or .json) or storage_state for a specific target card."""
+    target_key = _sanitize_key(target_key)
     cfg = get_config()
     profiles_dir = Path(cfg.PROFILES_DIR)
     acc_id = current_user.get("account_id")
@@ -1843,6 +1854,7 @@ async def upload_platform_cookies(target_key: str, file: UploadFile = File(...),
 @app.post("/api/upload-profile/{target_key}")
 async def upload_profile_zip(target_key: str, file: UploadFile = File(...), current_user: dict = Depends(require_auth)):
     """Upload full persistent browser profile as a ZIP archive and extract directly into assets/profiles/{target_key}/."""
+    target_key = _sanitize_key(target_key)
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Hanya file berekstensi .zip yang diperbolehkan!")
 
@@ -1901,6 +1913,7 @@ async def upload_profile_zip(target_key: str, file: UploadFile = File(...), curr
 @app.get("/api/debug/screenshot/{platform}")
 async def get_debug_screenshot(platform: str, current_user: dict = Depends(require_auth)):
     """Retrieve the latest debug screenshot for a publisher platform."""
+    platform = _sanitize_key(platform)
     cfg = get_config()
     search_dirs = [
         Path(cfg.DOWNLOAD_DIR),
@@ -2041,11 +2054,14 @@ async def trigger_publish_all(current_user: dict = Depends(require_auth)):
 @app.post("/api/publish/{target_key}")
 async def trigger_manual_publish(target_key: str, current_user: dict = Depends(require_auth)):
     """Trigger on-demand single-target publish (JIT Download -> Render with Watermark -> Caption -> Post)."""
+    target_key = _sanitize_key(target_key)
     cfg = get_config()
     from osap.db.queue import get_platform_target
 
     target = get_platform_target(target_key, cfg.DB_PATH)
-    target_name = target["name"] if target else target_key
+    if not target:
+        raise HTTPException(status_code=404, detail=f"Target platform '{target_key}' tidak ditemukan.")
+    target_name = target["name"]
     acc_id = None if current_user.get("is_admin") else current_user["account_id"]
 
     # 1. Throttler check: prevent RAM crash
