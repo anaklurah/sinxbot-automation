@@ -1,5 +1,5 @@
 ai_caption:
-  model: deepseek-v4-flash
+  model: deepseek-flash
 browser:
   headless: true
 caption:

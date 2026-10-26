@@ -29,7 +29,7 @@ import random
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from playwright.async_api import Locator, Page
+    from playwright.async_api import Page
 
 
 # ---------------------------------------------------------------------------

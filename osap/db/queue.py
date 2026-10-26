@@ -346,6 +346,17 @@ def mark_platform_done(
     _check_all_platforms_done(video_id, db_path)
 
 
+def get_existing_upload_urls(platform: str, db_path: str | Path | None = None) -> set[str]:
+    """Retrieve all previously recorded upload_urls for a platform to detect and reject old post links."""
+    with _session(db_path) as conn:
+        rows = conn.execute(
+            """SELECT DISTINCT upload_url FROM platform_uploads
+               WHERE platform = ? AND upload_url IS NOT NULL AND upload_url != ''""",
+            (platform,)
+        ).fetchall()
+        return {r[0].strip() for r in rows if r[0] and r[0].strip()}
+
+
 def mark_platform_failed(
     video_id: int,
     platform: str,

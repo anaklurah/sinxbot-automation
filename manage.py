@@ -45,7 +45,6 @@ if sys.platform == "win32":
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from rich import print as rprint
 
 console = Console(highlight=False)
 
@@ -269,7 +268,7 @@ def cmd_setup_auth(args):
 
     async def _open_browser():
         from playwright.async_api import async_playwright
-        from osap.modules.publisher.stealth import apply_stealth, get_launch_options
+        from osap.modules.publisher.stealth import apply_stealth
 
         launch_args = [
             '--disable-blink-features=AutomationControlled',
@@ -548,7 +547,7 @@ def cmd_fetch_posts(args):
     console.print(f"[cyan]🔍 Memulai scan link postingan terakhir di {len(active_targets)} platform: {', '.join(target_names)}...[/cyan]")
 
     async def _run():
-        return await fetch_all_latest_posts(active_targets, account_id=active_acc["id"])
+        return await fetch_all_latest_posts(active_targets, account_id=active_acc["id"], db_path=cfg.DB_PATH)
 
     links = asyncio.run(_run())
 
@@ -624,11 +623,11 @@ def cmd_add_user(args):
             account_id=acc["id"],
             is_admin=is_admin,
         )
-        console.print(f"\n[bold green]✓ Berhasil membuat akun karyawan![/bold green]")
+        console.print("\n[bold green]✓ Berhasil membuat akun karyawan![/bold green]")
         console.print(f"  • Username    : [bold cyan]{username}[/bold cyan]")
         console.print(f"  • Account Name: [bold]{acc['name']}[/bold] (ID: {acc['id']})")
         console.print(f"  • Role        : [yellow]{'Admin' if is_admin else 'Karyawan'}[/yellow]")
-        console.print(f"\n[dim]Karyawan sekarang bisa login di Launcher atau Web Dashboard.[/dim]")
+        console.print("\n[dim]Karyawan sekarang bisa login di Launcher atau Web Dashboard.[/dim]")
     except Exception as e:
         console.print(f"[red]Gagal membuat user:[/red] {e}")
 
@@ -768,6 +767,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     # reset-stuck
     subparsers.add_parser("reset-stuck", help="Reset jobs stuck in intermediate states")
+
+    # info
+    subparsers.add_parser("info", help="Show system, hardware, and configuration info")
+
+    # fetch-posts
+    p_fetch = subparsers.add_parser("fetch-posts", help="Scan active platforms for latest post URLs and report to console & Telegram")
+    p_fetch.add_argument("--telegram", action="store_true", default=True, help="Send summary to Telegram (default: True)")
+    p_fetch.add_argument("--no-telegram", dest="telegram", action="store_false", help="Do not send summary to Telegram")
 
     # add-user
     p_user = subparsers.add_parser("add-user", help="Create a new employee account profile and login user")

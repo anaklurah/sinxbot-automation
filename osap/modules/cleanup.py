@@ -346,7 +346,7 @@ def prune_done_videos_and_caches(db_path: str | Path | None = None) -> dict[str,
             total_rendered_freed += ren_free
             cleaned_count += 1
         except Exception as e:
-            logger.debug("Prune error on video %s: %e", v.get("id"), e)
+            logger.debug("Prune error on video %s: %s", v.get("id"), e)
 
     # Clean browser caches
     cache_freed = clean_browser_caches()

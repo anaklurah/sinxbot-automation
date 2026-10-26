@@ -6,7 +6,6 @@ Playwright cookie dict shape:
     {name, value, domain, path, expires, httpOnly, secure, sameSite}
 """
 import json
-import time
 from pathlib import Path
 from typing import Any
 

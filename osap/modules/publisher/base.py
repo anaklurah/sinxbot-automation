@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any
 
 from playwright.async_api import (
-    async_playwright,
     Browser,
     BrowserContext,
     Page,

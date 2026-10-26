@@ -880,7 +880,7 @@ class LauncherApi:
             "--no-default-browser-check",
             "--disable-blink-features=AutomationControlled",
             "--disable-infobars",
-            f"--window-size=1280,800",
+            "--window-size=1280,800",
         ]
 
         # Inject proxy if configured

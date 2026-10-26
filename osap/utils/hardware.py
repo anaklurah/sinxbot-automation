@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import platform
 import subprocess
-import sys
 from functools import lru_cache
 from typing import Any
 

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 
 from openai import AsyncOpenAI, APIConnectionError, APIStatusError, RateLimitError
 
@@ -66,7 +65,7 @@ class CaptionAI:
     api_key:
         DeepSeek API key.
     model:
-        Model name to use (default ``'deepseek-chat'``).
+        Model name to use (default ``'deepseek-flash'``).
     system_prompt:
         System prompt override.  Defaults to :data:`DEFAULT_SYSTEM_PROMPT`.
     """
@@ -74,7 +73,7 @@ class CaptionAI:
     def __init__(
         self,
         api_key: str,
-        model: str = "deepseek-chat",
+        model: str = "deepseek-flash",
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
     ) -> None:
         self.client = AsyncOpenAI(

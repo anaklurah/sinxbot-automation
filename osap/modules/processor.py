@@ -177,23 +177,23 @@ class VideoProcessor:
             # ── Video chain ─────────────────────────────────────────── #
             video_stream = input_node.video
 
-            # 1. Scale up by zoom factor (keeps full frame with sharp scaling).
+            # 1. Scale up by zoom factor (keeps full frame with sharp scaling, even dimensions).
             video_stream = ffmpeg.filter(
                 video_stream,
                 "scale",
-                w=f"iw*{zoom}",
-                h=f"ih*{zoom}",
+                w=f"trunc(iw*{zoom}/2)*2",
+                h=f"trunc(ih*{zoom}/2)*2",
                 flags="bicubic",
             )
 
-            # 2. Centre-crop back to original dimensions.
+            # 2. Centre-crop back to original dimensions (even dimensions).
             video_stream = ffmpeg.filter(
                 video_stream,
                 "crop",
-                w=f"iw/{zoom}",
-                h=f"ih/{zoom}",
-                x=f"(iw-iw/{zoom})/2",
-                y=f"(ih-ih/{zoom})/2",
+                w=f"trunc((iw/{zoom})/2)*2",
+                h=f"trunc((ih/{zoom})/2)*2",
+                x="(iw-ow)/2",
+                y="(ih-oh)/2",
             )
 
             # 2b. Cap max resolution to 1080p (preserves 720p/1080p, scales down 4K to 1080x1920 vertical or 1920x1080 horizontal).

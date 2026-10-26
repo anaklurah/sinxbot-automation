@@ -5,7 +5,6 @@ Thin subclass of TwitterPublisher that permanently sets ``NSFW = True`` and
 overrides the ``upload()`` method to ensure the sensitive-content flag is
 always activated before posting.
 """
-from playwright.async_api import Page
 
 from osap.modules.publisher.twitter import TwitterPublisher
 

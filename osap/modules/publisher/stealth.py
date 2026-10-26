@@ -3,7 +3,6 @@ Playwright stealth utilities — applies anti-detection patches to browser conte
 """
 from playwright.async_api import BrowserContext
 from playwright_stealth import Stealth
-import platform as _platform
 
 STEALTH_ARGS = [
     '--disable-blink-features=AutomationControlled',

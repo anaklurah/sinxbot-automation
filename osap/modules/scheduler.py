@@ -10,11 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import time
 from typing import List, Optional, Tuple
 
 from osap.config import get_config
-from osap.modules.on_demand import run_jit_video_pipeline, run_single_video_pipeline
+from osap.modules.on_demand import run_jit_video_pipeline
 from osap.utils.logger import get_logger
 
 logger = get_logger("osap.scheduler")
@@ -114,7 +113,7 @@ async def run_scheduler(db_path: Optional[str] = None, slots: Optional[List[str]
     cfg = get_config()
     db_path = db_path or cfg.DB_PATH
 
-    logger.info(f"[Scheduler] 🕒 Smart Scheduler started.")
+    logger.info("[Scheduler] 🕒 Smart Scheduler started.")
 
     while True:
         try:

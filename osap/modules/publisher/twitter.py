@@ -221,7 +221,7 @@ class TwitterPublisher(BasePublisher):
                         dialog_closed = True
                         log.info('[twitter] Compose dialog closed on retry')
                     except Exception:
-                        # Check toast notification
+                        # Check toast notification & capture direct link
                         toast_sel = (
                             ':text("Your post was sent"), '
                             ':text("Tweet sent"), '
@@ -232,12 +232,49 @@ class TwitterPublisher(BasePublisher):
                             await page.wait_for_selector(toast_sel, timeout=10_000)
                             dialog_closed = True
                             log.info('[twitter] Success toast notification detected')
+                            toast_link = page.locator('[data-testid="toast"] a[href*="/status/"]').first
+                            if await toast_link.count():
+                                h = await toast_link.get_attribute("href")
+                                if h:
+                                    self.uploaded_url = f"https://x.com{h}" if h.startswith("/") else h
+                                    log.info('[twitter] ✓ Captured direct tweet link from toast: %s', self.uploaded_url)
                         except Exception:
                             pass
 
                 if not dialog_closed:
                     log.error('[twitter] Tweet submission failed: compose dialog remained open')
                     return False
+
+                # Direct capture from user timeline if toast didn't provide link
+                if not self.uploaded_url:
+                    try:
+                        prof_btn = page.locator('a[data-testid="AppTabBar_Profile_Link"]').first
+                        if await prof_btn.count():
+                            prof_href = await prof_btn.get_attribute("href")
+                            if prof_href and prof_href.strip("/"):
+                                u_name = prof_href.strip("/").split("/")[0]
+                                log.info('[twitter] Checking profile https://x.com/%s for newly published tweet...', u_name)
+                                await page.goto(f"https://x.com/{u_name}", wait_until="domcontentloaded", timeout=25_000)
+                                await asyncio.sleep(2)
+                                articles = page.locator('article[data-testid="tweet"]')
+                                count = await articles.count()
+                                for idx in range(min(count, 5)):
+                                    art = articles.nth(idx)
+                                    social_ctx = art.locator('[data-testid="socialContext"]').first
+                                    if await social_ctx.count():
+                                        sc_text = (await social_ctx.text_content() or "").lower()
+                                        if "pinned" in sc_text or "disematkan" in sc_text:
+                                            continue
+                                    status_link = art.locator('time').locator('xpath=..')
+                                    if not await status_link.count():
+                                        status_link = art.locator('a[href*="/status/"]').first
+                                    href = await status_link.get_attribute("href")
+                                    if href and f"/{u_name}/status/" in href:
+                                        self.uploaded_url = f"https://x.com{href}" if href.startswith("/") else href
+                                        log.info('[twitter] ✓ Captured direct tweet link from user timeline: %s', self.uploaded_url)
+                                        break
+                    except Exception as ex:
+                        log.debug('[twitter] Timeline link capture error: %s', ex)
 
                 # Cooldown to ensure network upload finalized before closing context
                 log.info('[twitter] Tweet successfully published! Cooldown before closing...')

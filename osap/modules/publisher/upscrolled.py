@@ -10,7 +10,6 @@ Auth method: storage_state (cfg.PROFILES_DIR / 'upscrolled_storage.json')
 # public UI as of 2025. Verify via browser DevTools if upload fails.
 """
 import asyncio
-from pathlib import Path
 
 from playwright.async_api import async_playwright, BrowserContext, Page
 

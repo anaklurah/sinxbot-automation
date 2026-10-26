@@ -220,8 +220,11 @@ function initDashboard() {
     loadConfigData();
     setupLogStream();
 
-    // Auto refresh dashboard stats every 5 seconds without UI flicker
-    setInterval(() => {
+    // Auto refresh dashboard stats every 5 seconds without UI flicker (avoid duplicate intervals)
+    if (window._dashboardInterval) {
+        clearInterval(window._dashboardInterval);
+    }
+    window._dashboardInterval = setInterval(() => {
         loadDashboardData(true);
     }, 5000);
 }
@@ -454,6 +457,28 @@ async function togglePipeline() {
         await loadDashboardData();
     } catch (err) {
         showToast('Network error toggling pipeline', 'error');
+    }
+}
+
+/**
+ * Emergency stop for all running pipeline workers & scheduler
+ */
+async function triggerStopPipeline() {
+    if (!confirm('Hentikan semua proses pipeline dan scheduler yang sedang berjalan?')) {
+        return;
+    }
+    showToast('Menghentikan semua proses pipeline...', 'info');
+    try {
+        const res = await apiFetch('/api/pipeline/stop', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(data.message || 'Pipeline & Scheduler berhasil dihentikan.', 'success');
+        } else {
+            showToast(data.detail || 'Gagal menghentikan pipeline.', 'error');
+        }
+        await loadDashboardData();
+    } catch (err) {
+        showToast('Gagal terhubung ke server saat menghentikan pipeline.', 'error');
     }
 }
 
@@ -743,7 +768,7 @@ async function loadConfigData() {
                 if (helpDeepseek) helpDeepseek.textContent = 'API key untuk generate judul viral, deskripsi, & hashtag.';
             }
         }
-        if (deepseekModel) deepseekModel.value = env.DEEPSEEK_MODEL || 'deepseek-chat';
+        if (deepseekModel) deepseekModel.value = env.DEEPSEEK_MODEL || 'deepseek-flash';
 
 
         // Telegram settings

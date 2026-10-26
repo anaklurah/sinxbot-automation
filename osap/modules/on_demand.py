@@ -23,10 +23,8 @@ from typing import Optional, List, Dict, Any
 from osap.config import get_config
 from osap.db.queue import (
     claim_next,
-    get_active_account,
     get_video_by_id,
     init_platform_rows,
-    log_error,
     mark_platform_done,
     mark_platform_failed,
     mark_platform_uploading,
@@ -360,8 +358,15 @@ async def run_jit_video_pipeline(
             logger.info(f"[JIT Pipeline] 📲 Mengambil link postingan terbaru dari profil {len(targets_needing_fetch)} target...")
             try:
                 from osap.modules.post_fetcher import fetch_all_latest_posts
-                fetched = await fetch_all_latest_posts(targets_needing_fetch, account_id=account_id)
+                fetched = await fetch_all_latest_posts(targets_needing_fetch, account_id=account_id, db_path=db_path)
                 post_links.update(fetched)
+                # Persist verified links into database
+                for t in targets_needing_fetch:
+                    t_key = t.get("target_key")
+                    t_name = t.get("name") or t_key
+                    f_url = fetched.get(t_name)
+                    if f_url and f_url.startswith("http"):
+                        mark_platform_done(vid_id, t_key, upload_url=f_url, db_path=db_path)
             except Exception as fetch_err:
                 logger.warning(f"[JIT Pipeline] Gagal mengekstrak link profil: {fetch_err}")
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 from dotenv import load_dotenv
@@ -86,7 +86,7 @@ class Config:
     DEEPSEEK_API_KEY: str = ""
 
     #: DeepSeek model identifier.
-    DEEPSEEK_MODEL: str = "deepseek-chat"
+    DEEPSEEK_MODEL: str = "deepseek-flash"
 
     #: Optional proxy URL (e.g. socks5://localhost:1080)
     PROXY_URL: Optional[str] = None
@@ -108,7 +108,8 @@ class Config:
     PLATFORM_FACEBOOK: bool = True
     PLATFORM_INSTAGRAM: bool = True
     PLATFORM_TWITTER: bool = True
-    PLATFORM_TWITTER_NSF: bool = False  # NSFW Twitter account (opt-in)
+    PLATFORM_TWITTER_NSFW: bool = False  # NSFW Twitter account (opt-in)
+    PLATFORM_TWITTER_NSF: bool = False   # Alias for PLATFORM_TWITTER_NSFW
     PLATFORM_TIKTOK: bool = True
     PLATFORM_UPSCROLLED: bool = False
     PLATFORM_FEBSPOT: bool = False
@@ -220,7 +221,7 @@ class Config:
             "facebook": self.PLATFORM_FACEBOOK,
             "instagram": self.PLATFORM_INSTAGRAM,
             "twitter": self.PLATFORM_TWITTER,
-            "twitter_nsfw": self.PLATFORM_TWITTER_NSF,
+            "twitter_nsfw": bool(self.PLATFORM_TWITTER_NSFW or self.PLATFORM_TWITTER_NSF),
             "tiktok": self.PLATFORM_TIKTOK,
             "upscrolled": self.PLATFORM_UPSCROLLED,
             "febspot": self.PLATFORM_FEBSPOT,
@@ -380,7 +381,7 @@ def get_config(*, reload: bool = False) -> Config:
     cfg = Config(
         PRIME_TIME_SLOTS=parsed_slots,
         # Paths
-        DB_PATH=os.environ.get("OSAP_DB_PATH", "./osap.db"),
+        DB_PATH=os.environ.get("OSAP_DB_PATH") or os.environ.get("DB_PATH", "./osap.db"),
         DOWNLOAD_DIR=Path(os.environ.get("DOWNLOAD_DIR", "./downloads")),
         ASSETS_DIR=Path(os.environ.get("ASSETS_DIR", "./assets")),
         PROFILES_DIR=Path(os.environ.get("PROFILES_DIR", "./assets/profiles")),
@@ -388,7 +389,7 @@ def get_config(*, reload: bool = False) -> Config:
         DEEPSEEK_API_KEY=os.environ.get("DEEPSEEK_API_KEY", ""),
         DEEPSEEK_MODEL=os.environ.get(
             "DEEPSEEK_MODEL",
-            _nested_get(yaml_data, "ai_caption", "model", default="deepseek-chat"),
+            _nested_get(yaml_data, "ai_caption", "model", default="deepseek-flash"),
         ),
         PROXY_URL=os.environ.get("PROXY_URL") or _nested_get(yaml_data, "proxy", "url", default=None),
         BROWSER_ENGINE=os.environ.get("BROWSER_ENGINE", "camoufox").lower(),
@@ -414,9 +415,13 @@ def get_config(*, reload: bool = False) -> Config:
             os.environ.get("PLATFORM_TWITTER"),
             default=bool(_nested_get(yaml_data, "platforms", "twitter", default=True)),
         ),
+        PLATFORM_TWITTER_NSFW=_parse_bool(
+            os.environ.get("PLATFORM_TWITTER_NSFW") or os.environ.get("PLATFORM_TWITTER_NSF"),
+            default=bool(_nested_get(yaml_data, "platforms", "twitter_nsfw", default=_nested_get(yaml_data, "platforms", "twitter_nsf", default=False))),
+        ),
         PLATFORM_TWITTER_NSF=_parse_bool(
-            os.environ.get("PLATFORM_TWITTER_NSF"),
-            default=bool(_nested_get(yaml_data, "platforms", "twitter_nsfw", default=False)),
+            os.environ.get("PLATFORM_TWITTER_NSFW") or os.environ.get("PLATFORM_TWITTER_NSF"),
+            default=bool(_nested_get(yaml_data, "platforms", "twitter_nsfw", default=_nested_get(yaml_data, "platforms", "twitter_nsf", default=False))),
         ),
         PLATFORM_TIKTOK=_parse_bool(
             os.environ.get("PLATFORM_TIKTOK"),

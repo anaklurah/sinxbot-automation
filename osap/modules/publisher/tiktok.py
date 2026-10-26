@@ -9,7 +9,6 @@ TikTok applies aggressive bot detection.  This publisher:
 
 Auth method: storage_state (cfg.PROFILES_DIR / 'tiktok_storage.json')
 """
-import asyncio
 from pathlib import Path
 
 from playwright.async_api import async_playwright, BrowserContext, Page

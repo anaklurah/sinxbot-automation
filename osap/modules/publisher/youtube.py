@@ -12,7 +12,6 @@ from pathlib import Path
 from playwright.async_api import async_playwright, BrowserContext, Page
 
 from osap.modules.publisher.base import BasePublisher
-from osap.utils.logger import get_logger
 
 
 class YouTubePublisher(BasePublisher):
@@ -400,12 +399,22 @@ class YouTubePublisher(BasePublisher):
 
                 # Extract direct video link from YouTube Studio upload/success dialog
                 try:
-                    link_loc = page.locator('a[href*="youtu.be"], a.ytcp-video-info, [class*="video-url-link"] a, a[href*="/shorts/"]').first
+                    link_loc = page.locator('a[href*="youtu.be"], a.ytcp-video-info, [class*="video-url-link"] a, a[href*="/shorts/"], span.video-url-fade').first
                     if await link_loc.count():
-                        href = await link_loc.get_attribute("href")
-                        if href and ("youtu.be" in href or "/shorts/" in href or "/watch" in href):
-                            self.uploaded_url = href.strip()
-                            log.info('[youtube] ✓ Captured direct video URL: %s', self.uploaded_url)
+                        href = await link_loc.get_attribute("href") or await link_loc.text_content()
+                        if href:
+                            href = href.strip()
+                            if "youtu.be/" in href:
+                                vid_code = href.split("youtu.be/")[1].split("?")[0].split("/")[0]
+                                self.uploaded_url = f"https://www.youtube.com/shorts/{vid_code}"
+                            elif "/shorts/" in href:
+                                vid_code = href.split("/shorts/")[1].split("?")[0].split("/")[0]
+                                self.uploaded_url = f"https://www.youtube.com/shorts/{vid_code}"
+                            elif "v=" in href:
+                                vid_code = href.split("v=")[1].split("&")[0]
+                                self.uploaded_url = f"https://www.youtube.com/shorts/{vid_code}"
+                            if self.uploaded_url:
+                                log.info('[youtube] ✓ Captured canonical direct Shorts URL: %s', self.uploaded_url)
                 except Exception as ex:
                     log.debug('[youtube] Could not extract video URL from dialog: %s', ex)
 

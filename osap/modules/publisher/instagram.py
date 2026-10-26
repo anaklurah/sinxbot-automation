@@ -400,6 +400,18 @@ class InstagramPublisher(BasePublisher):
                     await asyncio.sleep(poll_interval)
                     elapsed += poll_interval
 
+                if upload_confirmed:
+                    try:
+                        dialog_link = page.locator('div[role="dialog"] a[href*="/reel/"], div[role="dialog"] a[href*="/p/"]').first
+                        if await dialog_link.count():
+                            h = await dialog_link.get_attribute("href")
+                            if h:
+                                clean_h = h.split("?")[0]
+                                self.uploaded_url = f"https://www.instagram.com{clean_h}" if clean_h.startswith("/") else clean_h
+                                log.info('[instagram] ✓ Captured direct Reel link from upload dialog: %s', self.uploaded_url)
+                    except Exception as ex:
+                        log.debug('[instagram] Could not extract link from dialog: %s', ex)
+
                 if not upload_confirmed:
                     log.error('[instagram] ✗ Timeout waiting for upload confirmation after %ds. Browser will not assume success.', max_wait_sec)
                     return False

@@ -28,7 +28,6 @@ from osap.db.queue import (
     claim_next,
     init_platform_rows,
     log_error,
-    mark_platform_failed,
     update_video,
 )
 from osap.utils.logger import get_logger
@@ -276,15 +275,24 @@ def _get_youtube_cookiefile(cfg) -> Path | None:
     yt_profile_dir = profiles_dir / "youtube"
     if yt_profile_dir.exists():
         try:
-            from playwright.sync_api import sync_playwright
-            with sync_playwright() as p:
-                ctx = p.chromium.launch_persistent_context(str(yt_profile_dir), headless=True)
-                cookies = ctx.cookies()
-                ctx.close()
-                if cookies:
-                    export_netscape_cookies(cookies, yt_netscape)
-                    logger.info("  [yt-dlp] Auto-exported %d YouTube cookies from profile to %s", len(cookies), yt_netscape.name)
-                    return yt_netscape
+            import concurrent.futures
+
+            def _export():
+                from playwright.sync_api import sync_playwright
+                with sync_playwright() as p:
+                    ctx = p.chromium.launch_persistent_context(str(yt_profile_dir), headless=True)
+                    cookies = ctx.cookies()
+                    ctx.close()
+                    return cookies
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_export)
+                cookies = future.result(timeout=15)
+
+            if cookies:
+                export_netscape_cookies(cookies, yt_netscape)
+                logger.info("  [yt-dlp] Auto-exported %d YouTube cookies from profile to %s", len(cookies), yt_netscape.name)
+                return yt_netscape
         except Exception as exc:
             logger.debug("  [yt-dlp] Note: Could not auto-export cookies from profile: %s", exc)
 

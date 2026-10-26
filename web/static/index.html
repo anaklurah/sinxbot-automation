@@ -661,7 +661,14 @@
 
                     <div class="clay-form-group">
                         <label>AI Model</label>
-                        <input type="text" id="cfg-deepseek-model" class="clay-input" value="deepseek-chat">
+                        <input type="text" id="cfg-deepseek-model" class="clay-input" list="deepseek-models-list" value="deepseek-flash" placeholder="deepseek-flash">
+                        <datalist id="deepseek-models-list">
+                            <option value="deepseek-flash">deepseek-flash (Terbaru - Rekomendasi Cepat & Efisien)</option>
+                            <option value="deepseek-v4-pro">deepseek-v4-pro (Terbaru - Penalaran & Logika Maksimal)</option>
+                            <option value="deepseek-chat">deepseek-chat (General / Chat)</option>
+                            <option value="deepseek-reasoner">deepseek-reasoner (Deep Reasoning)</option>
+                        </datalist>
+                        <span class="help-text">Model resmi DeepSeek API: <b>deepseek-flash</b> (cepat/hemat) atau <b>deepseek-v4-pro</b> (penalaran tinggi).</span>
                     </div>
                 </div>
 

@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, UploadFile, File, Request, Depends
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Request, Depends
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -30,7 +30,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from osap.config import get_config
 from osap.db.models import init_db, db_session, PLATFORMS
 from osap.db.queue import (
-    get_stats, add_urls_batch, get_pending_count, reset_stuck
+    get_stats, add_urls_batch, reset_stuck
 )
 from osap.utils.hardware import get_system_info
 from osap.utils.logger import get_logger
@@ -916,7 +916,6 @@ async def backup_database(current_user: dict = Depends(require_admin)):
     if not db_path.exists():
         raise HTTPException(status_code=404, detail="Database file tidak ditemukan.")
 
-    import shutil
     import tempfile
     import sqlite3
     import datetime
@@ -1688,16 +1687,16 @@ async def reset_stuck_jobs_api(current_user: dict = Depends(require_auth)):
     return {"success": True, "message": "Stuck jobs reset"}
 
 
-def _run_setup_auth_target(target_key: str):
+def _run_setup_auth_target(target_key: str, account_id: int = 1):
     """Top-level process target for running setup-auth flow."""
     from manage import cmd_setup_auth
     class SetupArgs:
-        def __init__(self, t_key):
+        def __init__(self, t_key, acc_id):
             self.platform = t_key
             self.target_key = t_key
-            self.account_id = 1
+            self.account_id = acc_id
 
-    cmd_setup_auth(SetupArgs(target_key))
+    cmd_setup_auth(SetupArgs(target_key, account_id))
 
 
 _active_setup_auth_procs: dict[str, multiprocessing.Process] = {}
@@ -1734,8 +1733,11 @@ async def setup_platform_auth(target_key: str, current_user: dict = Depends(requ
                 )
             }
 
-    # Check if a setup-auth process is already running for this target
-    existing_p = _active_setup_auth_procs.get(target_key)
+    acc_id = current_user.get("account_id") or 1
+    proc_key = f"{target_key}_{acc_id}"
+
+    # Check if a setup-auth process is already running for this target & account
+    existing_p = _active_setup_auth_procs.get(proc_key)
     if existing_p and existing_p.is_alive():
         return {
             "success": True,
@@ -1744,12 +1746,12 @@ async def setup_platform_auth(target_key: str, current_user: dict = Depends(requ
 
     p = multiprocessing.Process(
         target=_run_setup_auth_target,
-        args=(target_key,),
-        name=f"setup_auth_{target_key}",
+        args=(target_key, acc_id),
+        name=f"setup_auth_{proc_key}",
         daemon=True,
     )
     p.start()
-    _active_setup_auth_procs[target_key] = p
+    _active_setup_auth_procs[proc_key] = p
 
     return {
         "success": True,
@@ -2039,7 +2041,7 @@ async def trigger_publish_all(current_user: dict = Depends(require_auth)):
     auth_module.log_audit_event(
         cfg.DB_PATH,
         action="PUBLISH_ALL",
-        details=f"Triggered 1-video distribution to all active platforms",
+        details="Triggered 1-video distribution to all active platforms",
         user_id=current_user.get("id"),
         username=current_user.get("username", ""),
         account_id=acc_id,
@@ -2135,7 +2137,7 @@ def _run_fetch_latest_posts_proc(db_path: str, account_id: Optional[int] = None)
             logger.warning("[Manual Link Check] Tidak ada target platform yang aktif.")
             return
 
-        post_links = await fetch_all_latest_posts(active_targets, account_id=acc_id)
+        post_links = await fetch_all_latest_posts(active_targets, account_id=acc_id, db_path=db_path)
         logger.info(f"[Manual Link Check] Selesai scan {len(post_links)} platform. Mengirim laporan ke Telegram...")
 
         await send_post_summary_to_telegram(
