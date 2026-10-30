@@ -606,19 +606,27 @@ async function submitIngest() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ urls: urlsText })
-
         });
-        const data = await res.json();
+
+        let data = {};
+        try {
+            data = await res.json();
+        } catch (_) {}
 
         if (res.ok) {
-            showToast(`Berhasil menyimpan ${data.added} link ke Gudang Konten (${data.skipped} duplikat diabaikan)!`, 'success');
+            if (data.added === 0 && data.skipped > 0) {
+                showToast(`Semua link (${data.skipped}) sudah ada di database/antrean (duplikat diabaikan).`, 'warning');
+            } else {
+                showToast(`Berhasil menyimpan ${data.added} link ke Gudang Konten (${data.skipped} duplikat diabaikan)!`, 'success');
+            }
             textarea.value = '';
             loadDashboardData();
         } else {
-            showToast(data.detail || 'Gagal menyimpan URL ke Gudang Konten', 'error');
+            showToast(data.detail || `Server error (${res.status}): Gagal menyimpan URL ke Gudang Konten`, 'error');
         }
     } catch (err) {
-        showToast('Network error submitting URLs', 'error');
+        console.error('submitIngest error:', err);
+        showToast(err.message || 'Network error submitting URLs', 'error');
     }
 }
 

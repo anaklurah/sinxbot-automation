@@ -941,7 +941,7 @@ async def backup_database(current_user: dict = Depends(require_admin)):
 async def trigger_system_cleanup(current_user: dict = Depends(require_admin)):
     """Prune done video files, old caches, and vacuum database."""
     cfg = get_config()
-    from osap.db.queue import prune_done_videos_and_caches
+    from osap.modules.cleanup import prune_done_videos_and_caches
     res = prune_done_videos_and_caches(cfg.DB_PATH)
     return {"success": True, "message": "Pembersihan storage & temporary cache server berhasil dijalankan!", "details": res}
 
@@ -1096,7 +1096,7 @@ async def ingest_urls(req: IngestRequest, current_user: dict = Depends(require_a
             detail=f"Maksimal 50 link per sekali input (Anda memasukkan {len(cleaned_urls)} link) demi menjaga performa antrean."
         )
 
-    effective_account_id = current_user["account_id"]
+    effective_account_id = current_user.get("account_id") or 1
 
     # 2. Fair-usage quota: max 150 pending videos per employee account
     if not current_user.get("is_admin"):

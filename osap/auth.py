@@ -255,7 +255,7 @@ def validate_token(db_path: str | Path, token: str) -> Optional[dict]:
 
         row = conn.execute(
             """
-            SELECT s.user_id, s.account_id, u.username, u.is_admin
+            SELECT s.user_id, s.user_id AS id, s.account_id, u.username, u.is_admin
             FROM sessions s
             JOIN users u ON s.user_id = u.id
             WHERE s.token = ? AND s.expires_at > ?

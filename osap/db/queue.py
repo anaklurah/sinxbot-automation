@@ -88,7 +88,11 @@ def _row_to_dict(row: sqlite3.Row | None) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-def add_url(url: str, db_path: str | Path | None = None) -> bool:
+def add_url(
+    url: str,
+    db_path: str | Path | None = None,
+    account_id: int | None = None,
+) -> bool:
     """
     Add a single URL to the video queue.
 
@@ -102,6 +106,8 @@ def add_url(url: str, db_path: str | Path | None = None) -> bool:
         The source video URL to enqueue (must be unique).
     db_path:
         Path to the SQLite database.  Defaults to ``Config.DB_PATH``.
+    account_id:
+        Optional target account ID.
 
     Returns
     -------
@@ -109,10 +115,18 @@ def add_url(url: str, db_path: str | Path | None = None) -> bool:
         ``True`` if the URL was newly inserted, ``False`` if it was already
         present (duplicate).
     """
+    acc_id = account_id
+    if acc_id is None:
+        try:
+            active_acc = get_active_account(db_path)
+            acc_id = active_acc["id"]
+        except Exception:
+            acc_id = 1
+
     with _immediate(db_path) as conn:
         cursor = conn.execute(
-            "INSERT OR IGNORE INTO videos (url, status) VALUES (?, 'pending')",
-            (url,),
+            "INSERT OR IGNORE INTO videos (url, status, account_id) VALUES (?, 'pending', ?)",
+            (url, acc_id),
         )
         return cursor.rowcount > 0
 
@@ -608,7 +622,10 @@ def get_video_by_id(
     return _row_to_dict(row)
 
 
-def get_pending_count(db_path: str | Path | None = None) -> int:
+def get_pending_count(
+    db_path: str | Path | None = None,
+    account_id: int | None = None,
+) -> int:
     """
     Return the number of videos currently in ``'pending'`` status.
 
@@ -616,6 +633,8 @@ def get_pending_count(db_path: str | Path | None = None) -> int:
     ----------
     db_path:
         Path to the SQLite database.  Defaults to ``Config.DB_PATH``.
+    account_id:
+        Optional target account ID to filter by.
 
     Returns
     -------
@@ -623,10 +642,16 @@ def get_pending_count(db_path: str | Path | None = None) -> int:
         Count of pending videos.
     """
     with _session(db_path) as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) FROM videos WHERE status = 'pending'"
-        ).fetchone()
-    return row[0]
+        if account_id is not None:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM videos WHERE status = 'pending' AND account_id = ?",
+                (account_id,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM videos WHERE status = 'pending'"
+            ).fetchone()
+    return row[0] if row else 0
 
 
 def reset_stuck(db_path: str | Path | None = None) -> int:
